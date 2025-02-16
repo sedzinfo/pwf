@@ -147,3 +147,4 @@ def list_to_number_string(value):
         return str(value)[1:-1]
     else:
         return value
+

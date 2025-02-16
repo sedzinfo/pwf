@@ -8,6 +8,7 @@ Created on Wed Oct 17 16:17:36 2018
 ##########################################################################################
 import sys
 sys.path.insert(1,'/opt/pyrepo/functions/')
+sys.path.insert(1,'C:/Users/dzach/Documents/GitHub/pwf/functions')
 from __init__ import *
 from plotnine import ggplot, aes, scale_x_discrete, scale_y_discrete
 from plotnine import geom_tile, geom_text, scale_fill_gradient2, theme_bw, theme, ggsave
@@ -45,6 +46,10 @@ def plot_corrplot(df,base_size=15):
 ##########################################################################################
 # 
 ##########################################################################################
+import rpy2.robjects as robjects
+robjects.r('library(rstudioapi)')
+script_dir = robjects.r('dirname(rstudioapi::getActiveDocumentContext()$path)')
+
 # plot_corrplot(personality.iloc[:,1:20].corr(),base_size=10)
 # ggsave(plot=result,filename="correlation.png",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)
 # ggsave(plot=result,filename="correlation.pdf",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)

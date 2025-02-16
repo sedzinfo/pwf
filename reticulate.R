@@ -1,6 +1,7 @@
 library(reticulate)
-# virtualenv_create("pystatistics")
-use_virtualenv("pystatistics")
+# virtualenv_create("pwd")
+# virtualenv_remove("pwd")
+use_virtualenv("pwd")
 
 py_install("numpy")
 py_install("pandas")
@@ -9,6 +10,8 @@ py_install("dash")
 py_install("yfinance")
 py_install("get_all_tickers")
 py_install("linkedin")
+py_install("rpy2")
+py_install("plotnine")
 
 
 # Check Python configuration
@@ -29,15 +32,7 @@ system2("python", "--version")
 
 
 
-
-
-
-
-
-
-
 # Remove the existing virtual environment
-virtualenv_remove("pystatistics")
 
 # Create a new virtual environment
 virtualenv_create("pystatistics")
