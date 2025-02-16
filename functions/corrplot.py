@@ -18,6 +18,45 @@ import matplotlib.pyplot as plt
 # PLOT CORRPLOT
 ##########################################################################################
 def plot_corrplot(df,base_size=15):
+    """
+    Generate a correlation plot using `plotnine` (ggplot2-like syntax) to visualize correlations in a given DataFrame.
+
+    This function takes a DataFrame with numerical values and generates a heatmap-style correlation plot. 
+    Each correlation value is represented by a tile, with the color gradient showing the correlation 
+    between the variables. The function uses `ggplot2`-style syntax from the `plotnine` library.
+
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        A DataFrame containing numerical values for correlation. The DataFrame must have at least 2 columns, 
+        and the columns' names will be used as the variables for the plot. The correlation plot will be generated 
+        between each pair of columns.
+
+    base_size : int, optional, default=15
+        The base size of the text in the plot. This controls the font size of the correlation values displayed 
+        within each tile.
+
+    Returns:
+    --------
+    plotnine.ggplot.ggplot
+        A `ggplot` object representing the correlation plot. You can use `plt.show()` to display it.
+
+    Example:
+    --------
+    import pandas as pd
+    from plot_corrplot import plot_corrplot
+
+    df = pd.DataFrame({
+        'A': [1, 0.8, 0.6],
+        'B': [0.8, 1, 0.7],
+        'C': [0.6, 0.7, 1]
+    })
+
+    plot_corrplot(df)
+
+    This will generate a plot showing the correlation between columns 'A', 'B', and 'C'.
+    """
+
     df.insert(0,"index",df.columns)
     variables=list(df["index"])
     df=df.melt(id_vars="index")
@@ -53,9 +92,7 @@ script_dir = robjects.r('dirname(rstudioapi::getActiveDocumentContext()$path)')
 
 personality=pd.read_csv("C:/Users/dzach/Documents/GitHub/pwf/data/personality.csv")
 
-gp=plot_corrplot(personality.iloc[:,1:20].corr(),base_size=10)
-gp.save(script_dir[0]+"/correlation.png",width=10,height=10,units="in",dpi=1200)
-
+gp=plot_corrplot(personality.iloc[:,1:20].corr(),base_size=5)
 as.raster(gp)
 
 # ggsave(plot=result,filename="correlation.png",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)
