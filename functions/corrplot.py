@@ -13,6 +13,7 @@ from __init__ import *
 from plotnine import ggplot, aes, scale_x_discrete, scale_y_discrete
 from plotnine import geom_tile, geom_text, scale_fill_gradient2, theme_bw, theme, ggsave
 from plotnine import element_text, element_blank
+import matplotlib.pyplot as plt
 ##########################################################################################
 # PLOT CORRPLOT
 ##########################################################################################
@@ -50,15 +51,17 @@ import rpy2.robjects as robjects
 robjects.r('library(rstudioapi)')
 script_dir = robjects.r('dirname(rstudioapi::getActiveDocumentContext()$path)')
 
-# plot_corrplot(personality.iloc[:,1:20].corr(),base_size=10)
+personality=pd.read_csv("C:/Users/dzach/Documents/GitHub/pwf/data/personality.csv")
+
+gp=plot_corrplot(personality.iloc[:,1:20].corr(),base_size=10)
+gp.save(script_dir[0]+"/correlation.png",width=10,height=10,units="in",dpi=1200)
+
+as.raster(gp)
+
 # ggsave(plot=result,filename="correlation.png",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)
 # ggsave(plot=result,filename="correlation.pdf",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)
 # ggsave(plot=result,filename="correlation.jpg",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)
 # ggsave(plot=result,filename="correlation.svg",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)
 
-
-
-
-
-
+gp.show()
 
