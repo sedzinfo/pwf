@@ -1,0 +1,9 @@
+mkdir pyrepo
+which python3
+virtualenv -p /usr/bin/python3 pystatistics
+source pystatistics/bin/activate
+which python
+deactivate
+
+import sys
+sys.version_info

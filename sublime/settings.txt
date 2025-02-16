@@ -1,0 +1,71 @@
+Project -> Edit Project
+"settings": {
+    "python_interpreter": "/opt/pyrepo/bin/python3"
+}
+
+Preferences -> Browse Packages...
+
+import sublime_plugin
+
+class ProjectVenvReplCommand(sublime_plugin.TextCommand):
+    """
+    Starts a SublimeREPL, attempting to use project's specified
+    python interpreter.
+    """
+
+    def run(self, edit, open_file='$file'):
+        """Called on project_venv_repl command"""
+        cmd_list = [self.get_project_interpreter(), '-i', '-u']
+
+        if open_file:
+            cmd_list.append(open_file)
+
+        self.repl_open(cmd_list=cmd_list)
+
+    def get_project_interpreter(self):
+        """Return the project's specified python interpreter, if any"""
+        settings = self.view.settings()
+        return settings.get('python_interpreter', '/usr/bin/python')
+
+    def repl_open(self, cmd_list):
+        """Open a SublimeREPL using provided commands"""
+        self.view.window().run_command(
+            'repl_open', {
+                'encoding': 'utf8',
+                'type': 'subprocess',
+                'cmd': cmd_list,
+                'cwd': '$file_path',
+                'syntax': 'Packages/Python/Python.tmLanguage'
+            }
+        )
+
+Preferences -> Key Bindings - User
+
+// Runs currently open file in repl
+{
+    "keys": ["f5"],
+    "command": "project_venv_repl"
+},
+// Runs repl without any file
+{
+    "keys": ["f6"],
+    "command": "project_venv_repl",
+    "args": {
+        "open_file": null
+    }
+},
+// Runs a specific file in repl, change main.py to desired file
+{
+    "keys": ["f7"],
+    "command": "project_venv_repl",
+    "args": {
+        "open_file": "/home/user/example/main.py"
+    }
+}
+
+{
+	"cmd": ["/mnt/WDRED_REMOTE/pystatistics/bin/python3","$file"],
+	"selector": "source.python",
+	"file_regex": "file \"(...*?)\", line([0-9]+)"
+}
+

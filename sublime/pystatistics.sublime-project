@@ -1,0 +1,15 @@
+{
+	"build_systems":
+	[
+		{
+			"file_regex": "^[ ]*File \"(...*?)\", line ([0-9]*)",
+			"name": "Anaconda Python Builder",
+			"selector": "source.python",
+			"shell_cmd": "\"/opt/pyrepo/bin/python3\" -u \"$file\""
+		}
+	],
+	"settings":
+	{
+		"python_interpreter": "/opt/pyrepo/bin/python3"
+	}
+}
