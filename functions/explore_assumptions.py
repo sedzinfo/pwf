@@ -7,7 +7,8 @@ Created on Wed Oct 17 16:17:36 2018
 # LOAD
 ##########################################################################################
 import sys
-sys.path.insert(1,'/opt/pyrepo/functions/')
+file_directory = os.path.dirname(file_path) or os.getcwd()
+sys.path.insert(1,file_directory+'\\functions')
 from __init__ import *
 from plotnine import ggplot, aes, geom_histogram, geom_qq, geom_qq_line, geom_boxplot
 from plotnine import theme_bw, theme, labs, facet_wrap, coord_flip, ggsave
@@ -34,8 +35,6 @@ def plot_histogram(df,base_size=10,title="Histogram",bins=10):
         + theme(subplots_adjust={'hspace':0.1,'wspace':0.1})
         + facet_wrap('~variable',scales='free'))
     return gp
-plot_histogram(personality.iloc[:,0:4])
-plot_histogram(df=pd.DataFrame(np.random.normal(loc=0,scale=1,size=1000000)),bins=100)
 ##########################################################################################
 # PLOT QQ
 ##########################################################################################
@@ -60,7 +59,6 @@ def plot_qq(df,base_size=10,title="QQ"):
         + theme(subplots_adjust={'hspace':0.1,'wspace':0.1})
         + facet_wrap('~variable',scales='free'))
     return gp
-# plot_qq(personality.iloc[:,0:4])
 ##########################################################################################
 # PLOT BOXPLOT
 ##########################################################################################
@@ -74,12 +72,24 @@ def plot_boxplot(df,base_size=10,title="Boxplot"):
       + theme_bw(base_size=base_size)
       + theme(subplots_adjust={'hspace':0.1,'wspace':0.1}))
     return gp
-# print(plot_boxplot(personality))
-# print(plot_boxplot(titanic))
+##########################################################################################
+# 
+##########################################################################################
+personality=pd.read_csv(file_directory+"\\data\\personality.csv")
+titanic=pd.read_csv(file_directory+"\\data\\titanic.csv")
 
+ph0=plot_histogram(personality.iloc[:,0:4])
+ph1=plot_histogram(df=pd.DataFrame(np.random.normal(loc=0,scale=1,size=1000000)),bins=100)
+ph0.show()
+ph1.show()
 
+pqq=plot_qq(personality.iloc[:,0:4])
+pqq.show()
 
-
+pbp0=plot_boxplot(personality)
+pbp1=plot_boxplot(titanic)
+pbp0.show()
+pbp1.show()
 
 
 

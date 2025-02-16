@@ -8,7 +8,8 @@ Created on Mon Dec  4 17:05:57 2017
 # LOAD
 ##########################################################################################
 import sys
-sys.path.insert(1,'/opt/pyrepo/functions/')
+file_directory = os.path.dirname(file_path) or os.getcwd()
+sys.path.insert(1,file_directory+'\\functions')
 from __init__ import *
 ##########################################################################################
 # 
