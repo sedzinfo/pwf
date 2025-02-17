@@ -487,7 +487,7 @@ def generate_correlation_matrix(correlation_martix,nrows=1000):
     """
     mydata=pd.DataFrame(np.random.multivariate_normal(mean=np.repeat(0,len(correlation_martix)),cov=correlation_martix,size=nrows))
     return mydata
-# generate_correlation_matrix(generate_normal().corr()).corr()
+# generate_correlation_matrix(generate_normal(ncols=5,nrows=1000,mean=0,sd=1).corr()).corr()
 ##########################################################################################
 # SIMULATE CORRELATION FROM SAMPLE
 ##########################################################################################

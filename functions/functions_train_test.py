@@ -27,3 +27,15 @@ observed = np.round(np.abs(np.random.normal(0, 0.5, 100)))
 predicted = np.abs(np.random.normal(0, 0.5, 100))
 res=plot_roc(observed, predicted)
 res.show()
+
+df1=generate_normal(ncols=1,nrows=1000,mean=0,sd=1)
+df1.describe()
+df1[1] = np.where(np.abs(df1[1]) < 1, 0, 1
+df1[0] = np.abs(df1[0])
+df1[0] = (df1[0]-df1[0].min())/(df1[0].max()-df1[0].min())
+observed=np.round(df1[1].values)
+predicted=df1[0].values.round()
+
+res=plot_roc(observed,predicted)
+res.show()
+
