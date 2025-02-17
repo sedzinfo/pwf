@@ -26,8 +26,6 @@ py_config()
 np <- import("numpy")
 array <- np$array(c(1, 2, 3))
 
-system2("python", "--version")
-
 
 
 

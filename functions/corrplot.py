@@ -6,6 +6,7 @@ Created on Wed Oct 17 16:17:36 2018
 ##########################################################################################
 # LOAD
 ##########################################################################################
+import os
 import sys
 file_directory = os.path.dirname(file_path) or os.getcwd()
 sys.path.insert(1,file_directory+'\\functions')
