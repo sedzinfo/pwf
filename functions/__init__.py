@@ -9,7 +9,12 @@ Created on Thu Oct 26 17:20:31 2017
 # LOAD
 ##########################################################################################
 import sys
-sys.path.insert(1,'/opt/pyrepo/functions/')
+import rpy2.robjects as robjects
+get_path = robjects.r('rstudioapi::getActiveDocumentContext()$path')
+file_path = str(get_path[0]).replace(os.path.basename(str(get_path[0])),"").rstrip("/")
+file_directory = os.path.dirname(file_path) or os.getcwd()
+sys.path.insert(1,file_path)
+
 import pandas as pd
 import numpy as np
 import xlsxwriter
@@ -22,8 +27,7 @@ from functions_excel import *
 # DATA
 ##########################################################################################
 df=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-sets/master/blood_pressure.csv")
-personality=pd.read_csv('/opt/pyrepo/data/personality.csv')
-titanic=pd.read_csv('/opt/pyrepo/data/titanic.csv')
-
+personality=pd.read_csv(file_directory+"/data/personality.csv")
+titanic=pd.read_csv(file_directory+"/data/titanic.csv")
 
 check(df)

@@ -8,8 +8,13 @@ Created on Wed Oct 17 16:17:36 2018
 ##########################################################################################
 import os
 import sys
+
+import rpy2.robjects as robjects
+get_path = robjects.r('rstudioapi::getActiveDocumentContext()$path')
+file_path = str(get_path[0]).replace(os.path.basename(str(get_path[0])),"").rstrip("/")
 file_directory = os.path.dirname(file_path) or os.getcwd()
-sys.path.insert(1,file_directory+'\\functions')
+
+sys.path.insert(1,file_directory+'/functions')
 from __init__ import *
 from plotnine import ggplot, aes, scale_x_discrete, scale_y_discrete
 from plotnine import geom_tile, geom_text, scale_fill_gradient2, theme_bw, theme, ggsave
@@ -87,8 +92,8 @@ def plot_corrplot(df,base_size=15):
 ##########################################################################################
 # 
 ##########################################################################################
-personality=pd.read_csv(file_directory+"\\data\\personality.csv")
-titanic=pd.read_csv(file_directory+"\\data\\titanic.csv")
+personality=pd.read_csv(file_directory+"/data/personality.csv")
+titanic=pd.read_csv(file_directory+"/data/titanic.csv")
 gp=plot_corrplot(personality.iloc[:,1:20].corr(),base_size=5)
 gp.show()
 

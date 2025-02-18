@@ -10,7 +10,11 @@ Created on Wed Oct 25 14:32:36 2017
 import sys
 import numpy as np
 import pandas as pd
-sys.path.insert(1,'/opt/pyrepo/functions/')
+import rpy2.robjects as robjects
+get_path = robjects.r('rstudioapi::getActiveDocumentContext()$path')
+file_path = str(get_path[0]).replace(os.path.basename(str(get_path[0])),"").rstrip("/")
+file_directory = os.path.dirname(file_path) or os.getcwd()
+sys.path.insert(1,file_path)
 from __init__ import *
 from functions import *
 ##########################################################################################

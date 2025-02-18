@@ -18,6 +18,8 @@ py_install("plotnine")
 py_install("matplotlib")
 py_install("seaborn")
 py_install("ggrepel")
+py_install("xlsxwriter")
+
 
 # Check Python configuration
 py_config()
