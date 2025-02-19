@@ -19,7 +19,7 @@ py_install("matplotlib")
 py_install("seaborn")
 py_install("ggrepel")
 py_install("xlsxwriter")
-
+py_install("researchpy")
 
 # Check Python configuration
 py_config()
