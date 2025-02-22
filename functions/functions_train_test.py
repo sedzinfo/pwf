@@ -7,6 +7,29 @@ from sklearn.metrics import roc_curve, auc
 from plotnine import ggplot, aes, geom_line, geom_abline, labs, theme_bw
 
 def plot_roc(observed, predicted, base_size=10, title=""):
+    """
+    Plot the Receiver Operating Characteristic (ROC) curve from observed and predicted values.
+
+    Parameters:
+    observed (array-like): List or array of true binary labels.
+    predicted (array-like): List or array of predicted scores or probabilities.
+    base_size (int, optional): Base size for the plot. Defaults to 10.
+    title (str, optional): Title of the plot. Defaults to an empty string.
+
+    Returns:
+    ggplot: A ggplot object representing the ROC curve.
+
+    Notes:
+    - The ROC curve is created by plotting the true positive rate (TPR) against the false positive rate (FPR) at various threshold settings.
+    - The Area Under the Curve (AUC) is calculated and displayed in the plot caption.
+    - The plot includes a reference diagonal line indicating the performance of a random classifier.
+
+    Examples:
+    >>> observed = [0, 0, 1, 1]
+    >>> predicted = [0.1, 0.4, 0.35, 0.8]
+    >>> plot = plot_roc(observed, predicted)
+    >>> print(plot)
+    """
     fpr, tpr, _ = roc_curve(observed, predicted)
     roc_auc = auc(fpr, tpr)
     # Create a DataFrame with false positive rate and true positive rate
