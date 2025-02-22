@@ -181,6 +181,69 @@ def confusion_matrix_percent(observed, predicted):
 # Examples
 confusion_matrix_percent(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11])
 confusion_matrix_percent(observed=[1, 2, 2, 2, 2], predicted=[1, 1, 2, 2, 2])
+##########################################################################################
+# CONFUSION MATRIX PERCENT
+##########################################################################################
+import numpy as np
+import pandas as pd
+from sklearn.metrics import confusion_matrix, cohen_kappa_score
 
+def proportion_accurate(observed, predicted):
+    """
+    Calculate the proportion overall accuracy of a confusion matrix and Cohen's kappa statistics.
 
+    Parameters:
+    observed (list): List of observed variables.
+    predicted (list): List of predicted variables.
+
+    Returns:
+    pd.DataFrame: DataFrame with overall accuracy, off-diagonal accuracy, and Cohen's kappa statistics.
+
+    Examples:
+    >>> observed = [1, 2, 3, 4, 5, 10]
+    >>> predicted = [1, 2, 3, 4, 5, 11]
+    >>> result = proportion_accurate(observed, predicted)
+    >>> print(result)
+    """
+    
+    # Create confusion matrix
+    cmatrix = confusion_matrix(observed, predicted)
+    train_test = pd.DataFrame({'observed': observed, 'predicted': predicted})
+    
+    # Calculate overall accuracy (diagonal proportion)
+    cm_diagonal = np.trace(cmatrix) / np.sum(cmatrix)
+    
+    # Calculate off-diagonal accuracy
+    index = np.transpose(np.nonzero(cmatrix))
+    data = []
+    for i in range(len(cmatrix)):
+        row, col = index[i]
+        if 0 <= col < len(cmatrix):
+            data.append(cmatrix[row, col])
+        if 0 <= col + 1 < len(cmatrix):
+            data.append(cmatrix[row, col + 1])
+        if 0 <= col - 1 < len(cmatrix):
+            data.append(cmatrix[row, col - 1])
+    cm_off_diagonal = sum(data) / np.sum(cmatrix)
+    
+    # Calculate Cohen's kappa statistics
+    kappa_unweighted = cohen_kappa_score(observed, predicted, weights=None)
+    kappa_linear = cohen_kappa_score(observed, predicted, weights='linear')
+    kappa_squared = cohen_kappa_score(observed, predicted, weights='quadratic')
+    
+    # Create result DataFrame
+    result = pd.DataFrame({
+        'cm_diagonal': [cm_diagonal],
+        'cm_off_diagonal': [cm_off_diagonal],
+        'kappa_unweighted': [kappa_unweighted],
+        'kappa_linear': [kappa_linear],
+        'kappa_squared': [kappa_squared]
+    })
+    
+    return result
+
+# Example usage
+observed = [1, 2, 3, 4, 5, 10]
+predicted = [1, 2, 3, 4, 5, 11]
+proportion_accurate(observed, predicted)
 
