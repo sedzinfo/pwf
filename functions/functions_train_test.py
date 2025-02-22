@@ -38,4 +38,52 @@ predicted=df1[0].values.round()
 
 res=plot_roc(observed,predicted)
 res.show()
+##########################################################################################
+# CONFUSION
+##########################################################################################
+import pandas as pd
+from pandas.api.types import CategoricalDtype
+
+def confusion(observed, predicted):
+    """
+    Create a confusion matrix from observed and predicted vectors.
+
+    Parameters:
+    observed (list): List of observed variables.
+    predicted (list): List of predicted variables.
+
+    Returns:
+    pd.DataFrame: Confusion matrix with observed values as columns and predicted values as rows.
+
+    Examples:
+    >>> confusion(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11])
+    observed   1  2  3  4  5  10  11
+    predicted                       
+    1          1  0  0  0  0   0   0
+    2          0  1  0  0  0   0   0
+    3          0  0  1  0  0   0   0
+    4          0  0  0  1  0   0   0
+    5          0  0  0  0  1   0   0
+    10         0  0  0  0  0   0   0
+    11         0  0  0  0  0   1   0
+
+    >>> confusion(observed=[1, 2, 2, 2, 2], predicted=[1, 1, 2, 2, 2])
+    observed    1   2
+    predicted        
+    1           1   1
+    2           0   3
+    """
+    levels = sorted(set(observed + predicted))
+    cat_type = CategoricalDtype(categories=levels, ordered=True)
+    
+    data_observed = pd.Categorical(observed, categories=levels, ordered=True)
+    data_predicted = pd.Categorical(predicted, categories=levels, ordered=True)
+    
+    result = pd.crosstab(index=data_predicted, columns=data_observed, rownames=['predicted'], colnames=['observed'], dropna=False)
+    return result
+
+# Examples
+print(confusion(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11]))
+print(confusion(observed=[1, 2, 2, 2, 2], predicted=[1, 1, 2, 2, 2]))
+
 
