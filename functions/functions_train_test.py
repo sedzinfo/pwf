@@ -70,6 +70,24 @@ from plotnine import ggplot, aes, geom_tile, scale_fill_gradient, labs, theme, e
 from sklearn.metrics import confusion_matrix
 
 def plot_confusion(observed, predicted, base_size=10, title=""):
+    """
+    Plot a confusion matrix heatmap using ggplot (plotnine) in Python.
+
+    Parameters:
+    observed (list or array-like): Vector of observed (true) class labels.
+    predicted (list or array-like): Vector of predicted class labels.
+    base_size (int, optional): Integer value representing the base font size for the plot. Defaults to 10.
+    title (str, optional): String representing the title of the plot. Defaults to an empty string.
+
+    Returns:
+    plotnine.ggplot.ggplot: A ggplot object representing the confusion matrix heatmap.
+
+    Example usage:
+    observed = [1, 2, 3, 1, 2, 3, 1, 2, 3]
+    predicted = [1, 2, 3, 1, 1, 3, 1, 2, 2]
+    p = plot_confusion(observed, predicted, title="Confusion Matrix")
+    p.show()
+    """
     cm=confusion(observed=observed,predicted=predicted)
     pa=proportion_accurate(observed=observed,predicted=predicted)
     labels = np.unique(np.concatenate((observed, predicted)))
@@ -77,13 +95,16 @@ def plot_confusion(observed, predicted, base_size=10, title=""):
     # Create DataFrame
     cm_df = pd.DataFrame(cm, index=labels, columns=labels)
     cm_melted = cm_df.reset_index().melt(id_vars='index')
+    total=cm_melted['value'].sum()
+    diagonal=cm_df.values.diagonal().sum()
     
     # Generate Plot
     p = (ggplot(cm_melted, aes(x='index', y='variable', fill='value')) +
          geom_tile(color="gray") +
          geom_text(aes(x="index",y="variable",label="value"),color="black",size=base_size)+
-         scale_fill_gradient(low='#D3D3D3', high='#4169E1') +
-         labs(title=f"{title}", x="Observed", y="Predicted", fill="Count") +
+         scale_fill_gradient(low='#FFFFFF', high='#4169E1') +
+         labs(title=f"{title}", x="Observed", y="Predicted", fill="Count",
+              caption=f"Total={total}\nDiagonal={diagonal}") +
          theme_bw(base_size=base_size) +
          theme(axis_text_x=element_text(rotation=45, hjust=1),
                axis_ticks_x=element_blank(),
@@ -95,6 +116,7 @@ def plot_confusion(observed, predicted, base_size=10, title=""):
                legend_position="none"))
 
     return p
+
 
 # Example usage
 observed = [1, 2, 3, 1, 2, 3, 1, 2, 3]
