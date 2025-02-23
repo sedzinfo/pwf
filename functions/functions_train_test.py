@@ -95,6 +95,8 @@ def plot_confusion(observed, predicted, base_size=10, title=""):
     # Create DataFrame
     cm_df = pd.DataFrame(cm, index=labels, columns=labels)
     cm_melted = cm_df.reset_index().melt(id_vars='index')
+    cm_df.reset_index().melt(id_vars='index')
+
     total=cm_melted['value'].sum()
     diagonal=cm_df.values.diagonal().sum()
     
@@ -116,7 +118,6 @@ def plot_confusion(observed, predicted, base_size=10, title=""):
                legend_position="none"))
 
     return p
-
 
 # Example usage
 observed = [1, 2, 3, 1, 2, 3, 1, 2, 3]
