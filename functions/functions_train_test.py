@@ -62,6 +62,46 @@ predicted=df1[0].values.round()
 res=plot_roc(observed,predicted)
 res.show()
 ##########################################################################################
+# PLOT CONFUSION
+##########################################################################################
+import pandas as pd
+import numpy as np
+from plotnine import ggplot, aes, geom_tile, scale_fill_gradient, labs, theme, element_text, theme_bw, element_blank, geom_text
+from sklearn.metrics import confusion_matrix
+
+def plot_confusion(observed, predicted, base_size=10, title=""):
+    cm=confusion(observed=observed,predicted=predicted)
+    pa=proportion_accurate(observed=observed,predicted=predicted)
+    labels = np.unique(np.concatenate((observed, predicted)))
+    
+    # Create DataFrame
+    cm_df = pd.DataFrame(cm, index=labels, columns=labels)
+    cm_melted = cm_df.reset_index().melt(id_vars='index')
+    
+    # Generate Plot
+    p = (ggplot(cm_melted, aes(x='index', y='variable', fill='value')) +
+         geom_tile(color="gray") +
+         geom_text(aes(x="index",y="variable",label="value"),color="black",size=base_size)+
+         scale_fill_gradient(low='#D3D3D3', high='#4169E1') +
+         labs(title=f"{title}", x="Observed", y="Predicted", fill="Count") +
+         theme_bw(base_size=base_size) +
+         theme(axis_text_x=element_text(rotation=45, hjust=1),
+               axis_ticks_x=element_blank(),
+               axis_ticks_y=element_blank(),
+               panel_grid_major=element_blank(),
+               panel_grid_minor=element_blank(),
+               panel_border=element_blank(),
+               panel_background=element_blank(),
+               legend_position="none"))
+
+    return p
+
+# Example usage
+observed = [1, 2, 3, 1, 2, 3, 1, 2, 3]
+predicted = [1, 2, 3, 1, 1, 3, 1, 2, 2]
+p = plot_confusion(observed, predicted, title="Confusion Matrix")
+p.show()
+##########################################################################################
 # CONFUSION
 ##########################################################################################
 import pandas as pd
