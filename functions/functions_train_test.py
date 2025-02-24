@@ -125,6 +125,51 @@ predicted = [1, 2, 3, 1, 1, 3, 1, 2, 2]
 p = plot_confusion(observed, predicted, title="Confusion Matrix")
 p.show()
 ##########################################################################################
+# PLOT SEPARABILITY
+##########################################################################################
+import pandas as pd
+import numpy as np
+from plotnine import ggplot, aes, geom_density, labs, theme_bw
+
+def plot_separability(observed, predicted, base_size=10, title=""):
+    """
+    Plot separability showing the density distribution of predicted probabilities for different observed categories.
+
+    Parameters:
+    observed (list or array-like): Vector of observed (true) class labels.
+    predicted (list or array-like): Vector of predicted outcome probabilities.
+    base_size (int, optional): Integer value representing the base font size for the plot. Defaults to 10.
+    title (str, optional): String representing the title of the plot. Defaults to an empty string.
+
+    Returns:
+    plotnine.ggplot.ggplot: A ggplot object representing the separability plot.
+
+    Example usage:
+    df1 = pd.DataFrame(np.random.rand(1000, 2), columns=['X1', 'X2'])
+    df1['X1'] = np.where(np.abs(df1['X1']) < 0.5, 0, 1)
+    df1['X2'] = (df1['X2'] - df1['X2'].min()) / (df1['X2'].max() - df1['X2'].min())
+    p = plot_separability(observed=round(np.abs(df1['X1']), 0), predicted=np.abs(df1['X2']))
+    p.show()
+    """
+    
+    df = pd.DataFrame({'observed': observed, 'predicted': predicted})
+    
+    p = (ggplot(df, aes(x='predicted', color='factor(observed)'))
+         + geom_density(size=1)
+         + labs(title=f"{title}",
+                color="Observed",
+                caption=f"Observations: {len(df)}")
+         + theme_bw(base_size=base_size))
+    
+    return p
+
+# Example usage
+df1 = pd.DataFrame(np.random.rand(1000, 2), columns=['X1', 'X2'])
+df1['X1'] = np.where(np.abs(df1['X1']) < 0.5, 0, 1)
+df1['X2'] = (df1['X2'] - df1['X2'].min()) / (df1['X2'].max() - df1['X2'].min())
+p = plot_separability(observed=round(np.abs(df1['X1']), 0), predicted=np.abs(df1['X2']))
+p.show()
+##########################################################################################
 # CONFUSION
 ##########################################################################################
 import pandas as pd
