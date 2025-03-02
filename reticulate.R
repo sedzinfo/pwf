@@ -23,6 +23,7 @@ py_install("researchpy")
 py_install("semopy")
 py_install("graphviz")
 py_install("factor_analyzer")
+py_install("rpy2")
 
 # Check Python configuration
 py_config()
