@@ -2,8 +2,8 @@ library(reticulate)
 system2("python", "--version")
 system2("R", "--version")
 
-# virtualenv_create("pwd")
 # virtualenv_remove("pwd")
+# virtualenv_create("pwd")
 use_virtualenv("pwd")
 
 py_install("numpy")
