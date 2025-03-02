@@ -20,6 +20,8 @@ py_install("seaborn")
 py_install("ggrepel")
 py_install("xlsxwriter")
 py_install("researchpy")
+py_install("semopy")
+py_install("graphviz")
 
 # Check Python configuration
 py_config()
