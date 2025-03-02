@@ -7,8 +7,10 @@ Created on Thu Oct 19 11:45:39 2017
 # LOAD
 ##########################################################################################
 import sys
-# sys.path.insert(1,'/opt/pyrepo/functions/')
-# from __init__ import *
+import os
+
+sys.path.insert(1,'C://Users//dzach//Documents//GitHub//pwf//functions')
+from __init__ import *
 sys.path.insert(1,'/opt/pyrepo/functions/functions.py')
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -18,13 +20,10 @@ import numpy as np
 ##########################################################################################
 # 
 ##########################################################################################
-df=pd.read_csv("/opt/pyrepo/data/personality.csv")
+df=pd.read_csv("C:/Users/dzach/Documents/GitHub/pwf/data/personality.csv")
 chi_square_value,p_value=calculate_bartlett_sphericity(df)
 kmo_all,kmo_model=calculate_kmo(df)
 kmo_variables=pd.DataFrame(list(zip(df.columns.to_list(),kmo_all)),columns=['Name','KMO'])
-# print({"chi_square_value":chi_square_value,"p_value":p_value})
-# print(kmo_all)
-# print(df.columns.to_list())
 
 fa=FactorAnalyzer(rotation=None)
 result=fa.fit(df)
@@ -58,3 +57,69 @@ print(residuals)
 
 
 
+
+
+import pandas as pd
+import numpy as np
+from plotnine import (
+    ggplot, aes, geom_hline, geom_line, geom_point, scale_x_continuous,
+    theme_bw, labs, annotate, theme, element_blank, element_text
+)
+
+def plot_scree(df, base_size=15, title="", color=("#5F2C91", "#5E912C")):
+    """
+    Scree plot displaying the Kaiser and Jolliffe criteria for factor extraction using plotnine (ggplot2 for Python).
+
+    Parameters:
+    - df: pandas DataFrame
+    - base_size: base font size
+    - title: plot title
+    - color: tuple of colors for lines and point outlines
+
+    Returns:
+    - A plotnine.ggplot object representing the scree plot.
+    """
+    # Calculate eigenvalues of the correlation matrix
+    corr_matrix = df.corr(method='pearson')
+    eigenvalues = np.linalg.eigvals(corr_matrix)
+    
+    # Sort eigenvalues in descending order
+    eigenvalues = np.sort(eigenvalues)[::-1]
+    
+    # Create a DataFrame for plotting
+    eigenvalues_df = pd.DataFrame({
+        'x': np.arange(1, len(eigenvalues) + 1),
+        'eigenvalues': eigenvalues
+    })
+    
+    # Kaiser and Jolliffe criteria
+    kaiser = np.sum(eigenvalues > 1)
+    jolliffe = np.sum(eigenvalues > 0.7)
+    
+    # Create the scree plot using plotnine
+    plot = (
+        ggplot(eigenvalues_df, aes(x='x', y='eigenvalues')) +
+        geom_hline(yintercept=1, color=color[0]) +
+        geom_hline(yintercept=0.7, color=color[1]) +
+        geom_line(color=color[0]) +
+        geom_point(size=base_size / 4, color=color[0]) +
+        scale_x_continuous(breaks=eigenvalues_df['x'].tolist()) +
+        theme_bw(base_size=base_size) +
+        labs(x="Index", y="Eigenvalue", title=f"Scree plot {title}") +
+        annotate("text",
+                 x=eigenvalues_df['x'].max(),
+                 y=eigenvalues_df['eigenvalues'].max(),
+                 label=f"Top line: Kaiser criterion: {kaiser}\nBottom line: Jolliffe criterion: {jolliffe}",
+                 ha='right', va='top', size=base_size / 4) +
+        theme(
+            legend_title=element_blank(),
+            legend_position='bottom',
+            axis_title_x=element_blank(),
+            text=element_text(size=base_size)
+        )
+    )
+    
+    return plot
+  
+scree_plot = plot_scree(df, base_size=15, title="for mtcars dataset")
+scree_plot.show()

@@ -22,6 +22,7 @@ py_install("xlsxwriter")
 py_install("researchpy")
 py_install("semopy")
 py_install("graphviz")
+py_install("factor_analyzer")
 
 # Check Python configuration
 py_config()
