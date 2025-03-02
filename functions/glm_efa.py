@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 from factor_analyzer import FactorAnalyzer,calculate_bartlett_sphericity,calculate_kmo
 from sklearn.decomposition import FactorAnalysis
 import numpy as np
+df=pd.read_csv('C:/Users/dzach/Documents/GitHub/pwf/data/personality.csv')
 ##########################################################################################
 # SCREE PLOT
 ##########################################################################################
@@ -131,12 +132,7 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
             df_uniqueness,df_loadings,df_factor_variance,
             residual_correlations,correlations,residuals)
   
-
 report_efa(df)
-
-
-
-
 ##########################################################################################
 # SORT LOADINGS
 ##########################################################################################
@@ -169,16 +165,6 @@ def sort_loadings(loadings, cut_off=0.3):
     sorted_loadings_df = sorted_loadings_df.applymap(lambda x: x if abs(x) > cut_off else '')
     
     return sorted_loadings_df
-
-# Sample Data (using a small part of the mtcars dataset for illustration)
-data = {
-    'mpg': [21, 21, 22.8, 21.4, 18.7, 18.1],
-    'cyl': [6, 6, 4, 6, 8, 6],
-    'disp': [160, 160, 108, 258, 360, 225],
-    'hp': [110, 110, 93, 110, 175, 105],
-    'drat': [3.9, 3.9, 3.85, 3.08, 3.15, 2.76]
-}
-df = pd.DataFrame(data)
 
 # Perform Factor Analysis
 fa = FactorAnalyzer(n_factors=2, rotation='varimax')
