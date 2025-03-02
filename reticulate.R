@@ -2,8 +2,8 @@ library(reticulate)
 system2("python", "--version")
 system2("R", "--version")
 
-# virtualenv_remove("pwd")
-# virtualenv_create("pwd")
+virtualenv_remove("pwd")
+virtualenv_create("pwd")
 use_virtualenv("pwd")
 
 py_install("numpy")
@@ -24,6 +24,8 @@ py_install("semopy")
 py_install("graphviz")
 py_install("factor_analyzer")
 py_install("rpy2")
+py_install("raven-gen")
+py_install("matrix")
 
 # Check Python configuration
 py_config()
@@ -31,8 +33,6 @@ py_config()
 # Use Python in R
 np <- import("numpy")
 array <- np$array(c(1, 2, 3))
-
-
 
 
 

@@ -79,7 +79,7 @@ def plot_scree(df, base_size=15, title="", color=("#5F2C91", "#5E912C")):
                   
     return plot
   
-scree_plot = plot_scree(df.iloc[:,1:10], base_size=15, title="")
+scree_plot = plot_scree(df, base_size=15, title="")
 scree_plot.show()
 ##########################################################################################
 # REPORT EFA
@@ -106,9 +106,7 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
                              index=df.columns,
                              columns=[f'Factor {i+1}' 
                              for i in range(loadings.shape[1])])
-    sorted_loadings = loadings_df.apply(lambda x: x.abs().sort_values(ascending=False).index)
-    pd.DataFrame({col: loadings_df[col].loc[sorted_loadings[col]] for col in loadings_df})
-    
+
     loadings_cut=df_loadings.apply(lambda x: x.map(lambda v: v if abs(v) > cut_off else ''))
     
   
@@ -139,44 +137,47 @@ report_efa(df)
 import pandas as pd
 import numpy as np
 from factor_analyzer import FactorAnalyzer
+import rpy2.robjects as ro
+from rpy2.robjects import pandas2ri
+from rpy2.robjects.packages import importr
 
-def sort_loadings(loadings, cut_off=0.3):
-    """
-    Sort factor loadings and apply cut-off value.
+# Activate pandas2ri
+pandas2ri.activate()
 
-    Parameters:
-    - loadings: numpy array of factor loadings
-    - cut_off: cut-off value to filter loadings
+# Import the psych package from R
+psych = importr('psych')
 
-    Returns:
-    - sorted_loadings_df: DataFrame of sorted and filtered loadings
-    """
-    # Create a DataFrame for loadings
-    loadings_df = pd.DataFrame(loadings, 
-                               columns=[f'Factor {i+1}' for i in range(loadings.shape[1])])
-
-    # Sort loadings by absolute value for each factor
-    sorted_loadings = loadings_df.apply(lambda x: x.abs().sort_values(ascending=False).index)
-
-    # Create a sorted DataFrame
-    sorted_loadings_df = pd.DataFrame({col: loadings_df[col].loc[sorted_loadings[col]] for col in loadings_df})
-
-    # Apply cut-off value
-    sorted_loadings_df = sorted_loadings_df.applymap(lambda x: x if abs(x) > cut_off else '')
-    
-    return sorted_loadings_df
+# Sample Data (using a small part of the mtcars dataset for illustration)
+data = {
+    'F1': [0.7, -0.4, 0.6, -0.8],
+    'F2': [0.5, -0.2, 0.8, -0.1],
+    'F3': [-0.3, 0.7, -0.1, 0.6]
+}
+df_loadings = pd.DataFrame(data, index=['Item 1', 'Item 2', 'Item 3', 'Item 4'])
 
 # Perform Factor Analysis
 fa = FactorAnalyzer(n_factors=2, rotation='varimax')
-fa.fit(df)
+fa.fit(df_loadings)
 
 # Get the loadings
 loadings = fa.loadings_
 
-# Sort and filter loadings
-sorted_loadings_df = sort_loadings(loadings, cut_off=0.3)
+# Convert loadings to DataFrame and prepare for R
+loadings_df = pd.DataFrame(loadings, 
+                           columns=[f'Factor {i+1}' for i in range(loadings.shape[1])],
+                           index=df_loadings.index)
 
-print("Sorted and Filtered Loadings (cut-off value = 0.3):")
+# Convert the loadings DataFrame to an R DataFrame
+loadings_r = pandas2ri.py2rpy(loadings_df)
+
+# Use the fa.sort function from the psych package in R
+sorted_loadings_r = psych.fa_sort(loadings_r)
+
+# Convert the sorted loadings back to a pandas DataFrame
+sorted_loadings_df = pandas2ri.rpy2py(sorted_loadings_r)
+
+# Display the sorted and filtered loadings
+print("Sorted and Filtered Loadings:")
 print(sorted_loadings_df)
 
 
