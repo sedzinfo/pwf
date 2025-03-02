@@ -18,42 +18,6 @@ from factor_analyzer import FactorAnalyzer,calculate_bartlett_sphericity,calcula
 from sklearn.decomposition import FactorAnalysis
 import numpy as np
 ##########################################################################################
-# 
-##########################################################################################
-df=pd.read_csv("C:/Users/dzach/Documents/GitHub/pwf/data/personality.csv")
-chi_square_value,p_value=calculate_bartlett_sphericity(df)
-kmo_all,kmo_model=calculate_kmo(df)
-kmo_variables=pd.DataFrame(list(zip(df.columns.to_list(),kmo_all)),columns=['Name','KMO'])
-
-fa=FactorAnalyzer(rotation=None)
-result=fa.fit(df)
-eigenvalues=fa.get_eigenvalues()
-communalities=fa.get_communalities()
-loadings=fa.loadings_
-factor_variance=fa.get_factor_variance()
-uniquinesses=fa.get_uniquenesses()
-sufficiency=fa.sufficiency(df.shape[0])
-fa.transform(df) # get factor scores for new dataset
-
-index=list(range(1,df.shape[1]+1))
-
-df_eigenvalues=pd.DataFrame({"index":index,"eigen1":eigenvalues[0],"eigen2":eigenvalues[1]})
-df_communalities=pd.DataFrame({"index":index,"communalities":communalities})
-df_uniqueness=pd.DataFrame({"index":index,"uniquinesses":uniquinesses})
-df_loadings=pd.DataFrame(loadings)
-df_loadings.insert(0,"index",index)
-df_factor_variance=pd.DataFrame(factor_variance)
-df_loadings=df_loadings.add_prefix("loading_")
-
-correlations=df.corr()
-residual_correlations=pd.DataFrame(np.dot(fa.loadings_,fa.loadings_.T))
-residual_correlations.columns=correlations.columns
-residual_correlations.index=correlations.index
-residuals=correlations.abs()-residual_correlations.abs()
-
-print(residuals)
-
-##########################################################################################
 # SCREE PLOT
 ##########################################################################################
 import pandas as pd
@@ -141,6 +105,9 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
                              index=df.columns,
                              columns=[f'Factor {i+1}' 
                              for i in range(loadings.shape[1])])
+    sorted_loadings = loadings_df.apply(lambda x: x.abs().sort_values(ascending=False).index)
+    pd.DataFrame({col: loadings_df[col].loc[sorted_loadings[col]] for col in loadings_df})
+    
     loadings_cut=df_loadings.apply(lambda x: x.map(lambda v: v if abs(v) > cut_off else ''))
     
   
@@ -154,17 +121,77 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
     df_uniqueness=pd.DataFrame({"index":index,"uniquinesses":uniquinesses})
     df_loadings.insert(0,"index",index)
     df_factor_variance=pd.DataFrame(factor_variance)
-    return df_eigenvalues,df_communalities,df_uniqueness,df_loadings,df_factor_variance
+    correlations=df.corr()
+    residual_correlations=pd.DataFrame(np.dot(fa.loadings_,fa.loadings_.T))
+    residual_correlations.columns=correlations.columns
+    residual_correlations.index=correlations.index
+    residuals=correlations.abs()-residual_correlations.abs()
+    
+    return (df_eigenvalues,df_communalities,
+            df_uniqueness,df_loadings,df_factor_variance,
+            residual_correlations,correlations,residuals)
   
 
+report_efa(df)
 
 
 
 
+##########################################################################################
+# SORT LOADINGS
+##########################################################################################
+import pandas as pd
+import numpy as np
+from factor_analyzer import FactorAnalyzer
 
+def sort_loadings(loadings, cut_off=0.3):
+    """
+    Sort factor loadings and apply cut-off value.
 
+    Parameters:
+    - loadings: numpy array of factor loadings
+    - cut_off: cut-off value to filter loadings
 
+    Returns:
+    - sorted_loadings_df: DataFrame of sorted and filtered loadings
+    """
+    # Create a DataFrame for loadings
+    loadings_df = pd.DataFrame(loadings, 
+                               columns=[f'Factor {i+1}' for i in range(loadings.shape[1])])
 
+    # Sort loadings by absolute value for each factor
+    sorted_loadings = loadings_df.apply(lambda x: x.abs().sort_values(ascending=False).index)
+
+    # Create a sorted DataFrame
+    sorted_loadings_df = pd.DataFrame({col: loadings_df[col].loc[sorted_loadings[col]] for col in loadings_df})
+
+    # Apply cut-off value
+    sorted_loadings_df = sorted_loadings_df.applymap(lambda x: x if abs(x) > cut_off else '')
+    
+    return sorted_loadings_df
+
+# Sample Data (using a small part of the mtcars dataset for illustration)
+data = {
+    'mpg': [21, 21, 22.8, 21.4, 18.7, 18.1],
+    'cyl': [6, 6, 4, 6, 8, 6],
+    'disp': [160, 160, 108, 258, 360, 225],
+    'hp': [110, 110, 93, 110, 175, 105],
+    'drat': [3.9, 3.9, 3.85, 3.08, 3.15, 2.76]
+}
+df = pd.DataFrame(data)
+
+# Perform Factor Analysis
+fa = FactorAnalyzer(n_factors=2, rotation='varimax')
+fa.fit(df)
+
+# Get the loadings
+loadings = fa.loadings_
+
+# Sort and filter loadings
+sorted_loadings_df = sort_loadings(loadings, cut_off=0.3)
+
+print("Sorted and Filtered Loadings (cut-off value = 0.3):")
+print(sorted_loadings_df)
 
 
 
