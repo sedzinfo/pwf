@@ -53,10 +53,6 @@ residuals=correlations.abs()-residual_correlations.abs()
 
 print(residuals)
 
-
-
-
-
 ##########################################################################################
 # SCREE PLOT
 ##########################################################################################
@@ -121,7 +117,7 @@ def plot_scree(df, base_size=15, title="", color=("#5F2C91", "#5E912C")):
 scree_plot = plot_scree(df.iloc[:,1:10], base_size=15, title="")
 scree_plot.show()
 ##########################################################################################
-# SCREE PLOT
+# REPORT EFA
 ##########################################################################################
 def report_efa(df,n_factors=3,rotation='promax',method='minres',
                use_smc=True,is_corr_matrix=False,bounds=(0.005, 1),
@@ -141,24 +137,23 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
     loadings=model.loadings_
     
     cut_off = 0.3
-    loadings_df = pd.DataFrame(loadings,
-                                     index=df.columns,
-                                     columns=[f'Factor {i+1}' 
-                                     for i in range(loadings.shape[1])])
-    loadings_cut =loadings_df.apply(lambda x: x.map(lambda v: v if abs(v) > cut_off else ''))
-    loadings_cut
+    df_loadings=pd.DataFrame(loadings,
+                             index=df.columns,
+                             columns=[f'Factor {i+1}' 
+                             for i in range(loadings.shape[1])])
+    loadings_cut=df_loadings.apply(lambda x: x.map(lambda v: v if abs(v) > cut_off else ''))
+    
   
     factor_variance=model.get_factor_variance()
     uniquinesses=model.get_uniquenesses()
     sufficiency=model.sufficiency(df.shape[0])
+    
     index=list(range(1,df.shape[1]+1))
     df_eigenvalues=pd.DataFrame({"index":index,"eigen1":eigenvalues[0],"eigen2":eigenvalues[1]})
     df_communalities=pd.DataFrame({"index":index,"communalities":communalities})
     df_uniqueness=pd.DataFrame({"index":index,"uniquinesses":uniquinesses})
-    df_loadings=pd.DataFrame(loadings)
     df_loadings.insert(0,"index",index)
     df_factor_variance=pd.DataFrame(factor_variance)
-    df_loadings=df_loadings.add_prefix("loading_")
     return df_eigenvalues,df_communalities,df_uniqueness,df_loadings,df_factor_variance
   
 
