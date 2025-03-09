@@ -15,48 +15,6 @@
 	},
 	"buffers":
 	[
-		{
-			"file": "/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/personal/pages.txt",
-			"settings":
-			{
-				"buffer_size": 1160,
-				"line_ending": "Windows"
-			}
-		},
-		{
-			"file": "/opt/repo/rworking/projects/crypto/code/cron.sh",
-			"settings":
-			{
-				"buffer_size": 111,
-				"line_ending": "Unix"
-			}
-		},
-		{
-			"file": "/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/reference/WIFI.txt",
-			"settings":
-			{
-				"buffer_size": 558,
-				"encoding": "UTF-8",
-				"line_ending": "Windows"
-			}
-		},
-		{
-			"file": "/home/dimitrios/Desktop/dentist.txt",
-			"settings":
-			{
-				"buffer_size": 103,
-				"encoding": "UTF-8",
-				"line_ending": "Unix"
-			}
-		},
-		{
-			"file": "/opt/repo/rworking/projects/ipip/notes.txt",
-			"settings":
-			{
-				"buffer_size": 285,
-				"line_ending": "Unix"
-			}
-		}
 	],
 	"build_system": "Packages/Python/Python.sublime-build",
 	"build_system_choices":
@@ -139,6 +97,11 @@
 	},
 	"file_history":
 	[
+		"/home/dimitrios/Desktop/dentist.txt",
+		"/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/reference/WIFI.txt",
+		"/opt/repo/rworking/projects/crypto/code/cron.sh",
+		"/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/personal/pages.txt",
+		"/opt/repo/rworking/projects/ipip/notes.txt",
 		"/opt/repo/rworking/projects/ipip/code/correlations_12_5_2020.R",
 		"/home/dimitrios/Desktop/correlation.html",
 		"/opt/repo/rworking/projects/pcentral/code/2022_03/knitr/pcentral_2022_3_knitr_report.R",
@@ -185,7 +148,6 @@
 		"/mnt/WD500/rstatistics/working_examples/MLR.R",
 		"/mnt/WD500/rstatistics/working_examples/sphericity.R",
 		"/mnt/WD500/rstatistics/working_examples/QAIG.R",
-		"/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/personal/pages.txt",
 		"/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/projects/questionnaire_selection/data/onet/excel/Read Me.txt",
 		"/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/projects/questionnaire_selection/data/onet/names_onet.txt",
 		"/home/dimitrios/.cache/.fr-v7JKbb/db_24_2_excel/Read Me.txt",
@@ -221,14 +183,12 @@
 		"/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/projects/ipip/code/data_dataverse.R",
 		"/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/projects/ipip/code/files.R",
 		"/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/projects/ipip/code/2020/neo_scales.R",
-		"/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/reference/WIFI.txt",
 		"/home/dimitrios/Desktop/server/notes.txt",
 		"/home/dimitrios/Desktop/server/ubuntu@34.248.35.183",
 		"/home/dimitrios/Desktop/prediction.R",
 		"/mnt/WD500/rstatistics/psycholatefunctions/DESCRIPTION",
 		"/home/dimitrios/Desktop/rsa",
 		"/mnt/WD500/rstatistics/3_45_.pdf",
-		"/home/dimitrios/Desktop/dentist.txt",
 		"/home/dimitrios/Desktop/anova_stats.R",
 		"/home/dimitrios/Desktop/Morticd10_part2",
 		"/home/dimitrios/Desktop/Morticd10_part1",
@@ -264,9 +224,7 @@
 		"/home/dimitrios/Desktop/index.html",
 		"/home/dimitrios/Desktop/shell/ram.sh",
 		"/mnt/WD500/rstatistics/rworking/personal/signature1.html",
-		"/home/dimitrios/Desktop/shell/utilization.sh",
-		"/mnt/WD500/public_rstatistics/modelsirt/DESCRIPTION",
-		"/mnt/WD500/public_rstatistics/snp/generate_package.R"
+		"/home/dimitrios/Desktop/shell/utilization.sh"
 	],
 	"find":
 	{
@@ -437,152 +395,6 @@
 		{
 			"sheets":
 			[
-				{
-					"buffer": 0,
-					"file": "/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/personal/pages.txt",
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 1160,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								1160,
-								1160
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/Text/Plain text.tmLanguage"
-						},
-						"translation.x": 0.0,
-						"translation.y": 0.0,
-						"zoom_level": 1.0
-					},
-					"stack_index": 1,
-					"stack_multiselect": false,
-					"type": "text"
-				},
-				{
-					"buffer": 1,
-					"file": "/opt/repo/rworking/projects/crypto/code/cron.sh",
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 111,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								111,
-								111
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/ShellScript/Bash.sublime-syntax"
-						},
-						"translation.x": 0.0,
-						"translation.y": 0.0,
-						"zoom_level": 1.0
-					},
-					"stack_index": 2,
-					"stack_multiselect": false,
-					"type": "text"
-				},
-				{
-					"buffer": 2,
-					"file": "/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/reference/WIFI.txt",
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 558,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								8,
-								8
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/Text/Plain text.tmLanguage"
-						},
-						"translation.x": 0.0,
-						"translation.y": 0.0,
-						"zoom_level": 1.0
-					},
-					"stack_index": 3,
-					"stack_multiselect": false,
-					"type": "text"
-				},
-				{
-					"buffer": 3,
-					"file": "/home/dimitrios/Desktop/dentist.txt",
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 103,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								0,
-								0
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/Text/Plain text.tmLanguage"
-						},
-						"translation.x": 0.0,
-						"translation.y": 0.0,
-						"zoom_level": 1.0
-					},
-					"stack_index": 4,
-					"stack_multiselect": false,
-					"type": "text"
-				},
-				{
-					"buffer": 4,
-					"file": "/opt/repo/rworking/projects/ipip/notes.txt",
-					"selected": true,
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 285,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								285,
-								285
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/Text/Plain text.tmLanguage"
-						},
-						"translation.x": 0.0,
-						"translation.y": 0.0,
-						"zoom_level": 1.0
-					},
-					"stack_index": 0,
-					"stack_multiselect": false,
-					"type": "text"
-				}
 			]
 		}
 	],
