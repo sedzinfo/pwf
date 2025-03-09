@@ -4,14 +4,22 @@ Created on Thu Oct 19 11:45:39 2017
 @author: Dimitrios Zacharatos
 """
 ##########################################################################################
+# LOAD SYSTEM
+##########################################################################################
+import os
+import sys
+import numpy as np
+import pandas as pd
+
+path_script = os.getcwd()
+path_root = path_script.replace('\\functions', '')
+
+sys.path.insert(1,file_path)
+from __init__ import *
+from functions import *
+##########################################################################################
 # LOAD
 ##########################################################################################
-import sys
-import os
-
-sys.path.insert(1,'C://Users//dzach//Documents//GitHub//pwf//functions')
-from __init__ import *
-sys.path.insert(1,'/opt/pyrepo/functions/functions.py')
 import pandas as pd
 import matplotlib.pyplot as plt
 from factor_analyzer import FactorAnalyzer,calculate_bartlett_sphericity,calculate_kmo
@@ -131,54 +139,6 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
             residual_correlations,correlations,residuals)
   
 report_efa(df)
-##########################################################################################
-# SORT LOADINGS
-##########################################################################################
-import pandas as pd
-import numpy as np
-from factor_analyzer import FactorAnalyzer
-import rpy2.robjects as ro
-from rpy2.robjects import pandas2ri
-from rpy2.robjects.packages import importr
-
-# Activate pandas2ri
-pandas2ri.activate()
-
-# Import the psych package from R
-psych = importr('psych')
-
-# Sample Data (using a small part of the mtcars dataset for illustration)
-data = {
-    'F1': [0.7, -0.4, 0.6, -0.8],
-    'F2': [0.5, -0.2, 0.8, -0.1],
-    'F3': [-0.3, 0.7, -0.1, 0.6]
-}
-df_loadings = pd.DataFrame(data, index=['Item 1', 'Item 2', 'Item 3', 'Item 4'])
-
-# Perform Factor Analysis
-fa = FactorAnalyzer(n_factors=2, rotation='varimax')
-fa.fit(df_loadings)
-
-# Get the loadings
-loadings = fa.loadings_
-
-# Convert loadings to DataFrame and prepare for R
-loadings_df = pd.DataFrame(loadings, 
-                           columns=[f'Factor {i+1}' for i in range(loadings.shape[1])],
-                           index=df_loadings.index)
-
-# Convert the loadings DataFrame to an R DataFrame
-loadings_r = pandas2ri.py2rpy(loadings_df)
-
-# Use the fa.sort function from the psych package in R
-sorted_loadings_r = psych.fa_sort(loadings_r)
-
-# Convert the sorted loadings back to a pandas DataFrame
-sorted_loadings_df = pandas2ri.rpy2py(sorted_loadings_r)
-
-# Display the sorted and filtered loadings
-print("Sorted and Filtered Loadings:")
-print(sorted_loadings_df)
 
 
 

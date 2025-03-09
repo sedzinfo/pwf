@@ -5,15 +5,16 @@ Created on Wed Oct 25 14:32:36 2017
 @author: Dimitrios Zacharatos
 """
 ##########################################################################################
-# LOAD
+# LOAD SYSTEM
 ##########################################################################################
+import os
 import sys
 import numpy as np
 import pandas as pd
-import rpy2.robjects as robjects
-get_path = robjects.r('rstudioapi::getActiveDocumentContext()$path')
-file_path = str(get_path[0]).replace(os.path.basename(str(get_path[0])),"").rstrip("/")
-file_directory = os.path.dirname(file_path) or os.getcwd()
+
+path_script = os.getcwd()
+path_root = path_script.replace('\\functions', '')
+
 sys.path.insert(1,file_path)
 from __init__ import *
 from functions import *

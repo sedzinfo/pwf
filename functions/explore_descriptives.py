@@ -5,12 +5,19 @@ Created on Mon Dec  4 17:05:57 2017
 @author: Dimitrios Zacharatos
 """
 ##########################################################################################
-# LOAD
+# LOAD SYSTEM
 ##########################################################################################
+import os
 import sys
-file_directory = os.path.dirname(file_path) or os.getcwd()
-sys.path.insert(1,file_directory+'\\functions')
+import numpy as np
+import pandas as pd
+
+path_script = os.getcwd()
+path_root = path_script.replace('\\functions', '')
+
+sys.path.insert(1,file_path)
 from __init__ import *
+from functions import *
 ##########################################################################################
 # 
 ##########################################################################################

@@ -4,17 +4,27 @@ Created on Wed Oct 17 16:17:36 2018
 @author: Dimitrios Zacharatos
 """
 ##########################################################################################
+# LOAD SYSTEM
+##########################################################################################
+import os
+import sys
+import numpy as np
+import pandas as pd
+
+path_script = os.getcwd()
+path_root = path_script.replace('\\functions', '')
+
+sys.path.insert(1,file_path)
+from __init__ import *
+from functions import *
+##########################################################################################
 # LOAD
 ##########################################################################################
-import sys
-file_directory = os.path.dirname(file_path) or os.getcwd()
-sys.path.insert(1,file_directory+'\\functions')
-from __init__ import *
 from plotnine import ggplot, aes, geom_histogram, geom_qq, geom_qq_line, geom_boxplot
 from plotnine import theme_bw, theme, labs, facet_wrap, coord_flip, ggsave
 from scipy import stats
-personality=pd.read_csv(file_directory+"\\data\\personality.csv")
-titanic=pd.read_csv(file_directory+"\\data\\titanic.csv")
+personality=pd.read_csv(path_root+"\\data\\personality.csv")
+titanic=pd.read_csv(path_root+"\\data\\titanic.csv")
 ##########################################################################################
 # PLOT HISTOGRAM
 ##########################################################################################

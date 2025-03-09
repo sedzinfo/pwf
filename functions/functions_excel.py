@@ -4,11 +4,19 @@ Created on Thu Oct 19 11:45:39 2017
 @author: Dimitrios Zacharatos
 """
 ##########################################################################################
-# LOAD
+# LOAD SYSTEM
 ##########################################################################################
+import os
 import sys
-sys.path.insert(1,'/opt/pyrepo/functions/')
+import numpy as np
+import pandas as pd
+
+path_script = os.getcwd()
+path_root = path_script.replace('\\functions', '')
+
+sys.path.insert(1,file_path)
 from __init__ import *
+from functions import *
 ##########################################################################################
 # COLUMN WIDTHS
 ##########################################################################################

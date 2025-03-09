@@ -102,6 +102,3 @@ gp.show()
 # ggsave(plot=result,filename="correlation.svg",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)
 
 
-script_directory = os.path.dirname(os.path.abspath(__file__))
-print(f"The script is saved in: {script_directory}")
-

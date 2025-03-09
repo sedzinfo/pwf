@@ -4,6 +4,20 @@ Created on Thu Oct 19 12:20:38 2017
 @author: Dimitrios Zacharatos
 """
 ##########################################################################################
+# LOAD SYSTEM
+##########################################################################################
+import os
+import sys
+import numpy as np
+import pandas as pd
+
+path_script = os.getcwd()
+path_root = path_script.replace('\\functions', '')
+
+sys.path.insert(1,file_path)
+from __init__ import *
+from functions import *
+##########################################################################################
 # LOAD
 ##########################################################################################
 import numpy as np
