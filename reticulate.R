@@ -30,6 +30,7 @@ py_install("graphviz")
 py_install("factor_analyzer")
 py_install("raven-gen")
 py_install("matrix")
+py_install("nltk")
 
 # Check Python configuration
 py_config()

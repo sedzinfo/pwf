@@ -7,12 +7,12 @@ Created on Thu Oct 26 17:20:31 2017
 ##########################################################################################
 # LOAD
 ##########################################################################################
+import os
 import sys
-import rpy2.robjects as robjects
-get_path = robjects.r('rstudioapi::getActiveDocumentContext()$path')
-file_path = str(get_path[0]).replace(os.path.basename(str(get_path[0])),"").rstrip("/")
-file_directory = os.path.dirname(file_path) or os.getcwd()
-sys.path.insert(1,file_path)
+path_script = os.getcwd()
+path_root = path_script.replace('\\functions', '')
+
+sys.path.insert(1,path_script)
 
 import pandas as pd
 import numpy as np
@@ -35,5 +35,8 @@ df_insurance=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-sets
 df_responses=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-sets/master/responses.csv")
 df_responses_state=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-sets/master/responses_state.csv")
 df_sexual_comp=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-sets/master/sexual_comp.csv")
-df_personality=pd.read_csv(file_directory+"/data/personality.csv")
-df_titanic=pd.read_csv(file_directory+"/data/titanic.csv")
+df_personality=pd.read_csv(path_root+"/data/personality.csv")
+df_titanic=pd.read_csv(path_root+"/data/titanic.csv")
+
+
+os.path.dirname(os.path.abspath(__name__))
