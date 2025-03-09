@@ -3,6 +3,9 @@
 ################################################################################
 library(reticulate)
 directory<-paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/")
+py_run_string(paste0("directory = '", directory, "'"))
+
+
 
 system2("python", "--version")
 system2("R", "--version")

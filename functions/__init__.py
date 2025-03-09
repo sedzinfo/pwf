@@ -9,6 +9,7 @@ Created on Thu Oct 26 17:20:31 2017
 ##########################################################################################
 import os
 import sys
+
 path_script = os.getcwd()
 path_root = path_script.replace('\\functions', '')
 
