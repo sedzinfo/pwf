@@ -1,10 +1,15 @@
+################################################################################
+# LOAD
+################################################################################
 library(reticulate)
+directory<-paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/")
+
 system2("python", "--version")
 system2("R", "--version")
 
-virtualenv_remove("pwd")
-virtualenv_create("pwd")
-use_virtualenv("pwd")
+# virtualenv_remove(paste0(directory,"venvironment/"))
+# virtualenv_create(paste0(directory,"venvironment/"))
+use_virtualenv(paste0(directory,"venvironment/"))
 
 py_install("numpy")
 py_install("pandas")
@@ -35,3 +40,4 @@ array <- np$array(c(1, 2, 3))
 
 
 
+Sys.getenv()

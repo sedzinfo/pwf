@@ -9,17 +9,16 @@ Created on Wed Oct 17 16:17:36 2018
 import os
 import sys
 
-import rpy2.robjects as robjects
-get_path = robjects.r('rstudioapi::getActiveDocumentContext()$path')
-file_path = str(get_path[0]).replace(os.path.basename(str(get_path[0])),"").rstrip("/")
-file_directory = os.path.dirname(file_path) or os.getcwd()
+path_script = os.getcwd()
+path_root = path_script.replace('\\functions', '')
 
-sys.path.insert(1,file_directory+'/functions')
+sys.path.insert(1,path_script)
 from __init__ import *
 from plotnine import ggplot, aes, scale_x_discrete, scale_y_discrete
 from plotnine import geom_tile, geom_text, scale_fill_gradient2, theme_bw, theme, ggsave
 from plotnine import element_text, element_blank
 import matplotlib.pyplot as plt
+import pandas as pd
 ##########################################################################################
 # PLOT CORRPLOT
 ##########################################################################################
@@ -92,8 +91,8 @@ def plot_corrplot(df,base_size=15):
 ##########################################################################################
 # 
 ##########################################################################################
-personality=pd.read_csv(file_directory+"/data/personality.csv")
-titanic=pd.read_csv(file_directory+"/data/titanic.csv")
+personality=pd.read_csv(path_root+"/data/personality.csv")
+titanic=pd.read_csv(path_root+"/data/titanic.csv")
 gp=plot_corrplot(personality.iloc[:,1:20].corr(),base_size=5)
 gp.show()
 
@@ -102,4 +101,7 @@ gp.show()
 # ggsave(plot=result,filename="correlation.jpg",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)
 # ggsave(plot=result,filename="correlation.svg",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)
 
+
+script_directory = os.path.dirname(os.path.abspath(__file__))
+print(f"The script is saved in: {script_directory}")
 
