@@ -11,8 +11,8 @@ import sys
 import numpy as np
 import pandas as pd
 
-path_script = os.getcwd()
-path_root = path_script.replace('\\functions', '')
+path_script=os.getcwd()
+path_root=path_script.replace('\\functions','')
 
 sys.path.insert(1,file_path)
 from __init__ import *
@@ -20,8 +20,8 @@ from functions import *
 ##########################################################################################
 # LOAD
 ##########################################################################################
-from plotnine import ggplot, aes, geom_histogram, geom_qq, geom_qq_line, geom_boxplot
-from plotnine import theme_bw, theme, labs, facet_wrap, coord_flip, ggsave
+from plotnine import ggplot,aes,geom_histogram,geom_qq,geom_qq_line,geom_boxplot
+from plotnine import theme_bw,theme,labs,facet_wrap,coord_flip,ggsave
 from scipy import stats
 personality=pd.read_csv(path_root+"\\data\\personality.csv")
 titanic=pd.read_csv(path_root+"\\data\\titanic.csv")
@@ -82,41 +82,41 @@ import pandas as pd
 import seaborn as sns
 from scipy import stats
 
-def plot_normality_diagnostics(df, breaks='sturges', title='', file=None, w=10, h=10):
+def plot_normality_diagnostics(df,breaks='sturges',title='',file=None,w=10,h=10):
     def string_aes(name):
         return str(name)
     
-    data_name = df.columns if isinstance(df, pd.DataFrame) else 'data'
-    df = pd.DataFrame(df)
-    df = df.select_dtypes(include=[np.number])
-    if df.shape[1] == 1:
-        df.columns = [data_name]
+    data_name=df.columns if isinstance(df,pd.DataFrame) else 'data'
+    df=pd.DataFrame(df)
+    df=df.select_dtypes(include=[np.number])
+    if df.shape[1]==1:
+        df.columns=[data_name]
 
-    num_plots = len(df.columns)
-    fig, axes = plt.subplots(num_plots, 4, figsize=(w, h * num_plots))
+    num_plots=len(df.columns)
+    fig,axes=plt.subplots(num_plots,4,figsize=(w,h * num_plots))
 
-    for i, col in enumerate(df.columns):
-        vector = df[col].dropna()
+    for i,col in enumerate(df.columns):
+        vector=df[col].dropna()
 
         if len(vector) > 2 and np.var(vector) != 0:
-            sns.histplot(vector, bins=breaks, kde=False, ax=axes[i, 0])
-            axes[i, 0].set_title('Histogram')
+            sns.histplot(vector,bins=breaks,kde=False,ax=axes[i,0])
+            axes[i,0].set_title('Histogram')
 
-            sns.kdeplot(vector, ax=axes[i, 1])
-            axes[i, 1].set_title('Density Function')
+            sns.kdeplot(vector,ax=axes[i,1])
+            axes[i,1].set_title('Density Function')
 
-            sns.boxplot(x=vector, ax=axes[i, 2])
-            axes[i, 2].set_title('Boxplot')
+            sns.boxplot(x=vector,ax=axes[i,2])
+            axes[i,2].set_title('Boxplot')
 
-            stats.probplot(vector, dist="norm", plot=axes[i, 3])
-            axes[i, 3].get_lines()[1].set_color('red')
-            axes[i, 3].set_title('QQ Plot')
+            stats.probplot(vector,dist="norm",plot=axes[i,3])
+            axes[i,3].get_lines()[1].set_color('red')
+            axes[i,3].set_title('QQ Plot')
 
-            axes[i, 0].set_xlabel('')
-            axes[i, 1].set_xlabel('')
-            axes[i, 2].set_xlabel('')
+            axes[i,0].set_xlabel('')
+            axes[i,1].set_xlabel('')
+            axes[i,2].set_xlabel('')
 
-            fig.suptitle(title, y=1.05)
+            fig.suptitle(title,y=1.05)
             plt.subplots_adjust(hspace=0.4)
 
             if file:
@@ -127,10 +127,10 @@ def plot_normality_diagnostics(df, breaks='sturges', title='', file=None, w=10, 
     plt.show()
 
 # Example usage:
-vector = np.random.normal(size=1000)
-df = pd.DataFrame(np.random.normal(size=(1000, 2)), columns=['A', 'B'])
-plot_normality_diagnostics(vector, title="Normality Diagnostics", breaks=30, file="normality_diagnostics.png")
-plot_normality_diagnostics(df, title="Normality Diagnostics")
+vector=np.random.normal(size=1000)
+df=pd.DataFrame(np.random.normal(size=(1000,2)),columns=['A','B'])
+plot_normality_diagnostics(vector,title="Normality Diagnostics",breaks=30,file="normality_diagnostics.png")
+plot_normality_diagnostics(df,title="Normality Diagnostics")
 ##########################################################################################
 # OUTLIERS
 ##########################################################################################
@@ -138,15 +138,15 @@ import numpy as np
 import pandas as pd
 
 def outlier_summary(vector):
-    zvariable = (vector - np.mean(vector)) / np.std(vector)
-    outlier95 = np.abs(zvariable) >= 1.96
-    outlier99 = np.abs(zvariable) >= 2.58
-    outlier999 = np.abs(zvariable) >= 3.29
-    ncases = len(vector[~np.isnan(zvariable)])
-    percent95 = round(100 * len(outlier95[outlier95 == True]) / ncases, 2)
-    percent99 = round(100 * len(outlier99[outlier99 == True]) / ncases, 2)
-    percent999 = round(100 * len(outlier999[outlier999 == True]) / ncases, 2)
-    result = pd.DataFrame({
+    zvariable=(vector - np.mean(vector)) / np.std(vector)
+    outlier95=np.abs(zvariable) >= 1.96
+    outlier99=np.abs(zvariable) >= 2.58
+    outlier999=np.abs(zvariable) >= 3.29
+    ncases=len(vector[~np.isnan(zvariable)])
+    percent95=round(100 * len(outlier95[outlier95==True]) / ncases,2)
+    percent99=round(100 * len(outlier99[outlier99==True]) / ncases,2)
+    percent999=round(100 * len(outlier999[outlier999==True]) / ncases,2)
+    result=pd.DataFrame({
         'abs_z_1.96': [f"{percent95}%"],
         'abs_z_2.58': [f"{percent99}%"],
         'abs_z_3.29': [f"{percent999}%"]
@@ -154,27 +154,27 @@ def outlier_summary(vector):
     return result
 
 # Example usage:
-vector = np.random.normal(size=1000)
+vector=np.random.normal(size=1000)
 outlier_summary(vector)
 ##########################################################################################
 # OUTLIERS
 ##########################################################################################
 import numpy as np
 
-def remove_outliers(vector, probs=[0.25, 0.75], na_rm=True, **kwargs):
-    qnt = np.quantile(vector, probs)
-    H = 1.5 * (qnt[1] - qnt[0])
-    y = np.copy(vector)
+def remove_outliers(vector,probs=[0.25,0.75],na_rm=True,**kwargs):
+    qnt=np.quantile(vector,probs)
+    H=1.5 * (qnt[1] - qnt[0])
+    y=np.copy(vector)
     if na_rm:
-        y[vector < (qnt[0] - H)] = np.nan
-        y[vector > (qnt[1] + H)] = np.nan
+        y[vector < (qnt[0] - H)]=np.nan
+        y[vector > (qnt[1] + H)]=np.nan
     else:
-        y = vector[(vector >= (qnt[0] - H)) & (vector <= (qnt[1] + H))]
+        y=vector[(vector >= (qnt[0] - H)) & (vector <= (qnt[1] + H))]
     return y
 
 # Example usage:
-vector = np.random.normal(size=1000)
-clean_vector = remove_outliers(vector)
+vector=np.random.normal(size=1000)
+clean_vector=remove_outliers(vector)
 print(clean_vector)
 
 

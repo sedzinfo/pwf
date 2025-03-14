@@ -3,16 +3,15 @@
 ################################################################################
 library(reticulate)
 directory<-paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/")
-py_run_string(paste0("directory = '", directory, "'"))
-
-
+reticulate::py_run_string(paste0("path_script = '", directory, "'"))
 
 system2("python", "--version")
 system2("R", "--version")
+reticulate::py_config()
 
-# virtualenv_remove(paste0(directory,"venvironment/"))
-# virtualenv_create(paste0(directory,"venvironment/"))
-use_virtualenv(paste0(directory,"venvironment/"))
+# reticulate::virtualenv_remove(paste0(directory,"venvironment/"))
+# reticulate::virtualenv_create(paste0(directory,"venvironment/"))
+# reticulate::use_virtualenv(paste0(directory,"venvironment/"))
 
 py_install("numpy")
 py_install("pandas")
@@ -34,9 +33,6 @@ py_install("factor_analyzer")
 py_install("raven-gen")
 py_install("matrix")
 py_install("nltk")
-
-# Check Python configuration
-py_config()
 
 # Use Python in R
 np <- import("numpy")

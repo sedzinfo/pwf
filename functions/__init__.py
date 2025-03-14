@@ -11,7 +11,14 @@ import os
 import sys
 
 path_script = os.getcwd()
-path_root = path_script.replace('\\functions', '')
+
+# path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+if(path_script.find('functions')==-1):
+  path_script=path_script+"\\GitHub\\pwf\\functions"
+
+path_root=path_script.replace('\\functions', '')
+os.chdir(path_script)
 
 sys.path.insert(1,path_script)
 
@@ -38,6 +45,3 @@ df_responses_state=pd.read_csv("https://raw.githubusercontent.com/researchpy/Dat
 df_sexual_comp=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-sets/master/sexual_comp.csv")
 df_personality=pd.read_csv(path_root+"/data/personality.csv")
 df_titanic=pd.read_csv(path_root+"/data/titanic.csv")
-
-
-os.path.dirname(os.path.abspath(__name__))

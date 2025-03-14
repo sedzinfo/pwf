@@ -13,7 +13,6 @@ path_script = os.getcwd()
 path_root = path_script.replace('\\functions', '')
 
 sys.path.insert(1,path_script)
-from __init__ import *
 from plotnine import ggplot, aes, scale_x_discrete, scale_y_discrete
 from plotnine import geom_tile, geom_text, scale_fill_gradient2, theme_bw, theme, ggsave
 from plotnine import element_text, element_blank
