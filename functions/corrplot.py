@@ -25,7 +25,7 @@ import pandas as pd
 ##########################################################################################
 # PLOT CORRPLOT
 ##########################################################################################
-def plot_corrplot(df,base_size=15):
+def plot_corrplot(df,base_size=15,title=""):
     """
     Generate a correlation plot using `plotnine` (ggplot2-like syntax) to visualize correlations in a given DataFrame.
 
@@ -65,6 +65,7 @@ def plot_corrplot(df,base_size=15):
     This will generate a plot showing the correlation between columns 'A', 'B', and 'C'.
     """
 
+    row_count=len(df)
     df.insert(0,"index",df.columns)
     variables=list(df["index"])
     df=df.melt(id_vars="index")
@@ -77,6 +78,7 @@ def plot_corrplot(df,base_size=15):
         + geom_tile(color="white")
         + geom_text(aes(y="index",x="variable",label="value"),color="black",size=base_size)
         + scale_fill_gradient2(low="#ffbe00",mid="#ffffff",high="#0092ff",limits=[-1,1])
+        + labs(title=title,caption=f"Number of Variables: {row_count}")
         + theme_bw(base_size=base_size)
         + theme(axis_text_x=element_text(angle=-45,vjust=1,hjust=0),
                 axis_title_x=element_blank(),
@@ -94,13 +96,13 @@ def plot_corrplot(df,base_size=15):
 ##########################################################################################
 # 
 ##########################################################################################
-personality=pd.read_csv(path_root+"/data/personality.csv")
-titanic=pd.read_csv(path_root+"/data/titanic.csv")
-gp=plot_corrplot(personality.iloc[:,1:20].corr(),base_size=5)
+df=personality=pd.read_csv(path_root+"/data/personality.csv")
+gp=plot_corrplot(personality.iloc[:,1:20].corr(),base_size=5,title="Personality")
 gp.show()
-
 
 output_path = os.path.join(path_root, "output")
 os.makedirs(output_path, exist_ok=True)
 
-gp.save(filename="correlation.png", path=output_path, width=10, height=10, units="cm", dpi=1200)
+gp.save(filename="correlation.png", path=output_path, width=20, height=20, units="cm", dpi=1200)
+
+
