@@ -11,21 +11,13 @@ import os
 import sys
 
 path_script = os.getcwd()
-
 # path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-
 if(path_script.find('functions')==-1):
   path_script=path_script+"\\GitHub\\pwf\\functions"
-
 path_root=path_script.replace('\\functions', '')
 os.chdir(path_script)
 
 sys.path.insert(1,path_script)
-
-import pandas as pd
-import numpy as np
-import xlsxwriter
-from plotnine import *
 
 from functions import *
 from functions_check_dataframe import *

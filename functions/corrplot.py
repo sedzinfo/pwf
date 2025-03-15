@@ -10,7 +10,11 @@ import os
 import sys
 
 path_script = os.getcwd()
-path_root = path_script.replace('\\functions', '')
+# path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if(path_script.find('functions')==-1):
+  path_script=path_script+"\\GitHub\\pwf\\functions"
+path_root=path_script.replace('\\functions', '')
+os.chdir(path_script)
 
 sys.path.insert(1,path_script)
 from plotnine import ggplot, aes, scale_x_discrete, scale_y_discrete
@@ -95,9 +99,8 @@ titanic=pd.read_csv(path_root+"/data/titanic.csv")
 gp=plot_corrplot(personality.iloc[:,1:20].corr(),base_size=5)
 gp.show()
 
-# ggsave(plot=result,filename="correlation.png",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)
-# ggsave(plot=result,filename="correlation.pdf",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)
-# ggsave(plot=result,filename="correlation.jpg",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)
-# ggsave(plot=result,filename="correlation.svg",path="/opt/pyrepo/output",width=10,height=10,units="in",dpi=1200)
 
+output_path = os.path.join(path_root, "output")
+os.makedirs(output_path, exist_ok=True)
 
+gp.save(filename="correlation.png", path=output_path, width=10, height=10, units="cm", dpi=1200)
