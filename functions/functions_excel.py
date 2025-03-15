@@ -12,9 +12,13 @@ import numpy as np
 import pandas as pd
 
 path_script = os.getcwd()
-path_root = path_script.replace('\\functions', '')
+# path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if(path_script.find('functions')==-1):
+  path_script=path_script+"\\GitHub\\pwf\\functions"
+path_root=path_script.replace('\\functions', '')
+os.chdir(path_script)
 
-sys.path.insert(1,file_path)
+sys.path.insert(1,path_script)
 from __init__ import *
 from functions import *
 ##########################################################################################
@@ -36,13 +40,14 @@ def get_col_widths(df):
     # First we find the maximum length of the index column
     idx_max=max([len(str(s)) for s in df.index.values]+[len(str(df.index.name))])
     # Then, we concatenate this to the max of the lengths of column name and its values for each column, left to right
-    return [idx_max]+[max([len(str(s)) for s in df[col].values]+[len(col)]) for col in df.columns]
+    result=[idx_max]+[max([len(str(s)) for s in df[col].values]+[len(col)]) for col in df.columns]
+    return result
 ##########################################################################################
 # GENERIC FORMAT EXCEL
 ##########################################################################################
-def generic_format_excel(df,writer,sheetname,comment=""):
+def generic_format_excel(df,writer,sheetname,comments=None):
     """
-    Writes the provided data to an Excel file using the given writer object and applies formatting to the worksheet.
+    Writes data to an Excel file.
 
     Args:
         df (pandas.DataFrame): The data to be written to the Excel file.
@@ -55,29 +60,37 @@ def generic_format_excel(df,writer,sheetname,comment=""):
 
     Notes:
         - The function uses the `to_excel` method of the `df` DataFrame to write the data to the Excel file.
-        - It retrieves the worksheet object corresponding to the specified sheetname from the writer object.
-        - The function freezes the panes in the worksheet at the first row and column (1, 1).
-        - If a non-empty comment is provided, it is written to cell A1 in the worksheet.
-        - The function iterates over each column in the DataFrame and sets the width of the corresponding column in the worksheet.
+        - It retrieves the sheet object corresponding to the specified sheetname from the writer object.
+        - The function freezes the panes in the sheet at the first row and column (1, 1).
+        - If a non-empty comment is provided, it is written to cell A1 in the sheet.
+        - The function iterates over each column in the DataFrame and sets the width of the corresponding column in the sheet.
         - The column widths are determined by the `get_col_widths` function, which should be defined elsewhere.
 
     """
     df.to_excel(writer,sheetname)
-    worksheet=writer.sheets[sheetname]
-    worksheet.freeze_panes(1,1)
-    if len(comment)>0:
-        worksheet.write_comment('A1',comment)
+    sheet=writer.sheets[sheetname]
+    sheet.freeze_panes(1,1)
+    if comments:
+       for cell, comment in comments.items():
+            sheet.write_comment(cell, comment)
     for i, width in enumerate(get_col_widths(df)):
-        worksheet.set_column(i,i,width)
-# writer_generic_format_excel=pd.ExcelWriter('/opt/pyrepo/output/xlsxwriter_generic_format_excel.xlsx',engine='xlsxwriter')
-# import pandas as pd
-# personality=pd.read_csv("/opt/pyrepo/data/personality.csv")
-# generic_format_excel(personality,writer_generic_format_excel,"sheet name","test general comment")
-# writer_generic_format_excel._save()
+        sheet.set_column(i,i,width)
+
+# personality=pd.read_csv(path_root+"/data/personality.csv")
+# output_file=path_root+'/output/generic.xlsx'
+# if os.path.exists(output_file):
+#     os.remove(output_file)
+# ge=pd.ExcelWriter(output_file,engine='xlsxwriter')
+# comments = {'A1': "This is a general comment for the sheet.",
+#             'A2': "This cell contains important data."}
+# generic_format_excel(df=personality,writer=ge,sheetname="ge",comments=comments)
+# ge._save()
+# ge.close()
+# os.remove(output_file)
 ##########################################################################################
 # MATRIX EXCEL
 ##########################################################################################
-def matrix_excel(df,writer,sheetname,comment=""):
+def matrix_excel(df,writer,sheetname,comments=None):
     """
     Writes data to an Excel file using the given writer object and formats the sheet.
 
@@ -94,22 +107,35 @@ def matrix_excel(df,writer,sheetname,comment=""):
         - The function uses the `to_excel` method of the `df` DataFrame to write the data to the Excel file.
         - The sheet is formatted with frozen panes, where the first row and column are frozen.
         - If a comment is provided, it is added to cell A1 in the sheet.
-        - The function also adjusts the column widths based on the data in `mydata` using the `set_column` method of the worksheet.
+        - The function also adjusts the column widths based on the data in `mydata` using the `set_column` method of the sheet.
 
     """
-    generic_format_excel(df,writer,sheetname,comment)
-    worksheet=writer.sheets[sheetname]
+    df.to_excel(writer,sheetname)
+    sheet=writer.sheets[sheetname]
+    sheet.freeze_panes(1,1)
+    # Add comments to cells if provided
+    if comments:
+        for cell, comment in comments.items():
+            sheet.write_comment(cell, comment)
     dimensions=np.array(df.shape)
-    worksheet.conditional_format(1,1,dimensions[0],dimensions[1], {'type': '2_color_scale'})
-# writer_matrix_excel=pd.ExcelWriter('/opt/pyrepo/output/xlsxwriter_matrix_excel.xlsx',engine='xlsxwriter')
-# import pandas as pd
-# personality=pd.read_csv("/opt/pyrepo/data/personality.csv")
-# matrix_excel(personality,writer_matrix_excel,"sheet name","test general comment")
-# writer_matrix_excel._save()
+    sheet.conditional_format(1,1,dimensions[0],dimensions[1], {'type': '2_color_scale', 'min_color': 'yellow', 'max_color': 'green'})
+
+# personality=pd.read_csv(path_root+"/data/personality.csv")
+# df=personality_cor=pd.DataFrame(personality.corr())
+# output_file=path_root+'/output/matrix.xlsx'
+# if os.path.exists(output_file):
+#     os.remove(output_file)
+# me=pd.ExcelWriter(output_file,engine='xlsxwriter')
+# comments={'A1': "This is a general comment for the sheet.",
+#           'B2': "This cell contains important data."}
+# matrix_excel(df=personality_cor,writer=me,sheetname="me",comments=comments)
+# me._save()
+# me.close()
+# os.remove(output_file)
 ##########################################################################################
 # CRITICAL VALUE EXCEL
 ##########################################################################################
-def critical_value_excel(df,writer,sheetname,comment="",critical_collumn="",rule="<",value=""):
+def critical_value_excel(df,writer,sheetname,comments="",critical_collumn="",rule="<",value=""):
     """
     Writes data to an Excel file using the given writer object and applies conditional formatting to the specified column.
 
@@ -125,23 +151,94 @@ def critical_value_excel(df,writer,sheetname,comment="",critical_collumn="",rule
     Notes:
         - The function uses the `to_excel` method of the `mydata` DataFrame to write the data to the Excel file.
         - The function assumes that the writer object has an associated workbook.
-        - The function retrieves the worksheet object corresponding to the specified sheetname.
+        - The function retrieves the sheet object corresponding to the specified sheetname.
         - It creates a format object with a red fill color and adds it to the workbook.
         - The dimensions of the `mydata` DataFrame are used to determine the range for conditional formatting.
         - If a `rule` is provided, the function applies conditional formatting to the specified critical column.
         - The formatting is applied based on the `rule`, `value`, and `format_red_fill` parameters.
 
     """
-    generic_format_excel(df,writer,sheetname,comment)
+    generic_format_excel(df,writer,sheetname,comments)
     workbook=writer.book
-    worksheet=writer.sheets[sheetname]
+    sheet=writer.sheets[sheetname]
     format_red_fill=workbook.add_format()
     format_red_fill.set_bg_color('red')
     dimensions=np.array(df.shape)
     if len(rule)>0:
-        worksheet.conditional_format(1,critical_collumn,dimensions[0],critical_collumn, {'type':'cell','criteria':rule,'value':value,'format':format_red_fill})
-# writer_critical_value_excel=pd.ExcelWriter('/opt/pyrepo/output/xlsxwriter_critical_value_excel.xlsx',engine='xlsxwriter')
-# import pandas as pd
-# personality=pd.read_csv("/opt/pyrepo/data/personality.csv")
-# critical_value_excel(personality,writer_critical_value_excel,"DATA",comment="Test Comment",critical_collumn=1,rule="<",value=5)
-# writer_critical_value_excel._save()
+        sheet.conditional_format(1,critical_collumn,dimensions[0],critical_collumn, {'type':'cell','criteria':rule,'value':value,'format':format_red_fill})
+
+# personality=pd.read_csv(path_root+"/data/personality.csv")
+# output_file=path_root+'/output/critical.xlsx'
+# if os.path.exists(output_file):
+#     os.remove(output_file)
+# cv=pd.ExcelWriter(output_file,engine='xlsxwriter')
+# comments={'A1': "This is a general comment for the sheet.",
+#           'B2': "This cell contains important data."}
+# critical_value_excel(df=personality,writer=cv,sheetname="cv",comments=None,critical_collumn=1,rule="<",value=5)
+# cv._save()
+# cv.close()
+# os.remove(output_file)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

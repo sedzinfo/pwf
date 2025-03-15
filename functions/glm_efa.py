@@ -12,20 +12,22 @@ import numpy as np
 import pandas as pd
 
 path_script = os.getcwd()
-path_root = path_script.replace('\\functions', '')
+# path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if(path_script.find('functions')==-1):
+  path_script=path_script+"\\GitHub\\pwf\\functions"
+path_root=path_script.replace('\\functions', '')
+os.chdir(path_script)
+personality=pd.read_csv(path_root+"/data/personality.csv")
 
-sys.path.insert(1,file_path)
+sys.path.insert(1,path_script)
 from __init__ import *
 from functions import *
 ##########################################################################################
 # LOAD
 ##########################################################################################
-import pandas as pd
 import matplotlib.pyplot as plt
 from factor_analyzer import FactorAnalyzer,calculate_bartlett_sphericity,calculate_kmo
 from sklearn.decomposition import FactorAnalysis
-import numpy as np
-df=pd.read_csv('C:/Users/dzach/Documents/GitHub/pwf/data/personality.csv')
 ##########################################################################################
 # SCREE PLOT
 ##########################################################################################
@@ -94,8 +96,13 @@ scree_plot.show()
 ##########################################################################################
 def report_efa(df,n_factors=3,rotation='promax',method='minres',
                use_smc=True,is_corr_matrix=False,bounds=(0.005, 1),
-               impute='median',svd_method='randomized',rotation_kwargs=None):
+               impute='median',svd_method='randomized',rotation_kwargs=None,
+               output_file=path_root+'/output/efa.xlsx'):
     
+    index=list(range(1,df.shape[1]+1))
+    
+    scree_plot=plot_scree(df, base_size=15, title="")
+    scree_plot.show()
     chi_square_value,p_value=calculate_bartlett_sphericity(df)
     kmo_all,kmo_model=calculate_kmo(df)
     kmo_variables=pd.DataFrame(list(zip(df.columns.to_list(),kmo_all)),columns=['Name','KMO'])
@@ -107,38 +114,128 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
     model=fa.fit(df)
     eigenvalues=fa.get_eigenvalues()
     communalities=fa.get_communalities()
+    factor_variance=fa.get_factor_variance()
+    params=fa.get_params()
     loadings=model.loadings_
     
-    cut_off = 0.3
+    cut_off=0.3
     df_loadings=pd.DataFrame(loadings,
                              index=df.columns,
                              columns=[f'Factor {i+1}' 
                              for i in range(loadings.shape[1])])
+    df_loadings.insert(0,"index",index)
 
     loadings_cut=df_loadings.apply(lambda x: x.map(lambda v: v if abs(v) > cut_off else ''))
-    
-  
+
     factor_variance=model.get_factor_variance()
     uniquinesses=model.get_uniquenesses()
     sufficiency=model.sufficiency(df.shape[0])
-    
-    index=list(range(1,df.shape[1]+1))
-    df_eigenvalues=pd.DataFrame({"index":index,"eigen1":eigenvalues[0],"eigen2":eigenvalues[1]})
-    df_communalities=pd.DataFrame({"index":index,"communalities":communalities})
-    df_uniqueness=pd.DataFrame({"index":index,"uniquinesses":uniquinesses})
-    df_loadings.insert(0,"index",index)
+
+    df_eigenvalues=pd.DataFrame({"names":df.columns,"eigen1":eigenvalues[0],"eigen2":eigenvalues[1]},index=df.columns)
+    df_communalities=pd.DataFrame({"names":df.columns,"communalities":communalities},index=df.columns)
+    df_uniqueness=pd.DataFrame({"names":df.columns,"uniquinesses":uniquinesses},index=df.columns)
     df_factor_variance=pd.DataFrame(factor_variance)
     correlations=df.corr()
-    residual_correlations=pd.DataFrame(np.dot(fa.loadings_,fa.loadings_.T))
-    residual_correlations.columns=correlations.columns
-    residual_correlations.index=correlations.index
-    residuals=correlations.abs()-residual_correlations.abs()
+    correlations_reproduced=pd.DataFrame(np.dot(fa.loadings_,fa.loadings_.T),
+                                       index=correlations.index,
+                                       columns=correlations.columns)
+    correlations_residual=correlations.abs()-correlations_reproduced.abs()
     
-    return (df_eigenvalues,df_communalities,
-            df_uniqueness,df_loadings,df_factor_variance,
-            residual_correlations,correlations,residuals)
+    eigencu=pd.concat([df_eigenvalues.set_index("names"),
+                       df_communalities.set_index("names"),
+                       df_uniqueness.set_index("names")],
+                       axis=1).reset_index()
+                         
+    writer=pd.ExcelWriter(output_file,engine='xlsxwriter')
+    matrix_excel(df=correlations,writer=writer,sheetname="Correlation",comments=None)
+    matrix_excel(df=correlations_reproduced,writer=writer,sheetname="Correlation_reproduced",comments=None)
+    matrix_excel(df=correlations_residual,writer=writer,sheetname="Correlation_residual",comments=None)
+    
+    writer._save()
+    writer.close()
+    
+    result={"Eigen_Communality_Uniqueness":eigencu,
+            "Loadings":df_loadings,
+            "Variance":df_factor_variance,
+            "Residual Correlations":correlations_reproduced,
+            "Correlations":correlations,
+            "Residuals":correlations_residual}
+
+    return result
   
-report_efa(df)
+result=report_efa(df=df,n_factors=10,rotation='promax',method='minres',
+                  use_smc=True,is_corr_matrix=False,bounds=(0.005, 1),
+                  impute='median',svd_method='randomized',rotation_kwargs=None)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

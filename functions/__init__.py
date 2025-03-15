@@ -9,6 +9,7 @@ Created on Thu Oct 26 17:20:31 2017
 ##########################################################################################
 import os
 import sys
+import pandas as pd
 
 path_script = os.getcwd()
 # path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))

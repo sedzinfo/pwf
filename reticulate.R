@@ -33,6 +33,7 @@ py_install("factor_analyzer")
 py_install("raven-gen")
 py_install("matrix")
 py_install("nltk")
+py_install("openpyxl")
 
 # Use Python in R
 np <- import("numpy")
