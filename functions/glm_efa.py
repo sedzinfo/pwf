@@ -147,6 +147,8 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
                        axis=1).reset_index()
                          
     writer=pd.ExcelWriter(output_file,engine='xlsxwriter')
+    matrix_excel(df=eigencu,writer=writer,sheetname="Eigen Communality Uniqueness",comments=None)
+    matrix_excel(df=df_loadings,writer=writer,sheetname="Loadings",comments=None)
     matrix_excel(df=correlations,writer=writer,sheetname="Correlation",comments=None)
     matrix_excel(df=correlations_reproduced,writer=writer,sheetname="Correlation_reproduced",comments=None)
     matrix_excel(df=correlations_residual,writer=writer,sheetname="Correlation_residual",comments=None)
