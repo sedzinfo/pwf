@@ -12,10 +12,10 @@ import numpy as np
 import pandas as pd
 
 path_script=os.getcwd()
-# path_root=os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+# path_root=os.path.abspath(os.path.join(os.path.dirname(__file__),'..'))
 if(path_script.find('functions')==-1):
   path_script=path_script+"\\GitHub\\pwf\\functions"
-path_root=path_script.replace('\\functions', '')
+path_root=path_script.replace('\\functions','')
 os.chdir(path_script)
 personality=pd.read_csv(path_root+"/data/personality.csv")
 
@@ -35,11 +35,11 @@ from sklearn.decomposition import FactorAnalysis
 import pandas as pd
 import numpy as np
 from plotnine import (
-    ggplot, aes, geom_hline, geom_line, geom_point, scale_x_continuous,
-    theme_bw, labs, annotate, theme, element_blank, element_text
+    ggplot,aes,geom_hline,geom_line,geom_point,scale_x_continuous,
+    theme_bw,labs,annotate,theme,element_blank,element_text
 )
 
-def plot_scree(df, base_size=15, title="", color=("#5F2C91", "#5E912C")):
+def plot_scree(df,base_size=15,title="",color=("#5F2C91","#5E912C")):
     """
     Scree plot displaying the Kaiser and Jolliffe criteria for factor extraction using plotnine (ggplot2 for Python).
 
@@ -61,7 +61,7 @@ def plot_scree(df, base_size=15, title="", color=("#5F2C91", "#5E912C")):
     
     # Create a DataFrame for plotting
     eigenvalues_df=pd.DataFrame({
-        'x': np.arange(1, len(eigenvalues) + 1),
+        'x': np.arange(1,len(eigenvalues) + 1),
         'eigenvalues': eigenvalues
     })
     
@@ -70,19 +70,19 @@ def plot_scree(df, base_size=15, title="", color=("#5F2C91", "#5E912C")):
     jolliffe=np.sum(eigenvalues > 0.7)
     
     # Create the scree plot using plotnine
-    plot=(ggplot(eigenvalues_df, aes(x='x', y='eigenvalues')) +
-            geom_hline(yintercept=1, color=color[0]) +
-            geom_hline(yintercept=0.7, color=color[1]) +
+    plot=(ggplot(eigenvalues_df,aes(x='x',y='eigenvalues')) +
+            geom_hline(yintercept=1,color=color[0]) +
+            geom_hline(yintercept=0.7,color=color[1]) +
             geom_line(color=color[0]) +
-            geom_point(size=base_size / 4, color=color[0]) +
+            geom_point(size=base_size / 4,color=color[0]) +
             scale_x_continuous(breaks=eigenvalues_df['x'].tolist()) +
             theme_bw(base_size=base_size) +
-            labs(x="Index", y="Eigenvalue", title=f"Scree plot {title}") +
+            labs(x="Index",y="Eigenvalue",title=f"Scree plot {title}") +
             annotate("text",
                      x=eigenvalues_df['x'].max(),
                      y=eigenvalues_df['eigenvalues'].max(),
                      label=f"Top line: Kaiser criterion: {kaiser}\nBottom line: Jolliffe criterion: {jolliffe}",
-                     ha='right', va='top', size=base_size) +
+                     ha='right',va='top',size=base_size) +
             theme(legend_title=element_blank(),
                   legend_position='bottom',
                   axis_title_x=element_blank(),
@@ -90,60 +90,60 @@ def plot_scree(df, base_size=15, title="", color=("#5F2C91", "#5E912C")):
                   
     return plot
   
-scree_plot=plot_scree(df, base_size=15, title="")
+scree_plot=plot_scree(df,base_size=15,title="")
 scree_plot.show()
 ##########################################################################################
 # REPORT EFA
 ##########################################################################################
 def report_efa(df,n_factors=3,rotation='promax',method='minres',
-               use_smc=True,is_corr_matrix=False,bounds=(0.005, 1),
+               use_smc=True,is_corr_matrix=False,bounds=(0.005,1),
                impute='median',svd_method='randomized',rotation_kwargs=None,
                output_file=path_root+'/output/efa.xlsx'):
     
     """
     Perform Exploratory Factor Analysis (EFA) on a given dataset and generate relevant statistics,
-    plots, and an Excel report.
+    plots,and an Excel report.
 
     Parameters:
     -----------
     df : pandas.DataFrame
         Input DataFrame containing the dataset for EFA.
 
-    n_factors : int, default=3
+    n_factors : int,default=3
         Number of factors to extract.
 
-    rotation : str, default='promax'
+    rotation : str,default='promax'
         Rotation method to apply in the factor analysis.
 
-    method : str, default='minres'
+    method : str,default='minres'
         Method used to perform factor analysis.
 
-    use_smc : bool, default=True
-        If True, use squared multiple correlations (SMC) as initial communality estimates.
+    use_smc : bool,default=True
+        If True,use squared multiple correlations (SMC) as initial communality estimates.
 
-    is_corr_matrix : bool, default=False
+    is_corr_matrix : bool,default=False
         Indicates if the input dataset is already a correlation matrix.
 
-    bounds : tuple, default=(0.005, 1)
+    bounds : tuple,default=(0.005,1)
         Bounds for the communalities during factor extraction.
 
-    impute : str, default='median'
+    impute : str,default='median'
         Strategy to handle missing values in the dataset.
 
-    svd_method : str, default='randomized'
+    svd_method : str,default='randomized'
         Method for Singular Value Decomposition (SVD).
 
-    rotation_kwargs : dict, optional
+    rotation_kwargs : dict,optional
         Additional arguments for the rotation method.
 
-    output_file : str, default=path_root+'/output/efa.xlsx'
+    output_file : str,default=path_root+'/output/efa.xlsx'
         Path to the output Excel file where the results will be saved.
 
     Returns:
     --------
     result : dict
         Dictionary containing:
-            - Eigen_Communality_Uniqueness: DataFrame with eigenvalues, communalities, and uniqueness.
+            - Eigen_Communality_Uniqueness: DataFrame with eigenvalues,communalities,and uniqueness.
             - Loadings: Factor loadings DataFrame.
             - Variance: DataFrame with factor variance statistics.
             - Residual Correlations: Reproduced correlations from factor analysis.
@@ -153,17 +153,17 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
     Notes:
     ------
     - Generates a scree plot for visualizing eigenvalues.
-    - Outputs key residual statistics, such as RMSR and proportions of large residuals.
+    - Outputs key residual statistics,such as RMSR and proportions of large residuals.
     - Saves multiple sheets in an Excel file summarizing analysis results.
 
     Example:
     --------
-    result=report_efa(df=my_data, n_factors=5, rotation='varimax', method='ml')
+    result=report_efa(df=my_data,n_factors=5,rotation='varimax',method='ml')
     """
 
     index=list(range(1,df.shape[1]+1))
     
-    scree_plot=plot_scree(df, base_size=15, title="")
+    scree_plot=plot_scree(df,base_size=15,title="")
     scree_plot.show()
     chi_square_value,p_value=calculate_bartlett_sphericity(df)
     kmo_all,kmo_model=calculate_kmo(df)
@@ -202,8 +202,8 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
                                        columns=correlations.columns)
     correlations_residual=correlations.abs()-correlations_reproduced.abs()
     
-    upper_triangle_residuals=correlations_residual.where(np.triu(np.ones(correlations_residual.shape), k=1).astype(bool))
-    lower_triangle_residuals=correlations_residual.where(np.tril(np.ones(correlations_residual.shape), k=-1).astype(bool))
+    upper_triangle_residuals=correlations_residual.where(np.triu(np.ones(correlations_residual.shape),k=1).astype(bool))
+    lower_triangle_residuals=correlations_residual.where(np.tril(np.ones(correlations_residual.shape),k=-1).astype(bool))
     lower_triangle_array=lower_triangle_residuals.to_numpy().flatten()
     lower_triangle_array=lower_triangle_array[~np.isnan(lower_triangle_array)]
     n_large_residuals=(np.abs(lower_triangle_array)>0.05).sum()
@@ -246,7 +246,7 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
     return result
   
 result=report_efa(df=df,n_factors=10,rotation='promax',method='minres',
-                  use_smc=True,is_corr_matrix=False,bounds=(0.005, 1),
+                  use_smc=True,is_corr_matrix=False,bounds=(0.005,1),
                   impute='median',svd_method='randomized',rotation_kwargs=None)
 
 
