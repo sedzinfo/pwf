@@ -123,7 +123,6 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
                              index=df.columns,
                              columns=[f'Factor {i+1}' 
                              for i in range(loadings.shape[1])])
-    df_loadings.insert(0,"index",index)
 
     loadings_cut=df_loadings.apply(lambda x: x.map(lambda v: v if abs(v) > cut_off else ''))
 
@@ -132,8 +131,8 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
     sufficiency=model.sufficiency(df.shape[0])
 
     df_eigenvalues=pd.DataFrame({"names":df.columns,"eigen1":eigenvalues[0],"eigen2":eigenvalues[1]},index=df.columns)
-    df_communalities=pd.DataFrame({"names":df.columns,"communalities":communalities},index=df.columns)
-    df_uniqueness=pd.DataFrame({"names":df.columns,"uniquinesses":uniquinesses},index=df.columns)
+    df_communalities=pd.DataFrame({"names":df.columns,"communality":communalities},index=df.columns)
+    df_uniqueness=pd.DataFrame({"names":df.columns,"uniquiness":uniquinesses},index=df.columns)
     df_factor_variance=pd.DataFrame(factor_variance)
     correlations=df.corr()
     correlations_reproduced=pd.DataFrame(np.dot(fa.loadings_,fa.loadings_.T),
@@ -144,7 +143,7 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
     eigencu=pd.concat([df_eigenvalues.set_index("names"),
                        df_communalities.set_index("names"),
                        df_uniqueness.set_index("names")],
-                       axis=1).reset_index()
+                       axis=1)
                          
     writer=pd.ExcelWriter(output_file,engine='xlsxwriter')
     matrix_excel(df=eigencu,writer=writer,sheetname="Eigen Communality Uniqueness",comments=None)
