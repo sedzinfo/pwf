@@ -141,6 +141,26 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
                                        columns=correlations.columns)
     correlations_residual=correlations.abs()-correlations_reproduced.abs()
     
+    upper_triangle_residuals = correlations_residual.where(np.triu(np.ones(correlations_residual.shape), k=1).astype(bool))
+    lower_triangle_residuals = correlations_residual.where(np.tril(np.ones(correlations_residual.shape), k=-1).astype(bool))
+    lower_triangle_array=lower_triangle_residuals.to_numpy().flatten()
+    lower_triangle_array=lower_triangle_array[~np.isnan(lower_triangle_array)]
+    n_large_residuals=(np.abs(lower_triangle_array)>0.05).sum()
+    len(lower_triangle_array)
+    
+    prop_large_resid=n_large_residuals/len(correlations_residual)
+    rmsr=np.sqrt((lower_triangle_array**2).mean())
+    
+    
+    residual_statistics=pd.DataFrame({"residual_statistics":["Root Mean Squared Residual",
+                                                             "Number of absolute residuals > 0.05",
+                                                             "Proportion of absolute residuals > 0.05"],
+                                      "value":[rmsr,n_large_residuals,prop_large_resid],
+                                      "critical":[np.nan,np.nan,.5],
+                                      "formula":["sqrt(mean(residuals^2))",
+                                      "abs(residuals)>0.05",
+                                      "numberLargeResiduals/nrow(residuals)"]})
+    
     eigencu=pd.concat([df_eigenvalues.set_index("names"),
                        df_communalities.set_index("names"),
                        df_uniqueness.set_index("names")],
@@ -150,8 +170,9 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
     matrix_excel(df=eigencu,writer=writer,sheetname="Eigen Communality Uniqueness",comments=None)
     matrix_excel(df=df_loadings,writer=writer,sheetname="Loadings",comments=None)
     matrix_excel(df=correlations,writer=writer,sheetname="Correlation",comments=None)
-    matrix_excel(df=correlations_reproduced,writer=writer,sheetname="Correlation_reproduced",comments=None)
-    matrix_excel(df=correlations_residual,writer=writer,sheetname="Correlation_residual",comments=None)
+    matrix_excel(df=correlations_reproduced,writer=writer,sheetname="Correlation Reproduced",comments=None)
+    matrix_excel(df=correlations_residual,writer=writer,sheetname="Correlation Residual",comments=None)
+    generic_format_excel(df=residual_statistics,writer=writer,sheetname="Residual Statistics",comments=None)
     
     writer._save()
     writer.close()
@@ -168,28 +189,6 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
 result=report_efa(df=df,n_factors=10,rotation='promax',method='minres',
                   use_smc=True,is_corr_matrix=False,bounds=(0.005, 1),
                   impute='median',svd_method='randomized',rotation_kwargs=None)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
