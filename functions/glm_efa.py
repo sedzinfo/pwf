@@ -100,10 +100,6 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
                impute='median',svd_method='randomized',rotation_kwargs=None,
                output_file=path_root+'/output/efa.xlsx'):
     
-    def report_efa(df, n_factors=3, rotation='promax', method='minres',
-               use_smc=True, is_corr_matrix=False, bounds=(0.005, 1),
-               impute='median', svd_method='randomized', rotation_kwargs=None,
-               output_file=path_root+'/output/efa.xlsx'):
     """
     Perform Exploratory Factor Analysis (EFA) on a given dataset and generate relevant statistics,
     plots, and an Excel report.
@@ -165,8 +161,6 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
     result = report_efa(df=my_data, n_factors=5, rotation='varimax', method='ml')
     """
 
-    
-    
     index=list(range(1,df.shape[1]+1))
     
     scree_plot=plot_scree(df, base_size=15, title="")
