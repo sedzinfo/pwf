@@ -100,6 +100,73 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
                impute='median',svd_method='randomized',rotation_kwargs=None,
                output_file=path_root+'/output/efa.xlsx'):
     
+    def report_efa(df, n_factors=3, rotation='promax', method='minres',
+               use_smc=True, is_corr_matrix=False, bounds=(0.005, 1),
+               impute='median', svd_method='randomized', rotation_kwargs=None,
+               output_file=path_root+'/output/efa.xlsx'):
+    """
+    Perform Exploratory Factor Analysis (EFA) on a given dataset and generate relevant statistics,
+    plots, and an Excel report.
+
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        Input DataFrame containing the dataset for EFA.
+
+    n_factors : int, default=3
+        Number of factors to extract.
+
+    rotation : str, default='promax'
+        Rotation method to apply in the factor analysis.
+
+    method : str, default='minres'
+        Method used to perform factor analysis.
+
+    use_smc : bool, default=True
+        If True, use squared multiple correlations (SMC) as initial communality estimates.
+
+    is_corr_matrix : bool, default=False
+        Indicates if the input dataset is already a correlation matrix.
+
+    bounds : tuple, default=(0.005, 1)
+        Bounds for the communalities during factor extraction.
+
+    impute : str, default='median'
+        Strategy to handle missing values in the dataset.
+
+    svd_method : str, default='randomized'
+        Method for Singular Value Decomposition (SVD).
+
+    rotation_kwargs : dict, optional
+        Additional arguments for the rotation method.
+
+    output_file : str, default=path_root+'/output/efa.xlsx'
+        Path to the output Excel file where the results will be saved.
+
+    Returns:
+    --------
+    result : dict
+        Dictionary containing:
+            - Eigen_Communality_Uniqueness: DataFrame with eigenvalues, communalities, and uniqueness.
+            - Loadings: Factor loadings DataFrame.
+            - Variance: DataFrame with factor variance statistics.
+            - Residual Correlations: Reproduced correlations from factor analysis.
+            - Correlations: Original correlation matrix.
+            - Residuals: Residual correlations between actual and reproduced matrices.
+
+    Notes:
+    ------
+    - Generates a scree plot for visualizing eigenvalues.
+    - Outputs key residual statistics, such as RMSR and proportions of large residuals.
+    - Saves multiple sheets in an Excel file summarizing analysis results.
+
+    Example:
+    --------
+    result = report_efa(df=my_data, n_factors=5, rotation='varimax', method='ml')
+    """
+
+    
+    
     index=list(range(1,df.shape[1]+1))
     
     scree_plot=plot_scree(df, base_size=15, title="")
