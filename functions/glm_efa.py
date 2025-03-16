@@ -51,6 +51,12 @@ def plot_scree(df,base_size=15,title="",color=("#5F2C91","#5E912C")):
 
     Returns:
     - A plotnine.ggplot object representing the scree plot.
+    
+    Example:
+    --------
+    scree_plot=plot_scree(df,base_size=15,title="")
+    scree_plot.show()
+    
     """
     # Calculate eigenvalues of the correlation matrix
     corr_matrix=df.corr(method='pearson')
@@ -249,18 +255,69 @@ result=report_efa(df=df,n_factors=10,rotation='promax',method='minres',
                   use_smc=True,is_corr_matrix=False,bounds=(0.005,1),
                   impute='median',svd_method='randomized',rotation_kwargs=None)
 
+##########################################################################################
+# REPORT EFA
+##########################################################################################
+import pandas as pd
+import numpy as np
+from plotnine import ggplot, aes, geom_bar, facet_wrap, coord_flip, labs, theme_minimal, scale_fill_gradient2
+from factor_analyzer import FactorAnalyzer
+
+# Sample data: Generate a correlation matrix and synthetic dataset
+correlation_matrix = np.array([
+    [1, 0.8, 0.8, 0.1, 0.1, 0.1],
+    [0.8, 1, 0.8, 0.1, 0.1, 0.1],
+    [0.8, 0.8, 1, 0.1, 0.1, 0.1],
+    [0.1, 0.1, 0.1, 1, 0.8, 0.8],
+    [0.1, 0.1, 0.1, 0.8, 1, 0.8],
+    [0.1, 0.1, 0.1, 0.8, 0.8, 1]
+])
+
+# Generate synthetic data based on the correlation matrix
+data = np.random.multivariate_normal(mean=np.zeros(correlation_matrix.shape[0]),
+                                     cov=correlation_matrix, size=10000)
+df = pd.DataFrame(data, columns=[f"Var{i+1}" for i in range(correlation_matrix.shape[0])])
+
+# Perform factor analysis
+fa = FactorAnalyzer(n_factors=2, rotation="oblimin", method="principal")
+fa.fit(df)
+
+# Extract loadings
+loadings = pd.DataFrame(fa.loadings_, index=df.columns, columns=["Factor1", "Factor2"])
 
 
+def plot_loadings_bar(loadings):
+    """
+    Plot factor loadings as bar plots using plotnine (ggplot2 for Python).
+    
+    Parameters:
+    - loadings: pandas DataFrame containing factor loadings.
+    
+    Returns:
+    - A plotnine.ggplot object representing the factor loadings bar plot.
+    
+    Example:
+    --------
+    plot = plot_loadings_bar(loadings)
+    plot.show()
+    """
+    loadings = loadings.reset_index().melt(id_vars=["index"], var_name="Factor", value_name="Loading")
+    
+    # Create the factor loadings bar plot using plotnine
+    plot=(ggplot(loadings,aes(x="index",y="abs(Loading)",fill="Loading"))+
+          geom_bar(stat="identity")+
+          facet_wrap("~Factor",nrow=1)+
+          coord_flip()+
+          labs(title="Factor Loadings",x="Variables",y="Loading")+
+          scale_fill_gradient2(low="#5E912C",mid="white",high="#5F2C91",midpoint=0)+
+          theme_minimal())
+    
+    return plot
 
 
+result=plot_loadings_bar(loadings=df_loadings)
 
-
-
-
-
-
-
-
+result.show()
 
 
 
