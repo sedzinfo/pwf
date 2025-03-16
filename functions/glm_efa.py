@@ -11,8 +11,8 @@ import sys
 import numpy as np
 import pandas as pd
 
-path_script = os.getcwd()
-# path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+path_script=os.getcwd()
+# path_root=os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if(path_script.find('functions')==-1):
   path_script=path_script+"\\GitHub\\pwf\\functions"
 path_root=path_script.replace('\\functions', '')
@@ -53,24 +53,24 @@ def plot_scree(df, base_size=15, title="", color=("#5F2C91", "#5E912C")):
     - A plotnine.ggplot object representing the scree plot.
     """
     # Calculate eigenvalues of the correlation matrix
-    corr_matrix = df.corr(method='pearson')
-    eigenvalues = np.linalg.eigvals(corr_matrix)
+    corr_matrix=df.corr(method='pearson')
+    eigenvalues=np.linalg.eigvals(corr_matrix)
     
     # Sort eigenvalues in descending order
-    eigenvalues = np.sort(eigenvalues)[::-1]
+    eigenvalues=np.sort(eigenvalues)[::-1]
     
     # Create a DataFrame for plotting
-    eigenvalues_df = pd.DataFrame({
+    eigenvalues_df=pd.DataFrame({
         'x': np.arange(1, len(eigenvalues) + 1),
         'eigenvalues': eigenvalues
     })
     
     # Kaiser and Jolliffe criteria
-    kaiser = np.sum(eigenvalues > 1)
-    jolliffe = np.sum(eigenvalues > 0.7)
+    kaiser=np.sum(eigenvalues > 1)
+    jolliffe=np.sum(eigenvalues > 0.7)
     
     # Create the scree plot using plotnine
-    plot = (ggplot(eigenvalues_df, aes(x='x', y='eigenvalues')) +
+    plot=(ggplot(eigenvalues_df, aes(x='x', y='eigenvalues')) +
             geom_hline(yintercept=1, color=color[0]) +
             geom_hline(yintercept=0.7, color=color[1]) +
             geom_line(color=color[0]) +
@@ -90,7 +90,7 @@ def plot_scree(df, base_size=15, title="", color=("#5F2C91", "#5E912C")):
                   
     return plot
   
-scree_plot = plot_scree(df, base_size=15, title="")
+scree_plot=plot_scree(df, base_size=15, title="")
 scree_plot.show()
 ##########################################################################################
 # REPORT EFA
@@ -158,7 +158,7 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
 
     Example:
     --------
-    result = report_efa(df=my_data, n_factors=5, rotation='varimax', method='ml')
+    result=report_efa(df=my_data, n_factors=5, rotation='varimax', method='ml')
     """
 
     index=list(range(1,df.shape[1]+1))
@@ -202,16 +202,14 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
                                        columns=correlations.columns)
     correlations_residual=correlations.abs()-correlations_reproduced.abs()
     
-    upper_triangle_residuals = correlations_residual.where(np.triu(np.ones(correlations_residual.shape), k=1).astype(bool))
-    lower_triangle_residuals = correlations_residual.where(np.tril(np.ones(correlations_residual.shape), k=-1).astype(bool))
+    upper_triangle_residuals=correlations_residual.where(np.triu(np.ones(correlations_residual.shape), k=1).astype(bool))
+    lower_triangle_residuals=correlations_residual.where(np.tril(np.ones(correlations_residual.shape), k=-1).astype(bool))
     lower_triangle_array=lower_triangle_residuals.to_numpy().flatten()
     lower_triangle_array=lower_triangle_array[~np.isnan(lower_triangle_array)]
     n_large_residuals=(np.abs(lower_triangle_array)>0.05).sum()
-    len(lower_triangle_array)
     
     prop_large_resid=n_large_residuals/len(correlations_residual)
     rmsr=np.sqrt((lower_triangle_array**2).mean())
-    
     
     residual_statistics=pd.DataFrame({"residual_statistics":["Root Mean Squared Residual",
                                                              "Number of absolute residuals > 0.05",
