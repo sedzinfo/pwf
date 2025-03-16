@@ -22,6 +22,7 @@ personality=pd.read_csv(path_root+"/data/personality.csv")
 sys.path.insert(1,path_script)
 from __init__ import *
 from functions import *
+from functions_excel import *
 ##########################################################################################
 # LOAD
 ##########################################################################################

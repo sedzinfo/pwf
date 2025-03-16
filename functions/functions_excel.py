@@ -19,7 +19,7 @@ path_root=path_script.replace('\\functions', '')
 os.chdir(path_script)
 
 sys.path.insert(1,path_script)
-from __init__ import *
+# from __init__ import *
 from functions import *
 ##########################################################################################
 # COLUMN WIDTHS
