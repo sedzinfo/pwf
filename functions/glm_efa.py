@@ -17,7 +17,7 @@ if(path_script.find('functions')==-1):
   path_script=path_script+"\\GitHub\\pwf\\functions"
 path_root=path_script.replace('\\functions','')
 os.chdir(path_script)
-personality=pd.read_csv(path_root+"/data/personality.csv")
+df=pd.read_csv(path_root+"/data/personality.csv")
 
 sys.path.insert(1,path_script)
 from __init__ import *
@@ -34,10 +34,9 @@ from sklearn.decomposition import FactorAnalysis
 ##########################################################################################
 import pandas as pd
 import numpy as np
-from plotnine import (
-    ggplot,aes,geom_hline,geom_line,geom_point,scale_x_continuous,
-    theme_bw,labs,annotate,theme,element_blank,element_text
-)
+from plotnine import (ggplot,aes,geom_hline,geom_line,geom_point,theme_bw,
+                      scale_x_continuous,labs,annotate,theme,element_blank,
+                      element_text)
 
 def plot_scree(df,base_size=15,title="",color=("#5F2C91","#5E912C")):
     """
@@ -72,8 +71,8 @@ def plot_scree(df,base_size=15,title="",color=("#5F2C91","#5E912C")):
     })
     
     # Kaiser and Jolliffe criteria
-    kaiser=np.sum(eigenvalues > 1)
-    jolliffe=np.sum(eigenvalues > 0.7)
+    kaiser=np.sum(eigenvalues>1)
+    jolliffe=np.sum(eigenvalues>0.7)
     
     # Create the scree plot using plotnine
     plot=(ggplot(eigenvalues_df,aes(x='x',y='eigenvalues')) +
