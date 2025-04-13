@@ -166,6 +166,13 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
     result=report_efa(df=my_data,n_factors=5,rotation='varimax',method='ml')
     """
 
+    comments_s1={'A1': "The names are not properly sorted",
+                 'B1': "Eigenvector 1",
+                 'C1': "Eigenvector 2",
+                 'D1': "Communality",
+                 'E1': "Uniqueness"}
+
+
     index=list(range(1,df.shape[1]+1))
     
     scree_plot=plot_scree(df,base_size=15,title="")
@@ -231,7 +238,7 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
                        axis=1)
                          
     writer=pd.ExcelWriter(output_file,engine='xlsxwriter')
-    matrix_excel(df=eigencu,writer=writer,sheetname="Eigen Communality Uniqueness",comments=None)
+    matrix_excel(df=eigencu,writer=writer,sheetname="Eigen Communality Uniqueness",comments=comments_s1)
     matrix_excel(df=df_loadings,writer=writer,sheetname="Loadings",comments=None)
     matrix_excel(df=correlations,writer=writer,sheetname="Correlation",comments=None)
     matrix_excel(df=correlations_reproduced,writer=writer,sheetname="Correlation Reproduced",comments=None)
@@ -253,7 +260,6 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
 result=report_efa(df=df,n_factors=10,rotation='promax',method='minres',
                   use_smc=True,is_corr_matrix=False,bounds=(0.005,1),
                   impute='median',svd_method='randomized',rotation_kwargs=None)
-
 ##########################################################################################
 # REPORT EFA
 ##########################################################################################
