@@ -34,11 +34,10 @@ py_install("raven-gen")
 py_install("matrix")
 py_install("nltk")
 py_install("openpyxl")
+py_install("pingouin")
 
 # Use Python in R
-np <- import("numpy")
-array <- np$array(c(1, 2, 3))
-
-
+np<-import("numpy")
+array<-np$array(c(1,2,3))
 
 Sys.getenv()

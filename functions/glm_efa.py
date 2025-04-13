@@ -243,6 +243,7 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
     matrix_excel(df=correlations,writer=writer,sheetname="Correlation",comments=None)
     matrix_excel(df=correlations_reproduced,writer=writer,sheetname="Correlation Reproduced",comments=None)
     matrix_excel(df=correlations_residual,writer=writer,sheetname="Correlation Residual",comments=None)
+    matrix_excel(df=df_factor_variance,writer=writer,sheetname="Factor Variance",comments=None)
     generic_format_excel(df=residual_statistics,writer=writer,sheetname="Residual Statistics",comments=None)
     
     writer._save()
