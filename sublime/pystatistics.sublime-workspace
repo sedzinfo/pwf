@@ -97,6 +97,11 @@
 	},
 	"file_history":
 	[
+		"/J/My Drive/projects/asep/image/svg/primitives/p_ls1_1_5.svg",
+		"/J/My Drive/projects/asep/image/svg/primitives/p_ls1_1_6.svg",
+		"/J/My Drive/projects/asep/image/svg/primitives/p_ls1_1_8.svg",
+		"/J/My Drive/projects/asep/image/svg/primitives_1/and_and_1_series.svg",
+		"/J/My Drive/projects/asep/image/svg/primitives_1/and_and_25_series.svg",
 		"/home/dimitrios/Desktop/dentist.txt",
 		"/mnt/WD500/Dropbox (Psycholate)/dimitrios/working/reference/WIFI.txt",
 		"/opt/repo/rworking/projects/crypto/code/cron.sh",
@@ -219,12 +224,7 @@
 		"/mnt/WD500/public_rstatistics/modelsirt/R/run_shiny.R",
 		"/mnt/WD500/public_rstatistics/worldbank/R/worldbank.R",
 		"/mnt/WD500/public_rstatistics/worldbank/R/financial_indicators.R",
-		"/mnt/WD500/public_rstatistics/worldbank/DESCRIPTION",
-		"/mnt/WD500/public_rstatistics/worldbank/NAMESPACE",
-		"/home/dimitrios/Desktop/index.html",
-		"/home/dimitrios/Desktop/shell/ram.sh",
-		"/mnt/WD500/rstatistics/rworking/personal/signature1.html",
-		"/home/dimitrios/Desktop/shell/utilization.sh"
+		"/mnt/WD500/public_rstatistics/worldbank/DESCRIPTION"
 	],
 	"find":
 	{
@@ -242,6 +242,7 @@
 		"case_sensitive": false,
 		"find_history":
 		[
+			"\\\"",
 			"2018,",
 			")\"",
 			"V1,",
@@ -368,8 +369,7 @@
 			"          ",
 			"         ",
 			"                  ",
-			"                 ",
-			"                "
+			"                 "
 		],
 		"highlight": true,
 		"in_selection": false,
@@ -377,6 +377,8 @@
 		"regex": false,
 		"replace_history":
 		[
+			"\"",
+			"\\",
 			" ",
 			"",
 			"string",
