@@ -11,13 +11,6 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-
-path_script = os.getcwd()
-path_root = path_script.replace('\\functions', '')
-
-sys.path.insert(1,file_path)
-from __init__ import *
-from functions import *
 ##########################################################################################
 # LOAD
 ##########################################################################################
@@ -28,9 +21,9 @@ import itertools
 from scipy.stats import levene, bartlett
 import functions_excel as fe
 
-df=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-sets/master/blood_pressure.csv")
-personality=pd.read_csv('/opt/pyrepo/data/personality.csv')
-titanic=pd.read_csv('/opt/pyrepo/data/titanic.csv')
+# df=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-sets/master/blood_pressure.csv")
+# personality=pd.read_csv('/opt/pyrepo/data/personality.csv')
+# titanic=pd.read_csv('/opt/pyrepo/data/titanic.csv')
 ##########################################################################################
 # 
 ##########################################################################################
@@ -68,13 +61,12 @@ def ttest(df,dv,iv,paired=False,alternative="two-sided"):
             result_iterative=pd.concat([result_iterative,result],axis=0)
     return result_iterative
 
-result_titanic=ttest(df=titanic,dv="Age",iv=["Embarked","Sex"])
-result_before=ttest(df=df,dv="bp_before",iv=["sex","agegrp"])
-result_after=ttest(df=df,dv="bp_after",iv=["sex","agegrp"])
-
-writer_critical_value_excel=pd.ExcelWriter('/opt/pyrepo/output/xlsxwriter_critical_value_excel.xlsx',engine='xlsxwriter')
-fe.critical_value_excel(result_titanic,writer_critical_value_excel,"DATA",comment="Test Comment")
-writer_critical_value_excel._save()
+# result_titanic=ttest(df=titanic,dv="Age",iv=["Embarked","Sex"])
+# result_before=ttest(df=df,dv="bp_before",iv=["sex","agegrp"])
+# result_after=ttest(df=df,dv="bp_after",iv=["sex","agegrp"])
+# writer_critical_value_excel=pd.ExcelWriter('/opt/pyrepo/output/xlsxwriter_critical_value_excel.xlsx',engine='xlsxwriter')
+# fe.critical_value_excel(result_titanic,writer_critical_value_excel,"DATA",comment="Test Comment")
+# writer_critical_value_excel._save()
 
 
 

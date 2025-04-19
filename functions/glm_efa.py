@@ -6,11 +6,11 @@ Created on Thu Oct 19 11:45:39 2017
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
-# import os
-# import sys
-# import numpy as np
-# import pandas as pd
-# 
+import os
+import sys
+import numpy as np
+import pandas as pd
+ 
 # path_script=os.getcwd()
 # # path_root=os.path.abspath(os.path.join(os.path.dirname(__file__),'..'))
 # if(path_script.find('functions')==-1):
@@ -94,8 +94,8 @@ def plot_scree(df,base_size=15,title="",color=("#5F2C91","#5E912C")):
                   
     return plot
   
-scree_plot=plot_scree(df,base_size=15,title="")
-scree_plot.show()
+# scree_plot=plot_scree(df,base_size=15,title="")
+# scree_plot.show()
 ##########################################################################################
 # REPORT EFA
 ##########################################################################################
@@ -257,9 +257,9 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
 
     return result
   
-result=report_efa(df=df,n_factors=10,rotation='promax',method='minres',
-                  use_smc=True,is_corr_matrix=False,bounds=(0.005,1),
-                  impute='median',svd_method='randomized',rotation_kwargs=None)
+# result=report_efa(df=df,n_factors=10,rotation='promax',method='minres',
+#                   use_smc=True,is_corr_matrix=False,bounds=(0.005,1),
+#                   impute='median',svd_method='randomized',rotation_kwargs=None)
 ##########################################################################################
 # REPORT EFA
 ##########################################################################################
@@ -269,26 +269,26 @@ from plotnine import ggplot, aes, geom_bar, facet_wrap, coord_flip, labs, theme_
 from factor_analyzer import FactorAnalyzer
 
 # Sample data: Generate a correlation matrix and synthetic dataset
-correlation_matrix = np.array([
-    [1, 0.8, 0.8, 0.1, 0.1, 0.1],
-    [0.8, 1, 0.8, 0.1, 0.1, 0.1],
-    [0.8, 0.8, 1, 0.1, 0.1, 0.1],
-    [0.1, 0.1, 0.1, 1, 0.8, 0.8],
-    [0.1, 0.1, 0.1, 0.8, 1, 0.8],
-    [0.1, 0.1, 0.1, 0.8, 0.8, 1]
-])
+# correlation_matrix = np.array([
+#     [1, 0.8, 0.8, 0.1, 0.1, 0.1],
+#     [0.8, 1, 0.8, 0.1, 0.1, 0.1],
+#     [0.8, 0.8, 1, 0.1, 0.1, 0.1],
+#     [0.1, 0.1, 0.1, 1, 0.8, 0.8],
+#     [0.1, 0.1, 0.1, 0.8, 1, 0.8],
+#     [0.1, 0.1, 0.1, 0.8, 0.8, 1]
+# ])
 
 # Generate synthetic data based on the correlation matrix
-data = np.random.multivariate_normal(mean=np.zeros(correlation_matrix.shape[0]),
-                                     cov=correlation_matrix, size=10000)
-df = pd.DataFrame(data, columns=[f"Var{i+1}" for i in range(correlation_matrix.shape[0])])
-
+# data = np.random.multivariate_normal(mean=np.zeros(correlation_matrix.shape[0]),
+#                                      cov=correlation_matrix, size=10000)
+# df = pd.DataFrame(data, columns=[f"Var{i+1}" for i in range(correlation_matrix.shape[0])])
+# 
 # Perform factor analysis
-fa = FactorAnalyzer(n_factors=2, rotation="oblimin", method="principal")
-fa.fit(df)
+# fa = FactorAnalyzer(n_factors=2, rotation="oblimin", method="principal")
+# fa.fit(df)
 
 # Extract loadings
-loadings = pd.DataFrame(fa.loadings_, index=df.columns, columns=["Factor1", "Factor2"])
+# loadings = pd.DataFrame(fa.loadings_, index=df.columns, columns=["Factor1", "Factor2"])
 
 
 def plot_loadings_bar(loadings):
@@ -320,9 +320,8 @@ def plot_loadings_bar(loadings):
     return plot
 
 
-result=plot_loadings_bar(loadings=df_loadings)
-
-result.show()
+# result=plot_loadings_bar(loadings=df_loadings)
+# result.show()
 
 
 

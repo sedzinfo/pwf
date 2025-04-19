@@ -11,26 +11,17 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-
-path_script = os.getcwd()
-path_root = path_script.replace('\\functions', '')
-
-sys.path.insert(1,file_path)
-from __init__ import *
-from functions import *
 ##########################################################################################
 # LOAD
 ##########################################################################################
 import pandas as pd
 import researchpy as rp
 df=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-sets/master/difficile.csv")
-df.drop('person',axis= 1,inplace= True)
+df.drop('person',axis=1,inplace= True)
 
 # Recoding value from numeric to string
 df['dose'].replace({1:'placebo',2:'low',3:'high'},inplace= True)
 df.info()
-rp.summary_cont(df['libido'])
-rp.summary_cont(df['libido'].groupby(df['dose']))
 
 import scipy.stats as stats
 import statsmodels.api as sm
@@ -79,8 +70,8 @@ ax.set_title("Box Plot of Libido by Dosage",fontsize= 20)
 ax.set
 
 data=[df['libido'][df['dose']=='placebo'],
-        df['libido'][df['dose']=='low'],
-        df['libido'][df['dose']=='high']]
+      df['libido'][df['dose']=='low'],
+      df['libido'][df['dose']=='high']]
 
 ax.boxplot(data,
            labels= ['Placebo','Low','High'],

@@ -5,13 +5,6 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-
-path_script = os.getcwd()
-path_root = path_script.replace('\\functions', '')
-
-sys.path.insert(1,file_path)
-from __init__ import *
-from functions import *
 ##########################################################################################
 # PLOT ROC
 ##########################################################################################
@@ -60,21 +53,21 @@ def plot_roc(observed, predicted, base_size=10, title=""):
     return p
 
 # Example usage:
-observed = np.round(np.abs(np.random.normal(0, 0.5, 100)))
-predicted = np.abs(np.random.normal(0, 0.5, 100))
-res=plot_roc(observed, predicted)
-res.show()
-
-df1=generate_normal(ncols=1,nrows=1000,mean=0,sd=1)
-df1.describe()
-df1[1] = np.where(np.abs(df1[1]) < 1, 0, 1
-df1[0] = np.abs(df1[0])
-df1[0] = (df1[0]-df1[0].min())/(df1[0].max()-df1[0].min())
-observed=np.round(df1[1].values)
-predicted=df1[0].values.round()
-
-res=plot_roc(observed,predicted)
-res.show()
+# observed = np.round(np.abs(np.random.normal(0, 0.5, 100)))
+# predicted = np.abs(np.random.normal(0, 0.5, 100))
+# res=plot_roc(observed, predicted)
+# res.show()
+# 
+# df1=generate_normal(ncols=1,nrows=1000,mean=0,sd=1)
+# df1.describe()
+# df1[1] = np.where(np.abs(df1[1]) < 1, 0, 1
+# df1[0] = np.abs(df1[0])
+# df1[0] = (df1[0]-df1[0].min())/(df1[0].max()-df1[0].min())
+# observed=np.round(df1[1].values)
+# predicted=df1[0].values.round()
+# 
+# res=plot_roc(observed,predicted)
+# res.show()
 ##########################################################################################
 # PLOT CONFUSION
 ##########################################################################################
@@ -134,10 +127,10 @@ def plot_confusion(observed, predicted, base_size=10, title=""):
     return p
 
 # Example usage
-observed = [1, 2, 3, 1, 2, 3, 1, 2, 3]
-predicted = [1, 2, 3, 1, 1, 3, 1, 2, 2]
-p = plot_confusion(observed, predicted, title="Confusion Matrix")
-p.show()
+# observed = [1, 2, 3, 1, 2, 3, 1, 2, 3]
+# predicted = [1, 2, 3, 1, 1, 3, 1, 2, 2]
+# p = plot_confusion(observed, predicted, title="Confusion Matrix")
+# p.show()
 ##########################################################################################
 # PLOT SEPARABILITY
 ##########################################################################################
@@ -178,11 +171,11 @@ def plot_separability(observed, predicted, base_size=10, title=""):
     return p
 
 # Example usage
-df1 = pd.DataFrame(np.random.rand(1000, 2), columns=['X1', 'X2'])
-df1['X1'] = np.where(np.abs(df1['X1']) < 0.5, 0, 1)
-df1['X2'] = (df1['X2'] - df1['X2'].min()) / (df1['X2'].max() - df1['X2'].min())
-p = plot_separability(observed=round(np.abs(df1['X1']), 0), predicted=np.abs(df1['X2']))
-p.show()
+# df1 = pd.DataFrame(np.random.rand(1000, 2), columns=['X1', 'X2'])
+# df1['X1'] = np.where(np.abs(df1['X1']) < 0.5, 0, 1)
+# df1['X2'] = (df1['X2'] - df1['X2'].min()) / (df1['X2'].max() - df1['X2'].min())
+# p = plot_separability(observed=round(np.abs(df1['X1']), 0), predicted=np.abs(df1['X2']))
+# p.show()
 ##########################################################################################
 # CONFUSION
 ##########################################################################################
@@ -301,8 +294,8 @@ def confusion_matrix_percent(observed, predicted):
     return cmatrix
 
 # Examples
-confusion_matrix_percent(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11])
-confusion_matrix_percent(observed=[1, 2, 2, 2, 2], predicted=[1, 1, 2, 2, 2])
+# confusion_matrix_percent(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11])
+# confusion_matrix_percent(observed=[1, 2, 2, 2, 2], predicted=[1, 1, 2, 2, 2])
 ##########################################################################################
 # CONFUSION MATRIX PERCENT
 ##########################################################################################
@@ -365,7 +358,7 @@ def proportion_accurate(observed, predicted):
     return result
 
 # Example usage
-observed = [1, 2, 3, 4, 5, 10]
-predicted = [1, 2, 3, 4, 5, 11]
-proportion_accurate(observed, predicted)
+# observed = [1, 2, 3, 4, 5, 10]
+# predicted = [1, 2, 3, 4, 5, 11]
+# proportion_accurate(observed, predicted)
 
