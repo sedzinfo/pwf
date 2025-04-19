@@ -13,10 +13,10 @@ import numpy as np
 import pandas as pd
 
 path_script = os.getcwd()
-path_root = path_script.replace('\\functions', '')
+path_root = path_script.replace('/functions', '')
 
 sys.path.insert(1,file_path)
-from __init__ import *
+from __init__ import populate_dataframe
 from functions import *
 ##########################################################################################
 # OBSERVED
