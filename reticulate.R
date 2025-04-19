@@ -40,7 +40,3 @@ py_install("pingouin")
 np<-import("numpy")
 array<-np$array(c(1,2,3))
 
-Sys.getenv()
-
-Sys.setenv(SSL_CERT_FILE = system.file("cacert.pem", package = "openssl"))
-
