@@ -6,13 +6,13 @@ Created on Thu Oct 19 12:20:38 2017
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
-import os
-import sys
-path_script = os.getcwd()
-path_root = path_script.replace('\\functions', '')
-
-sys.path.insert(1,path_root)
-from __init__ import *
+# import os
+# import sys
+# path_script = os.getcwd()
+# path_root = path_script.replace('\\functions', '')
+# 
+# sys.path.insert(1,path_root)
+# from __init__ import *
 ##########################################################################################
 # LOAD
 ##########################################################################################

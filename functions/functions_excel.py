@@ -6,21 +6,21 @@ Created on Thu Oct 19 11:45:39 2017
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
-import os
-import sys
-import numpy as np
-import pandas as pd
-
-path_script = os.getcwd()
-# path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if(path_script.find('functions')==-1):
-  path_script=path_script+"\\GitHub\\pwf\\functions"
-path_root=path_script.replace('\\functions', '')
-os.chdir(path_script)
-
-sys.path.insert(1,path_script)
-# from __init__ import *
-from functions import *
+# import os
+# import sys
+# import numpy as np
+# import pandas as pd
+# 
+# path_script = os.getcwd()
+# # path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+# if(path_script.find('functions')==-1):
+#   path_script=path_script+"\\GitHub\\pwf\\functions"
+# path_root=path_script.replace('\\functions', '')
+# os.chdir(path_script)
+# 
+# sys.path.insert(1,path_script)
+# # from __init__ import *
+# from functions import *
 ##########################################################################################
 # COLUMN WIDTHS
 ##########################################################################################
