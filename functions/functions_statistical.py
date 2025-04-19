@@ -5,13 +5,6 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-
-path_script = os.getcwd()
-path_root = path_script.replace('\\functions', '')
-
-sys.path.insert(1,file_path)
-from __init__ import *
-from functions import *
 ##########################################################################################
 # 
 ##########################################################################################
@@ -91,19 +84,19 @@ def compute_standard(vector,mean=0,sd=1,type="z",input="non_standard"):
         raise ValueError("Invalid type specified.")
     return result
 
-vector=list(range(100))
-
+# vector=list(range(100))
+# 
 # Compute z-scores
-z_scores = compute_standard(vector, type="z")
-print("Z-scores:", z_scores)
-
+# z_scores = compute_standard(vector, type="z")
+# print("Z-scores:", z_scores)
+# 
 # Compute sten scores
-sten_scores = compute_standard(vector, type="sten")
-print("Sten scores:", sten_scores)
-
+# sten_scores = compute_standard(vector, type="sten")
+# print("Sten scores:", sten_scores)
+# 
 # Compute all scores
-all_scores = compute_standard(vector, type="all",input="non_standard")
-print(all_scores)
+# all_scores = compute_standard(vector, type="all",input="non_standard")
+# print(all_scores)
 
 
 

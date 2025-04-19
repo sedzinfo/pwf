@@ -54,3 +54,24 @@ df_sexual_comp=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-se
 df_personality=pd.read_csv(path_root+"/data/personality.csv")
 df_titanic=pd.read_csv(path_root+"/data/titanic.csv")
 
+
+##########################################################################################
+# DELETE CACHE
+##########################################################################################
+import shutil
+
+for root, dirs, files in os.walk(path_script):
+    for d in dirs:
+        if d == "__pycache__":
+            pycache_path = os.path.join(root, d)
+            shutil.rmtree(pycache_path)
+            print(f"Deleted: {pycache_path}")
+
+for root, dirs, files in os.walk(path_script):
+    print("Root:", root)
+    print("Dirs:", dirs)
+    print("Files:", files)
+    print("-" * 40)
+
+
+        
