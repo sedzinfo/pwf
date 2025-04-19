@@ -16,34 +16,26 @@ sys.path.insert(1,path_script)
 
 
 files = [f for f in os.listdir(path_script) if os.path.isfile(os.path.join(path_script, f))]
-
-print(files)
-
-
-from functions_generic import *
-from functions_cdf import *
-from functions_excel import *
-
-
-
-
-
+files = [f[:-3] if f.endswith('.py') else f for f in files]
+files=sorted(files)
+for f in files:
+  print(f)
 
 from explore_assumptions import *
 from explore_descriptives import *
 from functions_cdf import *
 from functions_excel import *
+from functions_generic import *
+from functions_statistical import *
 from functions_timestamp import *
 from functions_train_test import *
-from functions_statistical import *
-from functions_generic import *
-from plot_corrplot import *
-from glm_reliability import *
 from glm_efa import *
 from glm_means import *
 from glm_one_way_anova import *
+from glm_reliability import *
 from glm_sem import *
 from helper import *
+from plot_corrplot import *
 
 
 
