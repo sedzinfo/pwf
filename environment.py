@@ -14,9 +14,39 @@ os.chdir(path_script)
 
 sys.path.insert(1,path_script)
 
-from functions import *
+
+files = [f for f in os.listdir(path_script) if os.path.isfile(os.path.join(path_script, f))]
+
+print(files)
+
+
+from functions_generic import *
 from functions_cdf import *
 from functions_excel import *
+
+
+
+
+
+
+from explore_assumptions import *
+from explore_descriptives import *
+from functions_cdf import *
+from functions_excel import *
+from functions_timestamp import *
+from functions_train_test import *
+from functions_statistical import *
+from functions_generic import *
+from plot_corrplot import *
+from glm_reliability import *
+from glm_efa import *
+from glm_means import *
+from glm_one_way_anova import *
+from glm_sem import *
+from helper import *
+
+
+
 ##########################################################################################
 # DATA
 ##########################################################################################
@@ -31,3 +61,4 @@ df_responses_state=pd.read_csv("https://raw.githubusercontent.com/researchpy/Dat
 df_sexual_comp=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-sets/master/sexual_comp.csv")
 df_personality=pd.read_csv(path_root+"/data/personality.csv")
 df_titanic=pd.read_csv(path_root+"/data/titanic.csv")
+

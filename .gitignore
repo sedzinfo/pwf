@@ -2,5 +2,4 @@ venvironment
 output
 functions/.Rhistory
 functions/.RData
-output/
-functions/__pycache__/
+functions/__pycache__
