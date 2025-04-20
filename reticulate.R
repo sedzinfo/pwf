@@ -1,15 +1,15 @@
 ################################################################################
 # LOAD
 ################################################################################
+rstudioapi::restartSession()
 library(reticulate)
 directory<-paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/")
-reticulate::py_run_string(paste0("path_script = '", directory, "'"))
+# reticulate::py_run_string(paste0("path_script = '", directory, "'"))
 
 system2("python", "--version")
 system2("R", "--version")
 reticulate::py_config()
 
-rstudioapi::restartSession()
 # reticulate::virtualenv_remove(paste0(directory,"venvironment/"))
 # reticulate::virtualenv_create(paste0(directory,"venvironment/"))
 reticulate::use_virtualenv(paste0(directory,"venvironment/"))
@@ -35,6 +35,8 @@ reticulate::py_install("matrix")
 reticulate::py_install("nltk")
 reticulate::py_install("openpyxl")
 reticulate::py_install("pingouin")
+reticulate::py_install("seaborn")
+
 
 # Use Python in R
 np<-import("numpy")

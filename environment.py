@@ -4,6 +4,7 @@
 import os
 import sys
 import pandas as pd
+import shutil
 
 path_script = os.getcwd()
 # path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -13,7 +14,6 @@ path_root=path_script.replace('/functions', '')
 os.chdir(path_script)
 
 sys.path.insert(1,path_script)
-
 
 files = [f for f in os.listdir(path_script) if os.path.isfile(os.path.join(path_script, f))]
 files = [f[:-3] if f.endswith('.py') else f for f in files]
@@ -51,13 +51,10 @@ df_responses_state=pd.read_csv("https://raw.githubusercontent.com/researchpy/Dat
 df_sexual_comp=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-sets/master/sexual_comp.csv")
 df_personality=pd.read_csv(path_root+"/data/personality.csv")
 df_titanic=pd.read_csv(path_root+"/data/titanic.csv")
-
-
+df_co2=pd.read_csv(path_root+"/data/co2.csv")
 ##########################################################################################
 # DELETE CACHE
 ##########################################################################################
-import shutil
-
 for root, dirs, files in os.walk(path_script):
     for d in dirs:
         if d == "__pycache__":
@@ -70,6 +67,11 @@ for root, dirs, files in os.walk(path_script):
     print("Dirs:", dirs)
     print("Files:", files)
     print("-" * 40)
-
-
-        
+##########################################################################################
+# OPTIONS
+##########################################################################################     
+pd.set_option('display.max_columns', None)     # Show all columns
+pd.set_option('display.max_rows', None)        # Show all rows
+pd.set_option('display.max_colwidth', None)    # Show full contents of each cell
+pd.set_option('display.width', 0)              # Auto-detect display width
+np.set_printoptions(suppress=True)
