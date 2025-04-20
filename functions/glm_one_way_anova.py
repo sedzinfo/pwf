@@ -11,102 +11,7 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-##########################################################################################
-# LOAD
-##########################################################################################
-import pandas as pd
 import researchpy as rp
-df=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-sets/master/difficile.csv")
-df.drop('person',axis=1,inplace= True)
-
-# Recoding value from numeric to string
-df['dose'].replace({1:'placebo',2:'low',3:'high'},inplace= True)
-df.info()
-
-import scipy.stats as stats
-import statsmodels.api as sm
-from statsmodels.formula.api import ols
-
-stats.f_oneway(df['libido'][df['dose']=='high'],
-               df['libido'][df['dose']=='low'],
-               df['libido'][df['dose']=='placebo'])
-
-model=ols('libido~C(dose)',data=df).fit()
-aov_table=sm.stats.anova_lm(model,typ=2)
-aov_table
-
-def anova_table(aov):
-    aov['mean_sq']=aov[:]['sum_sq']/aov[:]['df']
-    aov['eta_sq']=aov[:-1]['sum_sq']/sum(aov['sum_sq'])
-    aov['omega_sq']=(aov[:-1]['sum_sq']-(aov[:-1]['df']*aov['mean_sq'][-1]))/(sum(aov['sum_sq'])+aov['mean_sq'][-1])
-    cols=['sum_sq','df','mean_sq','F','PR(>F)','eta_sq','omega_sq']
-    aov=aov[cols]
-    return aov
-
-anova_table(aov_table)
-stats.shapiro(model.resid)
-
-
-import matplotlib.pyplot as plt
-
-fig=plt.figure(figsize=(10,10))
-ax=fig.add_subplot(111)
-
-normality_plot,stat=stats.probplot(model.resid,plot= plt,rvalue= True)
-ax.set_title("Probability plot of model residual's",fontsize= 20)
-ax.set
-
-plt.show()
-
-stats.levene(df['libido'][df['dose']=='high'],
-             df['libido'][df['dose']=='low'],
-             df['libido'][df['dose']=='placebo'])
-
-
-fig=plt.figure(figsize=(10,10))
-ax=fig.add_subplot(111)
-
-ax.set_title("Box Plot of Libido by Dosage",fontsize= 20)
-ax.set
-
-data=[df['libido'][df['dose']=='placebo'],
-      df['libido'][df['dose']=='low'],
-      df['libido'][df['dose']=='high']]
-
-ax.boxplot(data,
-           labels= ['Placebo','Low','High'],
-           showmeans= True)
-
-plt.xlabel("Drug Dosage")
-plt.ylabel("Libido Score")
-
-plt.show()
-
-import statsmodels.stats.multicomp as mc
-
-comp=mc.MultiComparison(df['libido'],df['dose'])
-post_hoc_res=comp.tukeyhsd()
-print(post_hoc_res.summary())
-
-post_hoc_res.plot_simultaneous(ylabel= "Drug Dose",xlabel= "Score Difference")
-allpairtest(statistical_test_method,method= "correction_method")
-
-import statsmodels.stats.multicomp as mc
-
-comp=mc.MultiComparison(df['libido'],df['dose'])
-tbl,a1,a2=comp.allpairtest(stats.ttest_ind,method= "bonf")
-
-print(tbl)
-
-allpairtest(statistical_test_method,method= "correction_method")
-
-import statsmodels.stats.multicomp as mc
-
-comp=mc.MultiComparison(df['libido'],df['dose'])
-tbl,a1,a2=comp.allpairtest(stats.ttest_ind,method= "")
-
-print(tbl)
-
 ##########################################################################################
 # KRUSKALL WALLIS TEST WITH EFFECT SIZE
 ##########################################################################################
@@ -297,35 +202,36 @@ def compute_aov_es(model, ss="I"):
     model_df = model.model.data.frame
     n_total = model_df.shape[0]
 
-    # Type I SS (default in statsmodels)
-    ss1 = anova_lm(model, typ=1)
-    ss1.columns = ['Df', 'Sum Sq', 'Mean Sq', 'F value', 'Pr(>F)']
-    ss1 = ss1.reset_index()
-
-    # Type II SS
-    ss2 = anova_lm(model, typ=2)
-    ss2['Mean Sq'] = ss2['sum_sq'] / ss2['df']
-    ss2 = ss2.rename(columns={'df': 'Df', 'sum_sq': 'Sum Sq', 'F': 'F value', 'PR(>F)': 'Pr(>F)'})
-    ss2 = ss2[['Df', 'Sum Sq', 'Mean Sq', 'F value', 'Pr(>F)']]
-    ss2 = ss2.reset_index()
-
-    # Type III SS
-    ss3 = anova_lm(model, typ=3)
-    ss3['Mean Sq'] = ss3['sum_sq'] / ss3['df']
-    ss3 = ss3.rename(columns={'df': 'Df', 'sum_sq': 'Sum Sq', 'F': 'F value', 'PR(>F)': 'Pr(>F)'})
-    ss3 = ss3[['Df', 'Sum Sq', 'Mean Sq', 'F value', 'Pr(>F)']]
-    ss3 = ss3.reset_index()
-
     # Select appropriate summary table
     if ss == "I":
+        ss1 = anova_lm(model, typ=1)
+        ss1 = ss1.rename(columns={'df': 'Df', 'sum_sq': 'Sum Sq', 'mean_sq': 'Mean Sq', 'F': 'F value', 'PR(>F)': 'Pr(>F)'})
+        ss1 = ss1[['Df', 'Sum Sq', 'Mean Sq', 'F value', 'Pr(>F)']]
+        ss1 = ss1.reset_index()
+
         summary_aov = ss1
     elif ss == "II":
-        summary_aov = ss2
-    elif ss == "III":
-        summary_aov = ss3.iloc[1:].copy()
-        intercept = ss3.iloc[0:1]
+        ss2 = anova_lm(model, typ=2)
+        ss2['Mean Sq'] = ss2['sum_sq'] / ss2['df']
+        ss2 = ss2.rename(columns={'df': 'Df', 'sum_sq': 'Sum Sq', 'F': 'F value', 'PR(>F)': 'Pr(>F)'})
+        ss2 = ss2[['Df', 'Sum Sq', 'Mean Sq', 'F value', 'Pr(>F)']]
+        ss2 = ss2.reset_index()
 
-    residual_row = summary_aov.shape[0] - 1
+        summary_aov = ss2
+        
+    elif ss == "III":
+        ss3 = anova_lm(model, typ=3)
+        ss3['Mean Sq'] = ss3['sum_sq'] / ss3['df']
+        ss3 = ss3.rename(columns={'df': 'Df', 'sum_sq': 'Sum Sq', 'F': 'F value', 'PR(>F)': 'Pr(>F)'})
+        ss3 = ss3[['Df', 'Sum Sq', 'Mean Sq', 'F value', 'Pr(>F)']]
+        ss3 = ss3.reset_index()
+
+        order = ['Treatment', 'Residual', 'Intercept']
+        ss3 = ss3.set_index('index').loc[order].reset_index()
+        summary_aov = ss3.iloc[0:].copy()
+        intercept = ss3.iloc[2:3]
+    
+    residual_row = summary_aov[summary_aov["index"].str.contains("Residual")].index[0]
     ms_effect = summary_aov.loc[:residual_row - 1, 'Mean Sq'].values
     ms_error = summary_aov.loc[residual_row, 'Mean Sq']
     df_effect = summary_aov.loc[:residual_row - 1, 'Df'].values
@@ -359,24 +265,22 @@ def compute_aov_es(model, ss="I"):
     summary_aov['call'] = str(model.model.formula)
     summary_aov['ss'] = ss
 
-    if ss == "III":
-        intercept['call'] = str(model.model.formula)
-        intercept['ss'] = ss
-        summary_aov = pd.concat([intercept.rename(columns={'index': 'comparisons'}), summary_aov], ignore_index=True)
+    # if ss == "III":
+    #     intercept['call'] = str(model.model.formula)
+    #     intercept['ss'] = ss
+    #     summary_aov = pd.concat([intercept.rename(columns={'index': 'comparisons'}), summary_aov], ignore_index=True)
 
     merged = pd.merge(summary_aov, result, how='outer', on=['call', 'ss', 'comparisons'])
     return merged
 
-# Fit model
-model = smf.ols('bp_before ~ agegrp', data=df_blood_pressure).fit()
-# Compute effect sizes
-compute_aov_es(model=model, ss="II")  # or "I", "II"
-
-form<-"uptake~Treatment""
-
-model=smf.ols('uptake~Treatment', data=df_co2).fit()
-
-compute_aov_es(model=model,ss="I")
+one_way_between=smf.ols('uptake~Treatment', data=df_co2).fit()
+factorial_between=smf.ols('uptake~Treatment*Type', data=df_co2).fit()
+compute_aov_es(model=one_way_between,ss="I")
+compute_aov_es(model=one_way_between,ss="II")
+compute_aov_es(model=one_way_between,ss="III")
+compute_aov_es(model=factorial_between,ss="I")
+compute_aov_es(model=factorial_between,ss="II")
+compute_aov_es(model=factorial_between,ss="III")
 
 
 

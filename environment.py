@@ -74,4 +74,5 @@ pd.set_option('display.max_columns', None)     # Show all columns
 pd.set_option('display.max_rows', None)        # Show all rows
 pd.set_option('display.max_colwidth', None)    # Show full contents of each cell
 pd.set_option('display.width', 0)              # Auto-detect display width
+pd.set_option('display.width', 1000)   
 np.set_printoptions(suppress=True)

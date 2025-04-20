@@ -11,23 +11,14 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-##########################################################################################
-# LOAD
-##########################################################################################
-import pandas as pd
-import numpy as np
 import pingouin as pg
 import itertools
 from scipy.stats import levene, bartlett
 import functions_excel as fe
-
-# df=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-sets/master/blood_pressure.csv")
-# personality=pd.read_csv('/opt/pyrepo/data/personality.csv')
-# titanic=pd.read_csv('/opt/pyrepo/data/titanic.csv')
 ##########################################################################################
 # 
 ##########################################################################################
-def ttest(df,dv,iv,paired=False,alternative="two-sided"):
+def report_ttests(df,dv,iv,paired=False,alternative="two-sided"):
     result_iterative=pd.DataFrame()
     for factor in iv:
         levels=df[factor].value_counts().index.values
@@ -61,13 +52,61 @@ def ttest(df,dv,iv,paired=False,alternative="two-sided"):
             result_iterative=pd.concat([result_iterative,result],axis=0)
     return result_iterative
 
-# result_titanic=ttest(df=titanic,dv="Age",iv=["Embarked","Sex"])
-# result_before=ttest(df=df,dv="bp_before",iv=["sex","agegrp"])
-# result_after=ttest(df=df,dv="bp_after",iv=["sex","agegrp"])
-# writer_critical_value_excel=pd.ExcelWriter('/opt/pyrepo/output/xlsxwriter_critical_value_excel.xlsx',engine='xlsxwriter')
-# fe.critical_value_excel(result_titanic,writer_critical_value_excel,"DATA",comment="Test Comment")
-# writer_critical_value_excel._save()
+# ttest(df=df_blood_pressure,dv="bp_before",iv=["sex","agegrp"])
+##########################################################################################
+# LEVENE
+##########################################################################################
+from scipy.stats import levene
+import pandas as pd
+import itertools
 
+def report_levene(df, dv, iv):
+    result_iterative = pd.DataFrame()
+    for factor in iv:
+        levels = df[factor].unique()
+        combinations = list(itertools.combinations(levels, 2))
+        for level1, level2 in combinations:
+            group1 = df[df[factor] == level1][dv]
+            group2 = df[df[factor] == level2][dv]
+            stat, p = levene(group1, group2)
+            result = pd.DataFrame({
+                "IV": [factor],
+                "V1": [level1],
+                "V2": [level2],
+                "Levene": [stat],
+                "Levene_p": [p]
+            })
+            result_iterative = pd.concat([result_iterative, result], ignore_index=True)
+    return result_iterative
+
+report_levene(df=df_blood_pressure,dv="bp_before",iv=["sex","agegrp"])
+##########################################################################################
+# BARTLETT
+##########################################################################################
+from scipy.stats import bartlett
+import pandas as pd
+import itertools
+
+def report_bartlett(df, dv, iv):
+    result_iterative = pd.DataFrame()
+    for factor in iv:
+        levels = df[factor].unique()
+        combinations = list(itertools.combinations(levels, 2))
+        for level1, level2 in combinations:
+            group1 = df[df[factor] == level1][dv]
+            group2 = df[df[factor] == level2][dv]
+            stat, p = bartlett(group1, group2)
+            result = pd.DataFrame({
+                "IV": [factor],
+                "V1": [level1],
+                "V2": [level2],
+                "Bartlett": [stat],
+                "Bartlett_p": [p]
+            })
+            result_iterative = pd.concat([result_iterative, result], ignore_index=True)
+    return result_iterative
+  
+report_bartlett(df=df_blood_pressure,dv="bp_before",iv=["sex","agegrp"])
 
 
 
