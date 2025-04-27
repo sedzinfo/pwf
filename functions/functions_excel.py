@@ -6,21 +6,8 @@ Created on Thu Oct 19 11:45:39 2017
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
-# import os
-# import sys
-# import numpy as np
-# import pandas as pd
-# 
-# path_script = os.getcwd()
-# # path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-# if(path_script.find('functions')==-1):
-#   path_script=path_script+"\\GitHub\\pwf\\functions"
-# path_root=path_script.replace('\\functions', '')
-# os.chdir(path_script)
-# 
-# sys.path.insert(1,path_script)
-# # from __init__ import *
-# from functions import *
+import numpy as np
+import pandas as pd
 ##########################################################################################
 # COLUMN WIDTHS
 ##########################################################################################
@@ -76,14 +63,13 @@ def generic_format_excel(df,writer,sheetname,comments=None):
     for i, width in enumerate(get_col_widths(df)):
         sheet.set_column(i,i,width)
 
-# personality=pd.read_csv(path_root+"/data/personality.csv")
 # output_file=path_root+'/output/generic.xlsx'
 # if os.path.exists(output_file):
 #     os.remove(output_file)
 # ge=pd.ExcelWriter(output_file,engine='xlsxwriter')
 # comments = {'A1': "This is a general comment for the sheet.",
 #             'A2': "This cell contains important data."}
-# generic_format_excel(df=personality,writer=ge,sheetname="ge",comments=comments)
+# generic_format_excel(df=df_personality,writer=ge,sheetname="ge",comments=comments)
 # ge._save()
 # ge.close()
 # os.remove(output_file)
@@ -120,21 +106,23 @@ def matrix_excel(df,writer,sheetname,comments=None):
     dimensions=np.array(df.shape)
     sheet.conditional_format(1,1,dimensions[0],dimensions[1], {'type': '2_color_scale', 'min_color': 'yellow', 'max_color': 'green'})
 
-# personality=pd.read_csv(path_root+"/data/personality.csv")
-# df=personality_cor=pd.DataFrame(personality.corr())
 # output_file=path_root+'/output/matrix.xlsx'
 # if os.path.exists(output_file):
 #     os.remove(output_file)
 # me=pd.ExcelWriter(output_file,engine='xlsxwriter')
 # comments={'A1': "This is a general comment for the sheet.",
 #           'B2': "This cell contains important data."}
-# matrix_excel(df=personality_cor,writer=me,sheetname="me",comments=comments)
+# matrix_excel(df=pd.DataFrame(df_personality.corr()),
+#              writer=me,
+#              sheetname="me",
+#              comments=comments)
 # me._save()
 # me.close()
 # os.remove(output_file)
 ##########################################################################################
 # CRITICAL VALUE EXCEL
 ##########################################################################################
+import numpy as np
 def critical_value_excel(df,writer,sheetname,comments="",critical_collumn="",rule="<",value=""):
     """
     Writes data to an Excel file using the given writer object and applies conditional formatting to the specified column.

@@ -1,33 +1,9 @@
+# !/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Thu Oct 19 11:45:39 2017
 @author: Dimitrios Zacharatos
 """
-##########################################################################################
-# LOAD SYSTEM
-##########################################################################################
-import os
-import sys
-import numpy as np
-import pandas as pd
- 
-# path_script=os.getcwd()
-# # path_root=os.path.abspath(os.path.join(os.path.dirname(__file__),'..'))
-# if(path_script.find('functions')==-1):
-#   path_script=path_script+"\\GitHub\\pwf\\functions"
-# path_root=path_script.replace('\\functions','')
-# os.chdir(path_script)
-# df=pd.read_csv(path_root+"/data/personality.csv")
-# 
-# sys.path.insert(1,path_script)
-# from functions import *
-# from functions_excel import *
-##########################################################################################
-# LOAD
-##########################################################################################
-import matplotlib.pyplot as plt
-from factor_analyzer import FactorAnalyzer,calculate_bartlett_sphericity,calculate_kmo
-from sklearn.decomposition import FactorAnalysis
 ##########################################################################################
 # SCREE PLOT
 ##########################################################################################
@@ -36,7 +12,6 @@ import numpy as np
 from plotnine import (ggplot,aes,geom_hline,geom_line,geom_point,theme_bw,
                       scale_x_continuous,labs,annotate,theme,element_blank,
                       element_text)
-
 def plot_scree(df,base_size=15,title="",color=("#5F2C91","#5E912C")):
     """
     Scree plot displaying the Kaiser and Jolliffe criteria for factor extraction using plotnine (ggplot2 for Python).
@@ -94,15 +69,15 @@ def plot_scree(df,base_size=15,title="",color=("#5F2C91","#5E912C")):
                   
     return plot
   
-# scree_plot=plot_scree(df,base_size=15,title="")
+# scree_plot=plot_scree(df_personality,base_size=15,title="")
 # scree_plot.show()
 ##########################################################################################
 # REPORT EFA
 ##########################################################################################
-def report_efa(df,n_factors=3,rotation='promax',method='minres',
+from factor_analyzer import FactorAnalyzer,calculate_bartlett_sphericity,calculate_kmo
+def report_efa(df,output_file,n_factors=3,rotation='promax',method='minres',
                use_smc=True,is_corr_matrix=False,bounds=(0.005,1),
-               impute='median',svd_method='randomized',rotation_kwargs=None,
-               output_file=path_root+'/output/efa.xlsx'):
+               impute='median',svd_method='randomized',rotation_kwargs=None):
     
     """
     Perform Exploratory Factor Analysis (EFA) on a given dataset and generate relevant statistics,
@@ -140,7 +115,7 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
     rotation_kwargs : dict,optional
         Additional arguments for the rotation method.
 
-    output_file : str,default=path_root+'/output/efa.xlsx'
+    output_file : str,
         Path to the output Excel file where the results will be saved.
 
     Returns:
@@ -236,7 +211,7 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
                        df_uniqueness.set_index("names")],
                        axis=1)
                          
-    writer=pd.ExcelWriter(output_file,engine='xlsxwriter')
+    writer=pd.ExcelWriter(path=output_file,engine='xlsxwriter')
     matrix_excel(df=eigencu,writer=writer,sheetname="Eigen Communality Uniqueness",comments=comments_s1)
     matrix_excel(df=df_loadings,writer=writer,sheetname="Loadings",comments=None)
     matrix_excel(df=correlations,writer=writer,sheetname="Correlation",comments=None)
@@ -256,10 +231,13 @@ def report_efa(df,n_factors=3,rotation='promax',method='minres',
             "Residuals":correlations_residual}
 
     return result
-  
-# result=report_efa(df=df,n_factors=10,rotation='promax',method='minres',
+
+
+
+# result=report_efa(df=df_personality,n_factors=10,rotation='promax',method='minres',
 #                   use_smc=True,is_corr_matrix=False,bounds=(0.005,1),
-#                   impute='median',svd_method='randomized',rotation_kwargs=None)
+#                   impute='median',svd_method='randomized',rotation_kwargs=None,
+#                   output_file=path_script+'/output/efa.xlsx')
 ##########################################################################################
 # REPORT EFA
 ##########################################################################################
