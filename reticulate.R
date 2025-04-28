@@ -37,7 +37,6 @@ reticulate::py_install("openpyxl")
 reticulate::py_install("pingouin")
 reticulate::py_install("seaborn")
 
-
 # Use Python in R
 np<-import("numpy")
 array<-np$array(c(1,2,3))
