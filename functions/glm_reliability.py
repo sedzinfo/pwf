@@ -11,7 +11,6 @@ import pingouin as pg
 alpha = pg.cronbach_alpha(data=df_personality.iloc[0:10])
 alpha
 
-
 import rpy2.robjects as ro
 from rpy2.robjects import pandas2ri
 
@@ -37,30 +36,73 @@ import rpy2.robjects as robjects
 from rpy2.robjects.packages import importr
 import pandas as pd
 from rpy2.robjects import pandas2ri
+import pandas as pd
+import rpy2.robjects as ro
+from rpy2.robjects.packages import importr
+from rpy2.robjects import pandas2ri
 
-# Import psych package
+
 psych = importr('psych')
 
-# Example data (optional: if you want to simulate)
-# Let's create some dummy data in R
-robjects.r('''
-library(psych)
-set.seed(123)
-df <- data.frame(matrix(rnorm(100), nrow=20))
-''')
-
-# Run alpha on the R dataframe
-alpha_result = psych.alpha(robjects.r('df'))
+robjects.globalenv['df'] = df_personality.iloc[:,0:5]
+alpha_result = psych.alpha(robjects.r('df'),check_keys=True)
 
 pandas2ri.activate()
 
 # If you want to see what keys the result has
 print(list(alpha_result.names))
 
-# Then you can access specific parts
-print(alpha_result.rx2('total'))
+x01=alpha_result.rx2('total')
+x02=alpha_result.rx2('alpha.drop')
+x03=alpha_result.rx2('item.stats')
+x04=alpha_result.rx2('response.freq')
+x05=alpha_result.rx2('keys')
+x06=alpha_result.rx2('scores')
+x07=alpha_result.rx2('nvar')
+x08=alpha_result.rx2('boot.ci')
+x09=alpha_result.rx2('boot')
+x10=alpha_result.rx2('feldt')
+x11=alpha_result.rx2('Unidim')
+x12=alpha_result.rx2('var.r')
+x13=alpha_result.rx2('Fit')
+x14=alpha_result.rx2('call')
+x15=alpha_result.rx2('title')
+x16=alpha_result.rx2('feldt')
 
-alpha_result.do_slot
+with(ro.default_converter+pandas2ri.converter).context():
+  result_total = ro.conversion.get_conversion().rpy2py(x01)
+with(ro.default_converter+pandas2ri.converter).context():
+  result_alpha_drop = ro.conversion.get_conversion().rpy2py(x02)
+with(ro.default_converter+pandas2ri.converter).context():
+  result_item_stats = ro.conversion.get_conversion().rpy2py(x03)
+
+result_response_frequency=pd.DataFrame(x04)
+result_keys=pd.DataFrame(x05)
+result_scores=pd.DataFrame(x06)
+
+result_alpha_drop
+result_total
+result_item_stats
+result_response_frequency
+
+
+print(alpha_result.rx2('total'))
+print(alpha_result.rx2('alpha.drop'))
+print(alpha_result.rx2('item.stats'))
+print(alpha_result.rx2('response.freq'))
+print(alpha_result.rx2('keys'))
+print(alpha_result.rx2('scores'))
+print(alpha_result.rx2('nvar'))
+print(alpha_result.rx2('boot.ci'))
+print(alpha_result.rx2('boot'))
+print(alpha_result.rx2('feldt'))
+print(alpha_result.rx2('Unidim'))
+print(alpha_result.rx2('var.r'))
+print(alpha_result.rx2('Fit'))
+print(alpha_result.rx2('call'))
+print(alpha_result.rx2('title'))
+
+alpha_result.rx2('total')
 alpha_result.do_slot_assign
 alpha_result.from_iterable
 alpha_result.from_length
