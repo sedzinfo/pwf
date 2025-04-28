@@ -46,6 +46,7 @@ psych = importr('psych')
 
 robjects.globalenv['df'] = df_personality.iloc[:,0:5]
 alpha_result = psych.alpha(robjects.r('df'),check_keys=True)
+alpha_result = robjects.r('psych::alpha(df, check.keys=TRUE, n.iter=10)')
 
 pandas2ri.activate()
 
@@ -79,12 +80,16 @@ with(ro.default_converter+pandas2ri.converter).context():
 result_response_frequency=pd.DataFrame(x04)
 result_keys=pd.DataFrame(x05)
 result_scores=pd.DataFrame(x06)
+result_boot_ci=pd.DataFrame(pd.DataFrame(x08).T)
+result_boot_ci.columns=['ci_lower','ci','ci_upper']
+result_boot=pd.DataFrame(x09).T
 
 result_alpha_drop
 result_total
 result_item_stats
 result_response_frequency
-
+result_scores
+result_keys
 
 print(alpha_result.rx2('total'))
 print(alpha_result.rx2('alpha.drop'))
