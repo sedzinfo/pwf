@@ -41,4 +41,4 @@ reticulate::py_install("seaborn")
 np<-import("numpy")
 array<-np$array(c(1,2,3))
 
-list.files(reticulate::virtualenv_root(), recursive = TRUE, pattern = "cacert.pem", full.names = TRUE)
+list.files(reticulate::virtualenv_root(),recursive=TRUE,pattern="cacert.pem",full.names=TRUE)
