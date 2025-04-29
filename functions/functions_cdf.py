@@ -5,19 +5,10 @@ Created on Wed Oct 25 14:32:36 2017
 @author: Dimitrios Zacharatos
 """
 ##########################################################################################
-# LOAD SYSTEM
+# LOAD
 ##########################################################################################
-# import os
-# import sys
-# import numpy as np
-# import pandas as pd
-# 
-# path_script = os.getcwd()
-# path_root = path_script.replace('/functions', '')
-# 
-# sys.path.insert(1,file_path)
-# from __init__ import populate_dataframe
-# from functions import *
+import pandas as pd
+import numpy as np
 ##########################################################################################
 # OBSERVED
 ##########################################################################################
@@ -78,16 +69,16 @@ def short_check(df):
                          'NULLS':[nulls],
                          'NOT_NULLS':[not_nulls]})
     return result
-# short_check(df_admission)
-# short_check(df_automotive)
-# short_check(df_blood_pressure)
-# short_check(df_crop_yield)
-# short_check(df_difficile)
-# short_check(df_insurance)
-# short_check(df_responses)
-# short_check(df_sexual_comp)
-# short_check(df_personality)
-# short_check(df_titanic)
+# short_check(df=df_admission)
+# short_check(df=df_automotive)
+# short_check(df=df_blood_pressure)
+# short_check(df=df_crop_yield)
+# short_check(df=df_difficile)
+# short_check(df=df_insurance)
+# short_check(df=df_responses)
+# short_check(df=df_sexual_comp)
+# short_check(df=df_personality)
+# short_check(df=df_titanic)
 ##########################################################################################
 # CHECK DATAFRAME
 ##########################################################################################
@@ -138,7 +129,7 @@ def cdf(df,width=10000,filename=""):
     pd.set_option('display.max_columns', None)
     pd.set_option('display.max_rows', None)
     pd.set_option('display.max_colwidth', None)
-    pd.set_option('display.width', width)
+    # pd.set_option('display.width', width)
     pd.set_option('display.max_seq_item', None)
     def is_nan(x):
         return x != x
@@ -175,18 +166,19 @@ def cdf(df,width=10000,filename=""):
     pd.set_option('display.max_colwidth', original_display_options['max_colwidth'])
     pd.set_option('display.width', original_display_options['width'])
     pd.set_option('display.max_seq_item', original_display_options['max_seq_item'])
-    # return check, short_check_result
+    return check, short_check_result
 
-# cdf(df_admission)
-# cdf(df_automotive)
-# cdf(df_blood_pressure)
-# cdf(df_crop_yield)
-# cdf(df_difficile)
-# cdf(df_insurance)
-# cdf(df_responses)
-# cdf(df_sexual_comp)
-# cdf(df_personality)
-# cdf(df_titanic)
+# cdf(df=df_admission)
+# cdf(df=df_automotive)
+# cdf(df=df_blood_pressure)
+# cdf(df=df_crop_yield)
+# cdf(df=df_difficile)
+# cdf(df=df_insurance)
+# cdf(df=df_responses)
+# cdf(df=df_sexual_comp)
+# cdf(df=df_personality)
+# cdf(df=df_titanic)
+# cdf(df=df_ocean)
 ##########################################################################################
 # CHECK DATAFRAME ROWS
 ##########################################################################################

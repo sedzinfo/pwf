@@ -52,6 +52,7 @@ df_sexual_comp=pd.read_csv("https://raw.githubusercontent.com/researchpy/Data-se
 df_personality=pd.read_csv(path_root+"/data/personality.csv")
 df_titanic=pd.read_csv(path_root+"/data/titanic.csv")
 df_co2=pd.read_csv(path_root+"/data/co2.csv")
+df_ocean=pd.read_csv(path_root+"/data/ocean.csv",sep='\t')
 ##########################################################################################
 # DELETE CACHE
 ##########################################################################################

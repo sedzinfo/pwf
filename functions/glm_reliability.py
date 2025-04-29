@@ -18,8 +18,11 @@ psych=importr('psych')
 
 round(df_personality.corr(),1)
 
+pd.DataFrame(df_ocean.columns)
+df=df_ocean.loc[:, df_ocean.columns.str.startswith("E")]
+df.corr()
 
-ro.globalenv['df']=df_personality.iloc[:,[0,5,15,20,30,35]]
+ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("E")]
 alpha_result=ro.r('psych::alpha(df, check.keys=TRUE, n.iter=10)')
 
 # If you want to see what keys the result has
@@ -71,6 +74,9 @@ result_items=pd.concat([item_names,
                         result_response_frequency],
                         axis=1)
 result_items.index=result_item_stats.index
+
+result_total_summary
+result_items
 
 result_scores
 
