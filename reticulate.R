@@ -10,6 +10,8 @@ system2("python", "--version")
 system2("R", "--version")
 reticulate::py_config()
 
+Sys.getenv("R_HOME")
+
 # reticulate::virtualenv_remove(paste0(directory,"venvironment/"))
 # reticulate::virtualenv_create(paste0(directory,"venvironment/"))
 reticulate::use_virtualenv(paste0(directory,"venvironment/"))
