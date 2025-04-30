@@ -21,12 +21,44 @@ round(df_personality.corr(),1)
 pd.DataFrame(df_ocean.columns)
 df=df_ocean.loc[:, df_ocean.columns.str.startswith("E")]
 df.corr()
+df_ocean.head()
 
+ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("O")]
+ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("C")]
+ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("A")]
 ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("E")]
-alpha_result=ro.r('psych::alpha(df, check.keys=TRUE, n.iter=10)')
+ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("N")]
+
+
+
+
+traits = ['O', 'C', 'E', 'A', 'N']
+keys_dict = {
+    "O": [1,-1,1,-1,1,-1,1,1,1,1],
+    "C": [1,-1,1,-1,1,-1,1,-1,1,1],
+    "E": [1,-1,1,-1,1,-1,1,-1,1,-1],
+    "A": [-1,1,-1,1,-1,1,-1,1,1,1],
+    "N": ["N1", "N2", "N3", "-N4", "N5"]
+}
+
+alpha_results = {}
+
+for trait in traits:
+    df_trait=df_ocean.loc[:, df_ocean.columns.str.startswith(trait)]
+    ro.globalenv['df']=df_trait
+    result=ro.r('psych::alpha(df, check.keys=TRUE, n.iter=10)')
+    alpha_results[trait]=result
+
+trait='A'
+
+print(alpha_results[trait])
+
+alpha_result=ro.r('psych::alpha(df,check.keys=TRUE,n.iter=10)')
 
 # If you want to see what keys the result has
 print(list(alpha_result.names))
+print(alpha_result.names)
+print(alpha_result)
 
 x01=alpha_result.rx2('total')
 x02=alpha_result.rx2('alpha.drop')
