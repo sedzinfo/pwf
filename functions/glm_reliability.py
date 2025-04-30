@@ -29,25 +29,28 @@ ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("A")]
 ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("E")]
 ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("N")]
 
+traits=['O','C','E','A','N']
+keys_dict = {"O":[1,-1,1,-1,1,-1,1,1,1,1],
+             "C":[1,-1,1,-1,1,-1,1,-1,1,1],
+             "E":[1,-1,1,-1,1,-1,1,-1,1,-1],
+             "A":[-1,1,-1,1,-1,1,-1,1,1,1],
+             "N":[1,-1,1,-1,1,1,1,1,1,1]}
 
-traits = ['O', 'C', 'E', 'A', 'N']
-keys_dict = {"O": [1,-1,1,-1,1,-1,1,1,1,1],
-             "C": [1,-1,1,-1,1,-1,1,-1,1,1],
-             "E": [1,-1,1,-1,1,-1,1,-1,1,-1],
-             "A": [-1,1,-1,1,-1,1,-1,1,1,1],
-             "N": ["N1", "N2", "N3", "-N4", "N5"]}
-
-alpha_results = {}
+alpha_result={}
 
 for trait in traits:
+    keys="NULL"
+    keys=keys_dict[trait]
+    str_with_parentheses = "(" + ", ".join(str(x) for x in keys) + ")"
+    psych_string='psych::alpha(df,'+'keys=c'+str_with_parentheses+',n.iter=10)'
     df_trait=df_ocean.loc[:, df_ocean.columns.str.startswith(trait)]
     ro.globalenv['df']=df_trait
-    result=ro.r('psych::alpha(df, check.keys=TRUE, n.iter=10)')
-    alpha_results[trait]=result
+    result=ro.r(psych_string)
+    alpha_result[trait]=result
 
-trait='A'
+trait='N'
 
-print(alpha_results[trait])
+print(alpha_result[trait])
 
 alpha_result=ro.r('psych::alpha(df,check.keys=TRUE,n.iter=10)')
 
@@ -56,22 +59,22 @@ print(list(alpha_result.names))
 print(alpha_result.names)
 print(alpha_result)
 
-x01=alpha_result.rx2('total')
-x02=alpha_result.rx2('alpha.drop')
-x03=alpha_result.rx2('item.stats')
-x04=alpha_result.rx2('response.freq')
-x05=alpha_result.rx2('keys')
-x06=alpha_result.rx2('scores')
-x07=alpha_result.rx2('nvar')
-x08=alpha_result.rx2('boot.ci')
-x09=alpha_result.rx2('boot')
-x10=alpha_result.rx2('feldt')
-x11=alpha_result.rx2('Unidim')
-x12=alpha_result.rx2('var.r')
-x13=alpha_result.rx2('Fit')
-x14=alpha_result.rx2('call')
-x15=alpha_result.rx2('title')
-x16=alpha_result.rx2('feldt')
+x01=alpha_result[trait].rx2('total')
+x02=alpha_result[trait].rx2('alpha.drop')
+x03=alpha_result[trait].rx2('item.stats')
+x04=alpha_result[trait].rx2('response.freq')
+x05=alpha_result[trait].rx2('keys')
+x06=alpha_result[trait].rx2('scores')
+x07=alpha_result[trait].rx2('nvar')
+x08=alpha_result[trait].rx2('boot.ci')
+x09=alpha_result[trait].rx2('boot')
+x10=alpha_result[trait].rx2('feldt')
+x11=alpha_result[trait].rx2('Unidim')
+x12=alpha_result[trait].rx2('var.r')
+x13=alpha_result[trait].rx2('Fit')
+x14=alpha_result[trait].rx2('call')
+x15=alpha_result[trait].rx2('title')
+x16=alpha_result[trait].rx2('feldt')
 
 with(ro.default_converter+pandas2ri.converter).context():
   result_total = ro.conversion.get_conversion().rpy2py(x01)
@@ -87,7 +90,7 @@ result_scores=pd.DataFrame(x06)
 result_boot_ci=pd.DataFrame(pd.DataFrame(x08).T)
 result_boot_ci.columns=['ci_lower','ci','ci_upper']
 result_boot=pd.DataFrame(x09)
-result_nvar=pd.DataFrame(alpha_result.rx2('nvar'),columns=["nvar"])
+result_nvar=pd.DataFrame(x07,columns=["nvar"])
 
 item_names=pd.DataFrame(result_item_stats.index,columns=["item"])
 
@@ -127,7 +130,7 @@ print(alpha_result.rx2('Fit'))
 print(alpha_result.rx2('call'))
 print(alpha_result.rx2('title'))
 
-(alpha_result.rx2('call'))
+alpha_result.rx2('call')
 
 alpha_result.rx2('call')
 
