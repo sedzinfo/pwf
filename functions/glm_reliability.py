@@ -36,9 +36,12 @@ keys_dict = {"O":[1,-1,1,-1,1,-1,1,1,1,1],
              "A":[-1,1,-1,1,-1,1,-1,1,1,1],
              "N":[1,-1,1,-1,1,1,1,1,1,1]}
 
+# alpha_result=ro.r('psych::alpha(df,check.keys=TRUE,n.iter=10)')
+
 alpha_result={}
 
 for trait in traits:
+    print(trait)
     keys="NULL"
     keys=keys_dict[trait]
     str_with_parentheses = "(" + ", ".join(str(x) for x in keys) + ")"
@@ -50,71 +53,77 @@ for trait in traits:
 
 trait='N'
 
+for trait in traits:
+    print(alpha_result[trait])
+
+print(alpha_result[trait].names)
 print(alpha_result[trait])
 
-alpha_result=ro.r('psych::alpha(df,check.keys=TRUE,n.iter=10)')
+result_total_summary_list = []
+result_items_list = []
 
-# If you want to see what keys the result has
-print(list(alpha_result.names))
-print(alpha_result.names)
-print(alpha_result)
+for trait in traits:
+    print(f"Trait: {trait}")
+    r_total=alpha_result[trait].rx2('total')
+    r_alpha_drop=alpha_result[trait].rx2('alpha.drop')
+    r_item_stats=alpha_result[trait].rx2('item.stats')
+    r_response_freq=alpha_result[trait].rx2('response.freq')
+    r_keys=alpha_result[trait].rx2('keys')
+    r_scores=alpha_result[trait].rx2('scores')
+    r_nvar=alpha_result[trait].rx2('nvar')
+    r_boot_ci=alpha_result[trait].rx2('boot.ci')
+    r_boot=alpha_result[trait].rx2('boot')
+    r_fieldt=alpha_result[trait].rx2('feldt')
+    r_unidim=alpha_result[trait].rx2('Unidim')
+    r_var_r=alpha_result[trait].rx2('var.r')
+    r_fit=alpha_result[trait].rx2('Fit')
+    r_call=alpha_result[trait].rx2('call')
+    r_title=alpha_result[trait].rx2('title')
 
-x01=alpha_result[trait].rx2('total')
-x02=alpha_result[trait].rx2('alpha.drop')
-x03=alpha_result[trait].rx2('item.stats')
-x04=alpha_result[trait].rx2('response.freq')
-x05=alpha_result[trait].rx2('keys')
-x06=alpha_result[trait].rx2('scores')
-x07=alpha_result[trait].rx2('nvar')
-x08=alpha_result[trait].rx2('boot.ci')
-x09=alpha_result[trait].rx2('boot')
-x10=alpha_result[trait].rx2('feldt')
-x11=alpha_result[trait].rx2('Unidim')
-x12=alpha_result[trait].rx2('var.r')
-x13=alpha_result[trait].rx2('Fit')
-x14=alpha_result[trait].rx2('call')
-x15=alpha_result[trait].rx2('title')
-x16=alpha_result[trait].rx2('feldt')
+    with(ro.default_converter+pandas2ri.converter).context():
+      result_total = ro.conversion.get_conversion().rpy2py(r_total)
+    with(ro.default_converter+pandas2ri.converter).context():
+      result_alpha_drop = ro.conversion.get_conversion().rpy2py(r_alpha_drop)
+    with(ro.default_converter+pandas2ri.converter).context():
+      result_item_stats = ro.conversion.get_conversion().rpy2py(r_item_stats)
 
-with(ro.default_converter+pandas2ri.converter).context():
-  result_total = ro.conversion.get_conversion().rpy2py(x01)
-with(ro.default_converter+pandas2ri.converter).context():
-  result_alpha_drop = ro.conversion.get_conversion().rpy2py(x02)
-with(ro.default_converter+pandas2ri.converter).context():
-  result_item_stats = ro.conversion.get_conversion().rpy2py(x03)
+    col_names=[f"{i+1}" for i in range(r_response_freq.shape[1] - 1)] + ['miss']
+    result_response_frequency=pd.DataFrame(r_response_freq,columns=col_names)
+    result_keys=pd.DataFrame(r_keys)
+    result_scores=pd.DataFrame(r_scores)
+    result_boot_ci=pd.DataFrame(pd.DataFrame(r_boot_ci).T)
+    result_boot_ci.columns=['ci_lower','ci','ci_upper']
+    result_boot=pd.DataFrame(r_boot)
+    result_nvar=pd.DataFrame(r_var_r,columns=["nvar"])
 
-col_names=[f"{i+1}" for i in range(x04.shape[1] - 1)] + ['miss']
-result_response_frequency=pd.DataFrame(x04,columns=col_names)
-result_keys=pd.DataFrame(x05)
-result_scores=pd.DataFrame(x06)
-result_boot_ci=pd.DataFrame(pd.DataFrame(x08).T)
-result_boot_ci.columns=['ci_lower','ci','ci_upper']
-result_boot=pd.DataFrame(x09)
-result_nvar=pd.DataFrame(x07,columns=["nvar"])
+    item_names=pd.DataFrame(result_item_stats.index,columns=["item"])
 
-item_names=pd.DataFrame(result_item_stats.index,columns=["item"])
+    temp_result_total_summary=pd.concat([pd.DataFrame({'trait':[trait]*len(result_nvar)}),
+                                         result_nvar,
+                                         result_total.reset_index(drop=True),
+                                         result_boot_ci.reset_index(drop=True),
+                                         result_keys.reset_index(drop=True)],
+                                         axis=1)
+    temp_result_items=pd.concat([pd.DataFrame({'trait':[trait]*len(item_names)}),
+                                 item_names,
+                                 result_alpha_drop.reset_index(drop=True),
+                                 result_item_stats.reset_index(drop=True),
+                                 result_response_frequency],
+                                 axis=1)
+    temp_result_items.index=result_item_stats.index
+    
+    result_total_summary_list.append(temp_result_total_summary)
+    result_items_list.append(temp_result_items)
+    
+    result_total_summary=pd.concat(result_total_summary_list, ignore_index=True, sort=False)
+    result_items=pd.concat(result_items_list, ignore_index=True, sort=False)
 
-result_total_summary=pd.concat([result_nvar,
-                                result_total.reset_index(drop=True),
-                                result_boot_ci.reset_index(drop=True),
-                                result_keys.reset_index(drop=True)],
-                                axis=1)
-result_items=pd.concat([item_names,
-                        result_alpha_drop.reset_index(drop=True),
-                        result_item_stats.reset_index(drop=True),
-                        result_response_frequency],
-                        axis=1)
-result_items.index=result_item_stats.index
 
-result_total_summary
-result_items
 
-result_scores
 
 
 
 print(alpha_result.rx2('total'))
-
 print(alpha_result.rx2('alpha.drop'))
 print(alpha_result.rx2('item.stats'))
 print(alpha_result.rx2('response.freq'))
