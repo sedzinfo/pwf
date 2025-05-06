@@ -26,6 +26,7 @@ reticulate::py_install("linkedin",pip=TRUE)
 reticulate::py_install("rpy2-rinterface",pip=TRUE)
 reticulate::py_install("rpy2-robjects",pip=TRUE)
 reticulate::py_install("rpy2",pip=TRUE)
+reticulate::py_install("rpy2",pip=TRUE,pip_options="--only-binary=:all:")
 reticulate::py_install("plotnine",pip=TRUE)
 reticulate::py_install("matplotlib",pip=TRUE)
 reticulate::py_install("seaborn",pip=TRUE)
@@ -41,9 +42,6 @@ reticulate::py_install("openpyxl",pip=TRUE)
 reticulate::py_install("pingouin",pip=TRUE)
 reticulate::py_install("seaborn",pip=TRUE)
 
-# Use Python in R
-np<-import("numpy")
-array<-np$array(c(1,2,3))
 
 list.files(reticulate::virtualenv_root(),recursive=TRUE,pattern="cacert.pem",full.names=TRUE)
 
