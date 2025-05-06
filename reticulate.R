@@ -42,6 +42,5 @@ reticulate::py_install("openpyxl",pip=TRUE)
 reticulate::py_install("pingouin",pip=TRUE)
 reticulate::py_install("seaborn",pip=TRUE)
 
-
 list.files(reticulate::virtualenv_root(),recursive=TRUE,pattern="cacert.pem",full.names=TRUE)
 
