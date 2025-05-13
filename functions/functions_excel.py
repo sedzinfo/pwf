@@ -8,6 +8,8 @@ Created on Thu Oct 19 11:45:39 2017
 ##########################################################################################
 import numpy as np
 import pandas as pd
+import xlsxwriter
+from xlsxwriter.utility import xl_col_to_name
 ##########################################################################################
 # COLUMN WIDTHS
 ##########################################################################################
@@ -62,6 +64,40 @@ def generic_format_excel(df,writer,sheetname,comments=None):
             sheet.write_comment(cell, comment)
     for i, width in enumerate(get_col_widths(df)):
         sheet.set_column(i,i,width)
+
+def generic_format_excel(df, writer, sheetname, comments=None):
+    import xlsxwriter
+    """
+    Writes a DataFrame to an Excel sheet with formatting and optional column header comments.
+
+    Args:
+        df (pandas.DataFrame): Data to write.
+        writer (pandas.ExcelWriter): ExcelWriter object.
+        sheetname (str): Sheet name.
+        comments (dict): Optional. Dict of {column_name: comment_text}.
+
+    Returns:
+        None
+    """
+    
+    df.to_excel(writer, sheet_name=sheetname, index=False)
+    workbook = writer.book 
+    sheet = writer.sheets[sheetname]
+    sheet.freeze_panes(1, 0)
+    
+    num_format = workbook.add_format({'num_format': '0.00'})
+
+    # Add comments to header cells if column names match
+    if comments:
+        for col_idx, col_name in enumerate(df.columns):
+            if col_name in comments:
+                # Convert column index to Excel-style letter, e.g., 0 → A, 1 → B, etc.
+                col_letter = xlsxwriter.utility.xl_col_to_name(col_idx)
+                cell = f"{col_letter}1"  # Header is always in row 1
+                sheet.write_comment(cell, comments[col_name])
+            # Apply number format if column is numeric
+            if pd.api.types.is_numeric_dtype(df[col_name]):
+                sheet.set_column(col_idx, col_idx, None, num_format)
 
 # output_file=path_root+'/output/generic.xlsx'
 # if os.path.exists(output_file):
@@ -122,7 +158,6 @@ def matrix_excel(df,writer,sheetname,comments=None):
 ##########################################################################################
 # CRITICAL VALUE EXCEL
 ##########################################################################################
-import numpy as np
 def critical_value_excel(df,writer,sheetname,comments="",critical_collumn="",rule="<",value=""):
     """
     Writes data to an Excel file using the given writer object and applies conditional formatting to the specified column.
