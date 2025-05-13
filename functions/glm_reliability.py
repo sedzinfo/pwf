@@ -30,8 +30,6 @@ ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("A")]
 ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("E")]
 ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("N")]
 
-
-
 # alpha_result=ro.r('psych::alpha(df,check.keys=TRUE,n.iter=10)')
 
 comments = {"raw_alpha": """Crombach's alpha
@@ -199,14 +197,8 @@ generic_format_excel(df=total,writer=ge,sheetname="total",comments=comments)
 generic_format_excel(df=items,writer=ge,sheetname="items",comments=comments)
 ge._save()
 ge.close()
+
 os.remove(output_file)
-
-
-
-
-
-
-
 
 
 
