@@ -11,6 +11,7 @@ from rpy2.robjects.packages import importr
 from rpy2.robjects import pandas2ri
 import rpy2.robjects as ro
 import pandas as pd
+from factor_analyzer import FactorAnalyzer
 
 pandas2ri.activate()
 
@@ -29,91 +30,101 @@ ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("A")]
 ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("E")]
 ro.globalenv['df']=df_ocean.loc[:, df_ocean.columns.str.startswith("N")]
 
-traits=['O','C','E','A','N']
+
+
+# alpha_result=ro.r('psych::alpha(df,check.keys=TRUE,n.iter=10)')
+
+
+def report_alpha(df, keys, n_iter=10):
+    
+    alpha_result={}
+    fa_result={}
+    
+    for trait in traits:
+        keys="NULL"
+        keys=keys_dict[trait]
+        str_with_parentheses="(" + ", ".join(str(x) for x in keys) + ")"
+        psych_string='psych::alpha(df,'+'keys=c'+str_with_parentheses+',n.iter=10)'
+        df_trait=df_ocean.loc[:,df_ocean.columns.str.startswith(trait)]
+        fa_result[trait]=FactorAnalyzer(rotation="varimax")
+        fa_result[trait].fit(df_trait)
+        ro.globalenv['df']=df_trait
+        result=ro.r(psych_string)
+        alpha_result[trait]=result
+
+    result_total_summary_list=[]
+    result_items_list=[]
+
+    for trait in traits:
+        print(f"Trait: {trait}")
+        eigen_values,vectors=fa_result[trait].get_eigenvalues()
+        r_total=alpha_result[trait].rx2('total')
+        r_alpha_drop=alpha_result[trait].rx2('alpha.drop')
+        r_item_stats=alpha_result[trait].rx2('item.stats')
+        r_response_freq=alpha_result[trait].rx2('response.freq')
+        r_keys=alpha_result[trait].rx2('keys')
+        r_scores=alpha_result[trait].rx2('scores')
+        r_nvar=alpha_result[trait].rx2('nvar')
+        r_boot_ci=alpha_result[trait].rx2('boot.ci')
+        r_boot=alpha_result[trait].rx2('boot')
+        r_fieldt=alpha_result[trait].rx2('feldt')
+        r_unidim=alpha_result[trait].rx2('Unidim')
+        r_var_r=alpha_result[trait].rx2('var.r')
+        r_fit=alpha_result[trait].rx2('Fit')
+        r_call=alpha_result[trait].rx2('call')
+        r_title=alpha_result[trait].rx2('title')
+
+        with(ro.default_converter+pandas2ri.converter).context():
+          result_total = ro.conversion.get_conversion().rpy2py(r_total)
+        with(ro.default_converter+pandas2ri.converter).context():
+          result_alpha_drop = ro.conversion.get_conversion().rpy2py(r_alpha_drop)
+        with(ro.default_converter+pandas2ri.converter).context():
+          result_item_stats = ro.conversion.get_conversion().rpy2py(r_item_stats)
+
+        col_names=[f"{i+1}" for i in range(r_response_freq.shape[1] - 1)] + ['miss']
+        result_response_frequency=pd.DataFrame(r_response_freq,columns=col_names)
+        result_keys=pd.DataFrame(r_keys)
+        result_scores=pd.DataFrame(r_scores)
+        result_boot_ci=pd.DataFrame(pd.DataFrame(r_boot_ci).T)
+        result_boot_ci.columns=['ci_lower','ci','ci_upper']
+        result_boot=pd.DataFrame(r_boot)
+        result_var=pd.DataFrame(r_var_r,columns=["nvar"])
+        result_eigen=pd.DataFrame([[np.sum(eigen_values>1)]],columns=["kaiser"])
+
+        item_names=pd.DataFrame(result_item_stats.index,columns=["item"])
+
+        temp_result_total_summary=pd.concat([pd.DataFrame({'trait':[trait]*len(result_var)}),
+                                             result_var,
+                                             result_eigen,
+                                             result_total.reset_index(drop=True),
+                                             result_boot_ci.reset_index(drop=True),
+                                             result_keys.reset_index(drop=True)],
+                                             axis=1)
+        temp_result_items=pd.concat([pd.DataFrame({'trait':[trait]*len(item_names)}),
+                                     item_names,
+                                     result_alpha_drop.reset_index(drop=True),
+                                     result_item_stats.reset_index(drop=True),
+                                     result_response_frequency],
+                                     axis=1)
+        temp_result_items.index=result_item_stats.index
+    
+        result_total_summary_list.append(temp_result_total_summary)
+        result_items_list.append(temp_result_items)
+    
+        result_total_summary=pd.concat(result_total_summary_list, ignore_index=True, sort=False)
+        result_items=pd.concat(result_items_list, ignore_index=True, sort=False)
+        
+    return(result_total_summary,result_items)
+        
 keys_dict={"O":[1,-1,1,-1,1,-1,1,1,1,1],
            "C":[1,-1,1,-1,1,-1,1,-1,1,1],
            "E":[1,-1,1,-1,1,-1,1,-1,1,-1],
            "A":[-1,1,-1,1,-1,1,-1,1,1,1],
            "N":[1,-1,1,-1,1,1,1,1,1,1]}
 
-# alpha_result=ro.r('psych::alpha(df,check.keys=TRUE,n.iter=10)')
+total,items=report_alpha(df_ocean,keys_dict)
 
-alpha_result={}
-fa_result={}
-
-for trait in traits:
-    keys="NULL"
-    keys=keys_dict[trait]
-    str_with_parentheses="(" + ", ".join(str(x) for x in keys) + ")"
-    psych_string='psych::alpha(df,'+'keys=c'+str_with_parentheses+',n.iter=10)'
-    df_trait=df_ocean.loc[:,df_ocean.columns.str.startswith(trait)]
-    fa_result[trait]=FactorAnalyzer(rotation="varimax")
-    fa_result[trait].fit(df_trait)
-    ro.globalenv['df']=df_trait
-    result=ro.r(psych_string)
-    alpha_result[trait]=result
-
-result_total_summary_list=[]
-result_items_list=[]
-
-for trait in traits:
-    print(f"Trait: {trait}")
-    eigen_values,vectors=fa_result[trait].get_eigenvalues()
-    r_total=alpha_result[trait].rx2('total')
-    r_alpha_drop=alpha_result[trait].rx2('alpha.drop')
-    r_item_stats=alpha_result[trait].rx2('item.stats')
-    r_response_freq=alpha_result[trait].rx2('response.freq')
-    r_keys=alpha_result[trait].rx2('keys')
-    r_scores=alpha_result[trait].rx2('scores')
-    r_nvar=alpha_result[trait].rx2('nvar')
-    r_boot_ci=alpha_result[trait].rx2('boot.ci')
-    r_boot=alpha_result[trait].rx2('boot')
-    r_fieldt=alpha_result[trait].rx2('feldt')
-    r_unidim=alpha_result[trait].rx2('Unidim')
-    r_var_r=alpha_result[trait].rx2('var.r')
-    r_fit=alpha_result[trait].rx2('Fit')
-    r_call=alpha_result[trait].rx2('call')
-    r_title=alpha_result[trait].rx2('title')
-
-    with(ro.default_converter+pandas2ri.converter).context():
-      result_total = ro.conversion.get_conversion().rpy2py(r_total)
-    with(ro.default_converter+pandas2ri.converter).context():
-      result_alpha_drop = ro.conversion.get_conversion().rpy2py(r_alpha_drop)
-    with(ro.default_converter+pandas2ri.converter).context():
-      result_item_stats = ro.conversion.get_conversion().rpy2py(r_item_stats)
-
-    col_names=[f"{i+1}" for i in range(r_response_freq.shape[1] - 1)] + ['miss']
-    result_response_frequency=pd.DataFrame(r_response_freq,columns=col_names)
-    result_keys=pd.DataFrame(r_keys)
-    result_scores=pd.DataFrame(r_scores)
-    result_boot_ci=pd.DataFrame(pd.DataFrame(r_boot_ci).T)
-    result_boot_ci.columns=['ci_lower','ci','ci_upper']
-    result_boot=pd.DataFrame(r_boot)
-    result_var=pd.DataFrame(r_var_r,columns=["nvar"])
-    result_eigen=pd.DataFrame([[np.sum(eigen_values>1)]],columns=["kaiser"])
-
-    item_names=pd.DataFrame(result_item_stats.index,columns=["item"])
-
-    temp_result_total_summary=pd.concat([pd.DataFrame({'trait':[trait]*len(result_nvar)}),
-                                         result_var,
-                                         result_eigen,
-                                         result_total.reset_index(drop=True),
-                                         result_boot_ci.reset_index(drop=True),
-                                         result_keys.reset_index(drop=True)],
-                                         axis=1)
-    temp_result_items=pd.concat([pd.DataFrame({'trait':[trait]*len(item_names)}),
-                                 item_names,
-                                 result_alpha_drop.reset_index(drop=True),
-                                 result_item_stats.reset_index(drop=True),
-                                 result_response_frequency],
-                                 axis=1)
-    temp_result_items.index=result_item_stats.index
-    
-    result_total_summary_list.append(temp_result_total_summary)
-    result_items_list.append(temp_result_items)
-    
-    result_total_summary=pd.concat(result_total_summary_list, ignore_index=True, sort=False)
-    result_items=pd.concat(result_items_list, ignore_index=True, sort=False)
+traits=['O','C','E','A','N']
 
 for trait in traits:
     print(alpha_result[trait])
@@ -133,3 +144,4 @@ for trait in traits:
     print(alpha_result[trait].rx2('Fit'))
     print(alpha_result[trait].rx2('call'))
     print(alpha_result[trait].rx2('title'))
+
