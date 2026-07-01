@@ -19,6 +19,7 @@ Sys.getenv("R_HOME")
 reticulate::use_virtualenv(paste0(directory,"venv/"))
 
 reticulate::py_install("numpy",pip=TRUE)
+reticulate::py_install("pytest",pip=TRUE)
 reticulate::py_install("pandas",pip=TRUE)
 reticulate::py_install("scikit-learn",pip=TRUE)
 reticulate::py_install("dash",pip=TRUE)
