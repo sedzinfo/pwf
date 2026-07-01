@@ -29,24 +29,49 @@ def get_col_widths(df):
     # First we find the maximum length of the index column
     idx_max=max([len(str(s)) for s in df.index.values]+[len(str(df.index.name))])
     # Then, we concatenate this to the max of the lengths of column name and its values for each column, left to right
-    result=[idx_max]+[max([len(str(s)) for s in df[col].values]+[len(col)]) for col in df.columns]
+    result=[idx_max]+[max([len(str(s)) for s in df[col].values]+[len(str(col))]) for col in df.columns]
     return result
 ##########################################################################################
 # GENERIC FORMAT EXCEL
 ##########################################################################################
-def generic_format_excel(df, writer, sheetname, comments=None):
+def excel_generic_format(df, writer, sheetname, comments=None):
     import xlsxwriter
     """
-    Writes a DataFrame to an Excel sheet with formatting and optional column header comments.
+    Writes a DataFrame to a new sheet in an existing Excel writer, with a
+    header row, a fixed 2-decimal number format on numeric columns, a
+    frozen header row, and optional comments on specific column headers.
 
     Args:
-        df (pandas.DataFrame): Data to write.
-        writer (pandas.ExcelWriter): ExcelWriter object.
-        sheetname (str): Sheet name.
-        comments (dict): Optional. Dict of {column_name: comment_text}.
+        df (pandas.DataFrame): Data to write. The row index is not written
+            (index=False) — only the header row and data rows.
+        writer (pandas.ExcelWriter): An already-open ExcelWriter using the
+            xlsxwriter engine. `sheetname` must not already exist in it.
+        sheetname (str): Name of the new worksheet to create.
+        comments (dict, optional): Maps column name -> comment text, added
+            to that column's header cell (row 1). Keyed by column name, not
+            cell reference — unlike excel_matrix/critical_value_excel,
+            which use cell references like "A1". Keys not found in
+            df.columns are silently ignored. Defaults to None.
 
     Returns:
         None
+
+    Notes:
+        - Every numeric column gets the same fixed "0.00" number format;
+          there's no way to change the decimal places or opt individual
+          columns out, unlike excel_matrix's `decimals` argument.
+        - Only the header row is frozen (freeze_panes(1, 0)) — no column
+          is frozen, unlike excel_matrix, which freezes both.
+        - Column widths are not auto-sized here, unlike excel_matrix,
+          which calls get_col_widths.
+
+    Examples:
+        >>> writer = pd.ExcelWriter("out.xlsx", engine="xlsxwriter")
+        >>> excel_generic_format(
+        ...     df=df_blood_pressure, writer=writer, sheetname="ge",
+        ...     comments={"sex": "M/F", "bp_before": "mmHg before treatment"},
+        ... )
+        >>> writer._save(); writer.close()
     """
     
     df.to_excel(writer, sheet_name=sheetname, index=False)
@@ -79,34 +104,59 @@ comments = {
     'sex': "This is a general comment for the sheet.",
     'bp_before': "This cell contains important data."
 }
-generic_format_excel(df=df_blood_pressure,writer=ge,sheetname="ge",comments=comments)
+excel_generic_format(df=df_blood_pressure,writer=ge,sheetname="ge",comments=comments)
 ge._save()
 ge.close()
 os.remove(output_file)
 ##########################################################################################
 # MATRIX EXCEL
 ##########################################################################################
-def matrix_excel(df,writer,sheetname,comments=None,decimals=2):
+def excel_matrix(df,writer,sheetname,comments=None,decimals=2):
     """
-    Writes data to an Excel file using the given writer object and formats the sheet.
+    Writes a matrix (or any DataFrame) to a new sheet, formatted as a
+    heatmap: fixed-decimal number format on every data column, and a
+    diverging blue-white-red conditional color scale anchored at zero —
+    intended for correlation matrices, but works as a general heatmap for
+    any numeric matrix.
 
     Args:
-        df (pandas.DataFrame): The data to be written to the Excel file.
-        writer: The Excel writer object to use for writing the data.
-        sheetname (str): The name of the sheet to write the data to.
-        comment (str, optional): A comment to be added to cell A1 in the sheet. Defaults to "".
-        decimals (int, optional): Number of decimal places for the number format
-            applied to all data columns. Use 0 for whole numbers. Defaults to 2.
+        df (pandas.DataFrame): The data to write. Unlike excel_generic_format,
+            the row index IS written (as the first column) — to_excel is
+            called without index=False.
+        writer (pandas.ExcelWriter): An already-open ExcelWriter using the
+            xlsxwriter engine. `sheetname` must not already exist in it.
+        sheetname (str): Name of the new worksheet to create.
+        comments (dict, optional): Maps cell reference -> comment text,
+            e.g. {"A1": "note"}. Keyed by cell reference, not column name —
+            unlike excel_generic_format, which is keyed by column name.
+            Defaults to None.
+        decimals (int, optional): Number of decimal places for the number
+            format applied to every data column (not the index column).
+            Use 0 for whole numbers. Defaults to 2.
 
     Returns:
         None
 
     Notes:
-        - The function uses the `to_excel` method of the `df` DataFrame to write the data to the Excel file.
-        - The sheet is formatted with frozen panes, where the first row and column are frozen.
-        - If a comment is provided, it is added to cell A1 in the sheet.
-        - The function also adjusts the column widths based on the data in `mydata` using the `set_column` method of the sheet.
+        - Both the first row and first column are frozen
+          (freeze_panes(1, 1)).
+        - The color scale's midpoint is fixed at the value 0 (not at the
+          data's own midpoint), so it correctly renders negative values as
+          blue and positive as red regardless of the data's actual range —
+          appropriate for correlation-like data bounded in [-1, 1]. For
+          all-positive matrices (e.g. eigenvalues, factor variance) it
+          still produces a sensible white-to-red gradient.
+        - Column widths are not auto-sized here, unlike some of the other
+          Excel helpers in this module that call get_col_widths.
 
+    Examples:
+        >>> writer = pd.ExcelWriter("out.xlsx", engine="xlsxwriter")
+        >>> excel_matrix(
+        ...     df=df_personality.select_dtypes("number").corr(),
+        ...     writer=writer, sheetname="correlation",
+        ...     comments={"A1": "Pearson correlation matrix"}, decimals=2,
+        ... )
+        >>> writer._save(); writer.close()
     """
     df.to_excel(writer,sheet_name=sheetname)
     workbook=writer.book
@@ -137,7 +187,7 @@ if os.path.exists(output_file):
 me=pd.ExcelWriter(output_file,engine='xlsxwriter')
 comments={'A1': "This is a general comment for the sheet.",
           'B2': "This cell contains important data."}
-matrix_excel(df=pd.DataFrame(df_personality.corr()),
+excel_matrix(df=pd.DataFrame(df_personality.corr()),
              writer=me,
              sheetname="me",
              comments=comments)
@@ -147,49 +197,133 @@ os.remove(output_file)
 ##########################################################################################
 # CRITICAL VALUE EXCEL
 ##########################################################################################
-def critical_value_excel(df,writer,sheetname,comments="",critical_collumn="",rule="<",value=""):
+def _parse_critical_expression(expr):
+    """Split an Excel comparison expression like "<0.05" into (criteria, value)."""
+    for op in (">=", "<=", "<>", ">", "<", "="):
+        if expr.startswith(op):
+            return op, float(expr[len(op):])
+    raise ValueError(f"Unrecognized critical expression: {expr!r}")
+
+
+def excel_critical_value(df,writer,sheetname,comments=None,critical=None):
     """
-    Writes data to an Excel file using the given writer object and applies conditional formatting to the specified column.
+    Writes df to a new sheet via generic_format_excel, then highlights
+    cells in specified columns that meet one or two threshold conditions
+    (ported from R rwf::excel_critical_value).
 
     Args:
-        df (pandas.DataFrame): The data to be written to the Excel file.
-        writer: The Excel writer object to use for writing the data.
-        sheetname (str): The name of the sheet to write the data to.
-        comment (str): A comment to be added to cell A1 in the sheet.
+        df (pandas.DataFrame): The data to write.
+        writer (pandas.ExcelWriter): An already-open ExcelWriter using the
+            xlsxwriter engine.
+        sheetname (str): Name of the new worksheet to create.
+        comments (dict, optional): Forwarded to generic_format_excel —
+            maps column name -> header comment text.
+        critical (dict, optional): Maps column name -> either a single
+            comparison expression string (e.g. "<0.05", ">20", "=0";
+            matching cells highlighted red), or a 2-item list/tuple of
+            expressions (e.g. [">20", "<11"]; first highlighted red,
+            second purple). NaN cells in that column are skipped. Column
+            names not found in df.columns are silently ignored.
+
+    Returns:
+        None
+
+    Examples:
+        >>> writer = pd.ExcelWriter("out.xlsx", engine="xlsxwriter")
+        >>> excel_critical_value(
+        ...     df=df_insurance, writer=writer, sheetname="critical",
+        ...     critical={"charges": ">20000", "age": [">50", "<25"]},
+        ... )
+        >>> writer._save(); writer.close()
+    """
+    excel_generic_format(df,writer,sheetname,comments)
+    workbook=writer.book
+    sheet=writer.sheets[sheetname]
+    colors=('red','purple')
+    if critical:
+        for col_name, expr in critical.items():
+            if col_name not in df.columns:
+                continue
+            col_idx=df.columns.get_loc(col_name)
+            exprs=expr if isinstance(expr,(list,tuple)) else [expr]
+            row_positions=[i+1 for i,v in enumerate(df[col_name]) if pd.notna(v)]
+            for e, color in zip(exprs, colors):
+                criteria, value=_parse_critical_expression(e)
+                fmt=workbook.add_format({'bg_color': color})
+                for r in row_positions:
+                    sheet.conditional_format(r,col_idx,r,col_idx, {'type':'cell','criteria':criteria,'value':value,'format':fmt})
+##########################################################################################
+# DATAFRAME TO EXCEL CONFUSION MATRIX
+##########################################################################################
+def excel_confusion_matrix(df,writer,sheetname="Confusion Matrix",title="Rows: Expected Columns: Observed"):
+    """
+    Writes a confusion matrix (as produced by confusion_matrix_percent,
+    with "sum" and "p" margin row/column) to a new sheet: whole-number
+    format plus a white-to-green colour scale on the core counts, and a
+    yellow highlight on the "sum" (integer format) and "p" (decimal
+    format) margins (ported from R rwf::excel_confusion_matrix).
+
+    Args:
+        df (pandas.DataFrame): Square confusion matrix with an appended
+            "sum" row/column (totals) and "p" row/column (per-class
+            accuracy/precision), as returned by confusion_matrix_percent.
+        writer (pandas.ExcelWriter): An already-open ExcelWriter using the
+            xlsxwriter engine. `sheetname` must not already exist in it.
+        sheetname (str, optional): Name of the new worksheet. Defaults to
+            "Confusion Matrix".
+        title (str, optional): Comment written to cell A1. Defaults to
+            "Rows: Expected Columns: Observed".
 
     Returns:
         None
 
     Notes:
-        - The function uses the `to_excel` method of the `mydata` DataFrame to write the data to the Excel file.
-        - The function assumes that the writer object has an associated workbook.
-        - The function retrieves the sheet object corresponding to the specified sheetname.
-        - It creates a format object with a red fill color and adds it to the workbook.
-        - The dimensions of the `mydata` DataFrame are used to determine the range for conditional formatting.
-        - If a `rule` is provided, the function applies conditional formatting to the specified critical column.
-        - The formatting is applied based on the `rule`, `value`, and `format_red_fill` parameters.
+        - Unlike excel_generic_format, this writes df with its row index
+          intact (like excel_matrix), since the "sum"/"p" row and column
+          labels are needed to tell the margins apart from the core counts.
 
+    Examples:
+        >>> cm = confusion_matrix_percent(observed, predicted)
+        >>> writer = pd.ExcelWriter("out.xlsx", engine="xlsxwriter")
+        >>> excel_confusion_matrix(cm, writer)
+        >>> writer._save(); writer.close()
     """
-    generic_format_excel(df,writer,sheetname,comments)
+    df=df.astype(float)
+    df.to_excel(writer,sheet_name=sheetname)
     workbook=writer.book
     sheet=writer.sheets[sheetname]
-    format_red_fill=workbook.add_format()
-    format_red_fill.set_bg_color('red')
-    dimensions=np.array(df.shape)
-    if len(rule)>0:
-        sheet.conditional_format(1,critical_collumn,dimensions[0],critical_collumn, {'type':'cell','criteria':rule,'value':value,'format':format_red_fill})
+    sheet.freeze_panes(1,1)
+    if title:
+        sheet.write_comment('A1',title,{'author': 'pwf'})
 
-# personality=pd.read_csv(path_root+"/data/personality.csv")
-# output_file=path_root+'/output/critical.xlsx'
-# if os.path.exists(output_file):
-#     os.remove(output_file)
-# cv=pd.ExcelWriter(output_file,engine='xlsxwriter')
-# comments={'A1': "This is a general comment for the sheet.",
-#           'B2': "This cell contains important data."}
-# critical_value_excel(df=personality,writer=cv,sheetname="cv",comments=None,critical_collumn=1,rule="<",value=5)
-# cv._save()
-# cv.close()
-# os.remove(output_file)
+    int_format=workbook.add_format({'num_format': '#0'})
+    for col_idx, width in enumerate(get_col_widths(df)):
+        sheet.set_column(col_idx,col_idx,width,int_format if col_idx>0 else None)
+
+    nrow, ncol=df.shape
+    core_rows=[i for i,lbl in enumerate(df.index) if lbl not in ('sum','p')]
+    core_cols=[j for j,lbl in enumerate(df.columns) if lbl not in ('sum','p')]
+    if core_rows and core_cols:
+        sheet.conditional_format(min(core_rows)+1,min(core_cols)+1,max(core_rows)+1,max(core_cols)+1, {
+            'type': '2_color_scale', 'min_color': 'white', 'max_color': 'green',
+        })
+
+    yellow_int_fmt=workbook.add_format({'border':1,'border_color':'gray','num_format':'#0','bg_color':'yellow'})
+    yellow_dec_fmt=workbook.add_format({'border':1,'border_color':'gray','num_format':'#0.00','bg_color':'yellow'})
+
+    for i, lbl in enumerate(df.index):
+        fmt=yellow_int_fmt if lbl=='sum' else (yellow_dec_fmt if lbl=='p' else None)
+        if fmt is not None:
+            for j in range(ncol):
+                sheet.write(i+1,j+1,df.iat[i,j],fmt)
+    for j, lbl in enumerate(df.columns):
+        fmt=yellow_int_fmt if lbl=='sum' else (yellow_dec_fmt if lbl=='p' else None)
+        if fmt is not None:
+            for i in range(nrow):
+                sheet.write(i+1,j+1,df.iat[i,j],fmt)
+
+
+
 
 
 

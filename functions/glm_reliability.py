@@ -193,8 +193,8 @@ if os.path.exists(output_file):
 output_dir = os.path.dirname(output_file)   
 os.makedirs(output_dir, exist_ok=True)
 ge=pd.ExcelWriter(output_file,engine='xlsxwriter')
-generic_format_excel(df=total,writer=ge,sheetname="total",comments=comments)
-generic_format_excel(df=items,writer=ge,sheetname="items",comments=comments)
+excel_generic_format(df=total,writer=ge,sheetname="total",comments=comments)
+excel_generic_format(df=items,writer=ge,sheetname="items",comments=comments)
 ge._save()
 ge.close()
 
