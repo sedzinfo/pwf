@@ -1,6 +1,6 @@
 # pwf
 
-Python working functions — a personal toolkit of statistics, psychometrics, and ML/data-exploration helpers, ported from the [rwf](https://github.com/) R package.
+Python working functions — a personal toolkit of statistics, psychometrics, and ML/data-exploration helpers, ported from the [rwf]([https://github.com/](https://github.com/sedzinfo/rwf)) R package.
 
 ## Install
 
