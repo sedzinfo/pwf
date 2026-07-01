@@ -102,6 +102,67 @@ def report_ttests(df,dv,iv,paired=False,alternative="two-sided",correction=False
 
 # report_ttests(df=df_blood_pressure,dv="bp_before",iv=["sex","agegrp"]).round(2)
 ##########################################################################################
+# WILCOXON / MANN-WHITNEY
+##########################################################################################
+def report_wtests(df,dv,iv,alternative="two-sided"):
+    """
+    Non-parametric analogue of report_ttests: Mann-Whitney U (independent
+    two-sample Wilcoxon rank-sum test) for each pairwise level combination
+    of every factor in iv, against dv. Adds the same descriptive statistics,
+    Levene, and Bartlett columns as report_ttests for direct comparison.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+    dv : str
+     Dependent variable column name.
+    iv : list of str
+     Independent variable column name(s). Every pairwise combination of
+     levels within each factor is tested.
+    alternative : string
+     "two-sided" (default), "greater" or "less".
+
+    Returns
+    -------
+    pandas.DataFrame with one row per pairwise level comparison, per factor.
+    See :py:func:`pingouin.mwu` for the U-val/p-val/RBC/CLES columns.
+    """
+
+
+    result_iterative=pd.DataFrame()
+    for factor in iv:
+        levels=df[factor].value_counts().index.values
+        combinations=list(itertools.combinations(levels,2))
+        for levels in combinations:
+            variable_1=df[df[factor]==levels[0]][dv]
+            variable_2=df[df[factor]==levels[1]][dv]
+            levene_result=levene(variable_1,variable_2)
+            bartlett_result=bartlett(variable_1,variable_2)
+            wtest=pd.DataFrame(pg.mwu(variable_1,
+                                      variable_2,
+                                      alternative=alternative))
+            descriptives=pd.DataFrame({"alternative":[alternative],
+                                       "IV":[factor],
+                                       "L1":[levels[0]],
+                                       "L2":[levels[1]],
+                                       "Mean_L1":[variable_1.mean()],
+                                       "Mean_L2":[variable_2.mean()],
+                                       "Var_L1":[variable_1.var()],
+                                       "Var_L2":[variable_2.var()],
+                                       "sd_L1":[variable_1.std()],
+                                       "sd_L2":[variable_2.std()],
+                                       "pooled_sd":[np.sqrt(((variable_1.std()**2)+(variable_2.std()**2))/2)],
+                                       "Levene":[levene_result[0]],
+                                       "L_p":[levene_result[1]],
+                                       "Bartlett":[bartlett_result[0]],
+                                       "B_p":[bartlett_result[1]]},
+                                        index=wtest.index)
+            result=pd.concat([descriptives,wtest],axis=1)
+            result_iterative=pd.concat([result_iterative,result],axis=0)
+    return result_iterative
+
+# report_wtests(df=df_blood_pressure,dv="bp_before",iv=["sex","agegrp"]).round(2)
+##########################################################################################
 # LEVENE
 ##########################################################################################
 from scipy.stats import levene
