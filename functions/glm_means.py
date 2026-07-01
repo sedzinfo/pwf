@@ -14,7 +14,10 @@ import pandas as pd
 import pingouin as pg
 import itertools
 from scipy.stats import levene, bartlett
-import functions_excel as fe
+try:
+    from . import functions_excel as fe
+except ImportError:
+    import functions_excel as fe
 ##########################################################################################
 # 
 ##########################################################################################

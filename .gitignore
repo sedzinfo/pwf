@@ -4,3 +4,7 @@ output
 functions/.Rhistory
 functions/.RData
 functions/__pycache__
+*.egg-info/
+build/
+dist/
+.pytest_cache/

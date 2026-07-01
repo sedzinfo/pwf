@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pwf"
+version = "0.1.0"
+description = "Python working functions (statistics, psychometrics, ML utilities)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Dimitrios Zacharatos", email = "dimitrios.zacharatos@evalion.gr" }]
+dependencies = [
+    "numpy",
+    "pandas",
+]
+
+[project.optional-dependencies]
+full = [
+    "scipy",
+    "scikit-learn",
+    "statsmodels",
+    "patsy",
+    "plotnine",
+    "matplotlib",
+    "seaborn",
+    "factor_analyzer",
+    "pingouin",
+    "researchpy",
+    "xlsxwriter",
+    "nltk",
+    "rpy2",
+    "semopy",
+]
+dev = ["pytest", "build", "twine"]
+
+[tool.setuptools]
+packages = ["pwf"]
+
+[tool.setuptools.package-dir]
+pwf = "functions"
