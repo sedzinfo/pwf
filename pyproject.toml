@@ -32,7 +32,7 @@ full = [
     "rpy2",
     "semopy",
 ]
-dev = ["pytest", "build", "twine"]
+dev = ["pytest", "build", "twine", "pdoc"]
 
 [tool.setuptools]
 packages = ["pwf"]
