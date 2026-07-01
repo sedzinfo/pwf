@@ -399,15 +399,15 @@ if __name__ == "__main__":
     print(change_data_type(df_factor, "factor_character").dtypes)
 
     print("\n" + "=" * 80, "\nrbind_all\n", "=" * 80, sep="")
-    df1 = pd.DataFrame({'A': [1, 2], 'B': [3, 4]})
-    df2 = pd.DataFrame({'B': [5, 6], 'C': [7, 8]})
+    df1 = pd.DataFrame({'A': [1, 2], 'B': [3, 4]}, index=[10, 11])
+    df2 = pd.DataFrame({'B': [5, 6], 'C': [7, 8]}, index=[20, 21])
+    print("non-overlapping index (preserved):")
     print(rbind_all(df1, df2))
     print()
-    df1_dup_index = df1.copy()
-    df1_dup_index.index = [0, 1]
-    df2_dup_index = df2.copy()
-    df2_dup_index.index = [0, 1]
-    print(rbind_all(df1_dup_index, df2_dup_index))
+    df1_dup = pd.DataFrame({'A': [1, 2], 'B': [3, 4]})
+    df2_dup = pd.DataFrame({'B': [5, 6], 'C': [7, 8]})
+    print("overlapping index (falls back to default integer index):")
+    print(rbind_all(df1_dup, df2_dup))
 
     print("\n" + "=" * 80, "\nremove_nc\n", "=" * 80, sep="")
     df_nc = pd.DataFrame({'x': [1.0, np.inf, np.nan, -np.inf, 5.0], 'y': [1, 1, 1, 1, 1]})
