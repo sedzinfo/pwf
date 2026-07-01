@@ -568,3 +568,71 @@ def recode_scale_dummy(df, categories=10):
 
     result.index = df.index
     return result
+##########################################################################################
+# EXAMPLES
+##########################################################################################
+if __name__ == "__main__":
+    np.random.seed(42)
+
+    print("=" * 80, "\nconfusion\n", "=" * 80, sep="")
+    print(confusion(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11]))
+    print()
+    print(confusion(observed=[1, 2, 2, 2, 2], predicted=[1, 1, 2, 2, 2]))
+
+    print("\n" + "=" * 80, "\nconfusion_matrix_percent\n", "=" * 80, sep="")
+    print(confusion_matrix_percent(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11]))
+    print()
+    observed_large = list(np.round(np.random.normal(10, 1, 1000)).astype(int))
+    predicted_large = list(np.round(np.random.normal(10, 1, 1000)).astype(int))
+    print(confusion_matrix_percent(observed_large, predicted_large))
+
+    print("\n" + "=" * 80, "\nproportion_accurate\n", "=" * 80, sep="")
+    print(proportion_accurate(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11]))
+
+    print("\n" + "=" * 80, "\nplot_roc\n", "=" * 80, sep="")
+    observed_bin = np.clip(np.round(np.abs(np.random.normal(0, 0.5, 200))), 0, 1).astype(int)
+    predicted_prob = np.clip(np.abs(np.random.normal(0.4, 0.3, 200)), 0, 1)
+    roc_plots = plot_roc(observed_bin, predicted_prob, title="Example")
+    for level, p in roc_plots.items():
+        p.save(f"plot_roc_{level}.png", verbose=False)
+        print(f"saved plot_roc_{level}.png (positive level = {level})")
+
+    print("\n" + "=" * 80, "\nplot_confusion\n", "=" * 80, sep="")
+    p_conf = plot_confusion(observed=[1, 2, 3, 1, 2, 3, 1, 2, 3],
+                             predicted=[1, 2, 3, 1, 1, 3, 1, 2, 2], title="Example")
+    p_conf.save("plot_confusion.png", verbose=False)
+    print("saved plot_confusion.png")
+
+    print("\n" + "=" * 80, "\nplot_separability\n", "=" * 80, sep="")
+    p_sep = plot_separability(observed=observed_bin, predicted=predicted_prob, title="Example")
+    p_sep.save("plot_separability.png", verbose=False)
+    print("saved plot_separability.png")
+
+    print("\n" + "=" * 80, "\nresult_confusion_performance\n", "=" * 80, sep="")
+    perf = result_confusion_performance(observed=observed_bin, predicted=predicted_prob, step=0.05, title="Example")
+    print("optimal cut point(s):", perf["cut"])
+    print(perf["confusion_matrix"])
+    perf["plot_performance"].save("plot_performance.png", verbose=False)
+    print("saved plot_performance.png")
+
+    print("\n" + "=" * 80, "\nk_fold\n", "=" * 80, sep="")
+    df_mtcars = pd.DataFrame({
+        "mpg": np.random.uniform(10, 35, 32),
+        "cyl": np.random.choice([4, 6, 8], 32),
+        "disp": np.random.uniform(70, 470, 32),
+        "hp": np.random.uniform(50, 300, 32),
+    })
+    kf = k_fold(df_mtcars, predictors=["cyl", "disp", "hp"], outcome="mpg", k=4)
+    print("fold keys:", list(kf["f"]["train"].keys()))
+
+    print("\n" + "=" * 80, "\nk_sample\n", "=" * 80, sep="")
+    ks = k_sample(df_mtcars, predictors=["cyl", "disp", "hp"], outcome="mpg", k=1)
+    print("train/test/validation sizes:",
+          len(ks["f"]["train"]["fold1"]), len(ks["f"]["test"]["fold1"]), len(ks["f"]["validation"]["fold1"]))
+
+    print("\n" + "=" * 80, "\nrecode_scale_dummy\n", "=" * 80, sep="")
+    df_mixed = pd.DataFrame({
+        "numeric_var": [1, 2, 3, 4, 5],
+        "factor_var": ["A", "B", "A", "B", "C"],
+    })
+    print(recode_scale_dummy(df_mixed))

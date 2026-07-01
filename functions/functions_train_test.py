@@ -159,9 +159,9 @@ def plot_separability(observed, predicted, base_size=10, title=""):
     p.show()
     """
     
-    df = pd.DataFrame({'observed': observed, 'predicted': predicted})
-    
-    p = (ggplot(df, aes(x='predicted', color='factor(observed)'))
+    df = pd.DataFrame({'observed': pd.Categorical(observed), 'predicted': predicted})
+
+    p = (ggplot(df, aes(x='predicted', color='observed'))
          + geom_density(size=1)
          + labs(title=f"{title}",
                 color="Observed",
@@ -208,8 +208,8 @@ def confusion(observed, predicted):
     return result
 
 # Examples
-confusion(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11])
-confusion(observed=[1, 2, 2, 2, 2], predicted=[1, 1, 2, 2, 2])
+# confusion(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11])
+# confusion(observed=[1, 2, 2, 2, 2], predicted=[1, 1, 2, 2, 2])
 ##########################################################################################
 # CONFUSION MATRIX PERCENT
 ##########################################################################################
