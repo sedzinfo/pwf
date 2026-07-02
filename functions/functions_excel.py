@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Oct 19 11:45:39 2017
-@author: Dimitrios Zacharatos
+Excel export helpers built on pandas.ExcelWriter (xlsxwriter engine):
+generic formatted sheets, heatmap-styled matrices, threshold-highlighted
+critical-value tables, and confusion-matrix sheets.
 """
 ##########################################################################################
 # LOAD SYSTEM
@@ -35,7 +36,6 @@ def get_col_widths(df):
 # GENERIC FORMAT EXCEL
 ##########################################################################################
 def excel_generic_format(df, writer, sheetname, comments=None):
-    import xlsxwriter
     """
     Writes a DataFrame to a new sheet in an existing Excel writer, with a
     header row, a fixed 2-decimal number format on numeric columns, a
@@ -93,21 +93,6 @@ def excel_generic_format(df, writer, sheetname, comments=None):
             if pd.api.types.is_numeric_dtype(df[col_name]):
                 sheet.set_column(col_idx, col_idx, None, num_format)
 
-
-# DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
-# df_blood_pressure=pd.read_csv(DATA_DIR / "blood_pressure.csv")
-# output_file='/home/dimitrios/GitHub/pwf/output/generic.xlsx'
-# if os.path.exists(output_file):
-#     os.remove(output_file)
-# ge=pd.ExcelWriter(output_file,engine='xlsxwriter')
-# comments = {
-#     'sex': "This is a general comment for the sheet.",
-#     'bp_before': "This cell contains important data."
-# }
-# excel_generic_format(df=df_blood_pressure,writer=ge,sheetname="ge",comments=comments)
-# ge._save()
-# ge.close()
-# os.remove(output_file)
 ##########################################################################################
 # MATRIX EXCEL
 ##########################################################################################
@@ -178,22 +163,6 @@ def excel_matrix(df,writer,sheetname,comments=None,decimals=2):
         'mid_type': 'num',
         'mid_value': 0,
     })
-
-# DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
-# df_personality=pd.read_csv(DATA_DIR / "personality.csv")
-# output_file='/home/dimitrios/GitHub/pwf/output/matrix.xlsx'
-# if os.path.exists(output_file):
-#     os.remove(output_file)
-# me=pd.ExcelWriter(output_file,engine='xlsxwriter')
-# comments={'A1': "This is a general comment for the sheet.",
-#           'B2': "This cell contains important data."}
-# excel_matrix(df=pd.DataFrame(df_personality.corr()),
-#              writer=me,
-#              sheetname="me",
-#              comments=comments)
-# me._save()
-# me.close()
-# os.remove(output_file)
 ##########################################################################################
 # CRITICAL VALUE EXCEL
 ##########################################################################################
@@ -321,6 +290,47 @@ def excel_confusion_matrix(df,writer,sheetname="Confusion Matrix",title="Rows: E
         if fmt is not None:
             for i in range(nrow):
                 sheet.write(i+1,j+1,df.iat[i,j],fmt)
+##########################################################################################
+# EXAMPLES
+##########################################################################################
+if __name__ == "__main__":
+    import os
+
+    df_blood_pressure = pd.read_csv("data/blood_pressure.csv") if os.path.exists("data/blood_pressure.csv") \
+        else pd.read_csv("../data/blood_pressure.csv")
+    df_personality = pd.read_csv("data/personality.csv") if os.path.exists("data/personality.csv") \
+        else pd.read_csv("../data/personality.csv")
+
+    print("=" * 80, "\nget_col_widths\n", "=" * 80, sep="")
+    print(get_col_widths(df_blood_pressure.head()))
+
+    print("\n" + "=" * 80, "\nexcel_generic_format\n", "=" * 80, sep="")
+    writer = pd.ExcelWriter("functions_excel_example.xlsx", engine="xlsxwriter")
+    comments = {"sex": "M/F", "bp_before": "mmHg before treatment"}
+    excel_generic_format(df=df_blood_pressure, writer=writer, sheetname="generic", comments=comments)
+
+    print("\n" + "=" * 80, "\nexcel_matrix\n", "=" * 80, sep="")
+    corr = df_personality.select_dtypes("number").corr()
+    excel_matrix(df=corr, writer=writer, sheetname="matrix",
+                 comments={"A1": "Pearson correlation matrix"}, decimals=2)
+
+    print("\n" + "=" * 80, "\nexcel_critical_value\n", "=" * 80, sep="")
+    excel_critical_value(df=df_blood_pressure, writer=writer, sheetname="critical",
+                          critical={"bp_before": [">160", "<110"]})
+
+    print("\n" + "=" * 80, "\nexcel_confusion_matrix\n", "=" * 80, sep="")
+    try:
+        from .functions_train_test_full import confusion_matrix_percent
+    except ImportError:
+        from functions_train_test_full import confusion_matrix_percent
+    observed = [0, 0, 1, 1, 0, 1, 1, 0, 1, 0]
+    predicted = [0, 1, 1, 1, 0, 1, 0, 0, 1, 0]
+    cm = confusion_matrix_percent(observed, predicted)
+    excel_confusion_matrix(cm, writer)
+
+    writer._save()
+    writer.close()
+    print("saved functions_excel_example.xlsx (sheets: generic, matrix, critical, Confusion Matrix)")
 
 
 

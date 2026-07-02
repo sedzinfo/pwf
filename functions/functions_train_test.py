@@ -1,18 +1,41 @@
+# -*- coding: utf-8 -*-
+"""
+Classification evaluation plots (ROC, confusion matrix heatmap,
+separability) and confusion-matrix/accuracy statistics.
+
+Note: confusion() and confusion_matrix_percent() take `observed`/
+`predicted` as Python lists specifically, not numpy arrays -- `levels =
+sorted(set(observed + predicted))` concatenates the two lists, which
+silently does elementwise addition instead if either argument is an
+ndarray (wrong, and no error is raised).
+
+Note: this file's confusion()/confusion_matrix_percent()/
+plot_separability() overlap with newer, independently-built versions in
+functions_train_test_full.py from this project's R-port work. Both
+files currently coexist.
+
+Fixed a real bug in proportion_accurate(): its "off-diagonal accuracy"
+computation indexed into np.nonzero(cmatrix) positionally assuming at
+least as many nonzero cells as matrix rows, which isn't guaranteed --
+its own docstring example (observed with an 11 category predicted
+values don't share) crashed with an IndexError. Rewritten to directly
+sum the diagonal and its immediate neighbor cells (correct-or-off-by-
+one-category), matching the apparent intent without the fragile assumption.
+"""
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
-import os
-import sys
 import numpy as np
 import pandas as pd
+from pandas.api.types import CategoricalDtype
+from sklearn.metrics import roc_curve, auc, confusion_matrix, cohen_kappa_score
+from plotnine import (
+    ggplot, aes, geom_line, geom_abline, geom_tile, geom_text, geom_density,
+    scale_fill_gradient, labs, theme, theme_bw, element_text, element_blank,
+)
 ##########################################################################################
 # PLOT ROC
 ##########################################################################################
-import numpy as np
-import pandas as pd
-from sklearn.metrics import roc_curve, auc
-from plotnine import ggplot, aes, geom_line, geom_abline, labs, theme_bw
-
 def plot_roc(observed, predicted, base_size=10, title=""):
     """
     Plot the Receiver Operating Characteristic (ROC) curve from observed and predicted values.
@@ -51,31 +74,9 @@ def plot_roc(observed, predicted, base_size=10, title=""):
                 caption=f'AUC = {roc_auc * 100:.2f}%\nObservations = {len(observed)}')+
          theme_bw(base_size=base_size))
     return p
-
-# Example usage:
-# observed = np.round(np.abs(np.random.normal(0, 0.5, 100)))
-# predicted = np.abs(np.random.normal(0, 0.5, 100))
-# res=plot_roc(observed, predicted)
-# res.show()
-# 
-# df1=generate_normal(ncols=1,nrows=1000,mean=0,sd=1)
-# df1.describe()
-# df1[1] = np.where(np.abs(df1[1]) < 1, 0, 1
-# df1[0] = np.abs(df1[0])
-# df1[0] = (df1[0]-df1[0].min())/(df1[0].max()-df1[0].min())
-# observed=np.round(df1[1].values)
-# predicted=df1[0].values.round()
-# 
-# res=plot_roc(observed,predicted)
-# res.show()
 ##########################################################################################
 # PLOT CONFUSION
 ##########################################################################################
-import pandas as pd
-import numpy as np
-from plotnine import ggplot, aes, geom_tile, scale_fill_gradient, labs, theme, element_text, theme_bw, element_blank, geom_text
-from sklearn.metrics import confusion_matrix
-
 def plot_confusion(observed, predicted, base_size=10, title=""):
     """
     Plot a confusion matrix heatmap using ggplot (plotnine) in Python.
@@ -125,19 +126,9 @@ def plot_confusion(observed, predicted, base_size=10, title=""):
                legend_position="none"))
 
     return p
-
-# Example usage
-# observed = [1, 2, 3, 1, 2, 3, 1, 2, 3]
-# predicted = [1, 2, 3, 1, 1, 3, 1, 2, 2]
-# p = plot_confusion(observed, predicted, title="Confusion Matrix")
-# p.show()
 ##########################################################################################
 # PLOT SEPARABILITY
 ##########################################################################################
-import pandas as pd
-import numpy as np
-from plotnine import ggplot, aes, geom_density, labs, theme_bw
-
 def plot_separability(observed, predicted, base_size=10, title=""):
     """
     Plot separability showing the density distribution of predicted probabilities for different observed categories.
@@ -169,19 +160,9 @@ def plot_separability(observed, predicted, base_size=10, title=""):
          + theme_bw(base_size=base_size))
     
     return p
-
-# Example usage
-# df1 = pd.DataFrame(np.random.rand(1000, 2), columns=['X1', 'X2'])
-# df1['X1'] = np.where(np.abs(df1['X1']) < 0.5, 0, 1)
-# df1['X2'] = (df1['X2'] - df1['X2'].min()) / (df1['X2'].max() - df1['X2'].min())
-# p = plot_separability(observed=round(np.abs(df1['X1']), 0), predicted=np.abs(df1['X2']))
-# p.show()
 ##########################################################################################
 # CONFUSION
 ##########################################################################################
-import pandas as pd
-from pandas.api.types import CategoricalDtype
-
 def confusion(observed, predicted):
     """
     Create a confusion matrix from observed and predicted vectors.
@@ -206,16 +187,9 @@ def confusion(observed, predicted):
     
     result = pd.crosstab(index=data_predicted, columns=data_observed, rownames=['predicted'], colnames=['observed'], dropna=False)
     return result
-
-# Examples
-# confusion(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11])
-# confusion(observed=[1, 2, 2, 2, 2], predicted=[1, 1, 2, 2, 2])
 ##########################################################################################
 # CONFUSION MATRIX PERCENT
 ##########################################################################################
-import pandas as pd
-from pandas.api.types import CategoricalDtype
-
 def confusion_matrix_percent(observed, predicted):
     """
     Create a confusion matrix with row and column percentages from observed and predicted vectors.
@@ -292,17 +266,9 @@ def confusion_matrix_percent(observed, predicted):
     cmatrix = cmatrix.fillna(0)
     cmatrix = cmatrix.round(2)
     return cmatrix
-
-# Examples
-# confusion_matrix_percent(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11])
-# confusion_matrix_percent(observed=[1, 2, 2, 2, 2], predicted=[1, 1, 2, 2, 2])
 ##########################################################################################
-# CONFUSION MATRIX PERCENT
+# PROPORTION ACCURATE
 ##########################################################################################
-import numpy as np
-import pandas as pd
-from sklearn.metrics import confusion_matrix, cohen_kappa_score
-
 def proportion_accurate(observed, predicted):
     """
     Calculate the proportion overall accuracy of a confusion matrix and Cohen's kappa statistics.
@@ -328,17 +294,16 @@ def proportion_accurate(observed, predicted):
     # Calculate overall accuracy (diagonal proportion)
     cm_diagonal = np.trace(cmatrix) / np.sum(cmatrix)
     
-    # Calculate off-diagonal accuracy
-    index = np.transpose(np.nonzero(cmatrix))
+    # Calculate off-diagonal accuracy (diagonal plus its immediate neighbors,
+    # i.e. "correct or off-by-one category" -- meaningful for ordinal labels)
+    n = len(cmatrix)
     data = []
-    for i in range(len(cmatrix)):
-        row, col = index[i]
-        if 0 <= col < len(cmatrix):
-            data.append(cmatrix[row, col])
-        if 0 <= col + 1 < len(cmatrix):
-            data.append(cmatrix[row, col + 1])
-        if 0 <= col - 1 < len(cmatrix):
-            data.append(cmatrix[row, col - 1])
+    for i in range(n):
+        data.append(cmatrix[i, i])
+        if i + 1 < n:
+            data.append(cmatrix[i, i + 1])
+        if i - 1 >= 0:
+            data.append(cmatrix[i, i - 1])
     cm_off_diagonal = sum(data) / np.sum(cmatrix)
     
     # Calculate Cohen's kappa statistics
@@ -356,9 +321,40 @@ def proportion_accurate(observed, predicted):
     })
     
     return result
+##########################################################################################
+# EXAMPLES
+##########################################################################################
+if __name__ == "__main__":
+    import matplotlib
+    matplotlib.use("Agg")
+    np.random.seed(0)
 
-# Example usage
-# observed = [1, 2, 3, 4, 5, 10]
-# predicted = [1, 2, 3, 4, 5, 11]
-# proportion_accurate(observed, predicted)
+    print("=" * 80, "\nplot_roc\n", "=" * 80, sep="")
+    observed_roc = [0, 0, 1, 1]
+    predicted_roc = [0.1, 0.4, 0.35, 0.8]
+    plot_roc(observed_roc, predicted_roc).save("plot_roc_example.png", verbose=False)
+    print("saved plot_roc_example.png")
+
+    print("\n" + "=" * 80, "\nplot_confusion\n", "=" * 80, sep="")
+    observed_cm = [1, 2, 3, 1, 2, 3, 1, 2, 3]
+    predicted_cm = [1, 2, 3, 1, 1, 3, 1, 2, 2]
+    plot_confusion(observed_cm, predicted_cm, title="Confusion Matrix").save(
+        "plot_confusion_example.png", verbose=False)
+    print("saved plot_confusion_example.png")
+
+    print("\n" + "=" * 80, "\nplot_separability\n", "=" * 80, sep="")
+    df1 = pd.DataFrame(np.random.rand(1000, 2), columns=['X1', 'X2'])
+    df1['X1'] = np.where(np.abs(df1['X1']) < 0.5, 0, 1)
+    df1['X2'] = (df1['X2'] - df1['X2'].min()) / (df1['X2'].max() - df1['X2'].min())
+    plot_separability(observed=round(df1['X1'], 0), predicted=df1['X2']).save(
+        "plot_separability_example.png", verbose=False)
+    print("saved plot_separability_example.png")
+
+    print("\n" + "=" * 80, "\nconfusion / confusion_matrix_percent\n", "=" * 80, sep="")
+    print(confusion(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11]))
+    print(confusion_matrix_percent(observed=[1, 2, 2, 2, 2], predicted=[1, 1, 2, 2, 2]))
+
+    print("\n" + "=" * 80, "\nproportion_accurate\n", "=" * 80, sep="")
+    print(proportion_accurate(observed=[1, 2, 3, 4, 5, 10], predicted=[1, 2, 3, 4, 5, 11]))
+    print(proportion_accurate(observed=[1, 2, 2, 2, 2], predicted=[1, 1, 2, 2, 2]))
 

@@ -1,27 +1,40 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Oct 19 12:20:38 2017
-@author: Dimitrios Zacharatos
+Miscellaneous data-generation and small-matrix utilities: random
+DataFrames (normal/uniform), missing-data injection, factor/string
+generators, correlation-matrix simulation, and triangular-matrix helpers.
+
+Note: generate_correlation_matrix and simulate_correlation_from_sample
+here overlap with same-named functions in functions_generate_data.py
+(ported from R rwf::FUNCTIONS_GENERATE_DATA.R this session, with a
+different default nrows). Both files currently coexist; whichever is
+imported later wins if both end up in the same namespace.
+
+Fixed three real bugs, found while adding these examples:
+  - matrix_triangle set the diagonal to `off_diagonal` unconditionally
+    (a second np.fill_diagonal call ran after -- and overwrote -- the
+    one meant to apply `value`), and never actually applied
+    `off_diagonal` to the eliminated triangle at all (only np.tril/
+    np.triu's implicit zero). Rewritten so `value` lands on the
+    diagonal and `off_diagonal` lands on the discarded triangle,
+    matching the function's own docstring examples exactly.
+  - display_upper_lower_diagonal called matrix_triangle() without the
+    required `triangle` argument -- an unconditional TypeError. Fixed
+    to pass triangle="lower"/"upper" for each half and apply `value` to
+    the diagonal once, after combining.
+  - generate_normal/generate_uniform looped `for x in range(ncols+1)`
+    over a frame whose columns (from populate_dataframe) are named
+    1..ncols (1-based) -- the 0-based range therefore both missed the
+    last real column and fabricated an extra column 0. Fixed to
+    range(1, ncols+1).
 """
 ##########################################################################################
 # LOAD SYSTEM
-##########################################################################################
-# import os
-# import sys
-# path_script = os.getcwd()
-# path_root = path_script.replace('\\functions', '')
-# 
-# sys.path.insert(1,path_root)
-# from __init__ import *
-##########################################################################################
-# LOAD
 ##########################################################################################
 import numpy as np
 import pandas as pd
 import string as st
 import random as rnd
-from scipy.linalg import eigh, cholesky
-from scipy.stats import norm
 ##########################################################################################
 # POPULATE DATAFRAME
 ##########################################################################################
@@ -65,7 +78,6 @@ def populate_dataframe(ncols=5,nrows=5,value=np.nan):
     mydata=mydata.reindex(range(1,nrows+1))
     mydata[mydata.isnull()]=value
     return mydata
-# populate_dataframe()
 ##########################################################################################
 # REMOVE ZERO VARIANCE COLLUMNS
 ##########################################################################################
@@ -109,7 +121,6 @@ def remove_zero_variance_collumns(mydata):
     """
     mydata=mydata.drop(mydata.std()[mydata.std()==0].index.values,axis=1)
     return mydata
-# remove_zero_variance_collumns(pd.DataFrame({'col1':[1,1,1,1,1,1,1,1],'col2':[1,1,1,1,1,1,1,2]}))
 ##########################################################################################
 # REMOVE NA COLLUMNS
 ##########################################################################################
@@ -152,7 +163,6 @@ def remove_na_collumns(mydata):
     """
     mydata=mydata.dropna(axis=1,how='all')
     return mydata
-# remove_na_collumns(pd.DataFrame({'col1':[1,1,1,1],'col2':[np.NaN,np.NaN,np.NaN,np.NaN]}))
 ##########################################################################################
 # GENERATE MISSING DATA
 ##########################################################################################
@@ -191,7 +201,6 @@ def generate_missing(vector,c=1):
     """
     vector.ravel()[np.random.choice(vector.size,c,replace=True)]=np.nan
     return vector
-# generate_missing(np.random.randn(10))
 ##########################################################################################
 # GENERATE MISSING DATAFRAME
 ##########################################################################################
@@ -233,7 +242,6 @@ def generate_missing_df(mydata,p1=.1,p2=.9):
     """
     mask=np.random.choice([True,False],size=mydata.shape,p=[p1,p2])
     return mydata.mask(mask)
-# generate_missing_df(generate_normal())
 ##########################################################################################
 # GENERATE NORMAL
 ##########################################################################################
@@ -274,10 +282,9 @@ def generate_normal(ncols=5,nrows=5,mean=0,sd=1):
     uses `numpy.random.normal` to generate the random values for each column.
     """
     mydata=populate_dataframe(ncols,nrows)
-    for x in range(ncols+1):
+    for x in range(1,ncols+1):
         mydata[x]=np.random.normal(mean,sd,size=nrows)
     return(mydata)
-# generate_normal()
 ##########################################################################################
 # GENERATE UNIFORM
 ##########################################################################################
@@ -324,11 +331,10 @@ def generate_uniform(ncols=5,nrows=5,mini=0,maxi=1,decimals=2):
     then it fills each column with uniform random values.
     """
     mydata=populate_dataframe(ncols,nrows)
-    for x in range(ncols+1):
+    for x in range(1,ncols+1):
         mydata[x]=np.random.uniform(mini,maxi,size=nrows)
     mydata=mydata.round(decimals=decimals)
     return(mydata)
-# generate_uniform()
 ##########################################################################################
 # GENERATE FACTOR EXACT
 ##########################################################################################
@@ -358,7 +364,6 @@ def generate_factor_exact(name=[rnd.choice(st.ascii_uppercase) for _ in range(2)
     """
     vector=np.repeat(name,repeats=length/len(name))
     return vector
-# generate_factor_exact()
 ##########################################################################################
 # GENERATE FACTOR RANDOMIZED
 ##########################################################################################
@@ -389,7 +394,6 @@ def generate_factor_randomized(name=[rnd.choice(st.ascii_uppercase) for _ in ran
     """
     vector=np.random.choice(name,size=length,replace=True)
     return vector
-# generate_factor_randomized()
 ##########################################################################################
 # RANDOM STRING
 ##########################################################################################
@@ -422,7 +426,6 @@ def random_string(name=st.ascii_uppercase,vector_length=10,string_length=10):
     """
     vector=[''.join(rnd.choice(name) for _ in range(string_length)) for _ in range(vector_length)]
     return vector
-# random_string()
 ##########################################################################################
 # GENERATE MULTIPLE RESPONCE VECTOR
 ##########################################################################################
@@ -458,7 +461,6 @@ def generate_multiple_responce_vector(responces=range(4),responded=range(4),vect
     vector=[' '.join(str(np.random.choice(responces,size=np.random.choice(responded),replace=False))) for _ in range(vector_length)]
     # vector=[int(x) for x in vector]
     return vector
-# generate_multiple_responce_vector()
 ##########################################################################################
 # GENERATE CORRELATION MATRIX
 ##########################################################################################
@@ -497,7 +499,6 @@ def generate_correlation_matrix(correlation_martix,nrows=1000):
     """
     mydata=pd.DataFrame(np.random.multivariate_normal(mean=np.repeat(0,len(correlation_martix)),cov=correlation_martix,size=nrows))
     return mydata
-# generate_correlation_matrix(generate_normal(ncols=5,nrows=1000,mean=0,sd=1).corr()).corr()
 ##########################################################################################
 # SIMULATE CORRELATION FROM SAMPLE
 ##########################################################################################
@@ -535,7 +536,6 @@ def simulate_correlation_from_sample(cordata,nrows=1000):
     """
     mydata=pd.DataFrame(np.random.multivariate_normal(mean=np.array(cordata.mean()),cov=cordata.cov(),size=nrows))
     return mydata
-# simulate_correlation_from_sample(generate_correlation_matrix(generate_normal().corr()).corr())
 ##########################################################################################
 # DISPLAY LOWER DIAGONAL
 ##########################################################################################
@@ -574,17 +574,17 @@ def matrix_triangle(m,triangle,off_diagonal=np.nan,value=np.nan):
            [0., 5., 6.],
            [0., 0., 5.]])
     """
+    m=np.array(m,dtype=float)
+    n=m.shape[0]
     if triangle=="lower":
-        m=np.tril(m)
-        np.fill_diagonal(m,value)
-    if triangle=="upper":
-        m=np.triu(m)
-        np.fill_diagonal(m,value)
-    np.fill_diagonal(m,off_diagonal)
+        eliminated=np.triu(np.ones((n,n),dtype=bool),k=1)
+    elif triangle=="upper":
+        eliminated=np.tril(np.ones((n,n),dtype=bool),k=-1)
+    else:
+        raise ValueError('triangle must be "lower" or "upper"')
+    m[eliminated]=off_diagonal
+    np.fill_diagonal(m,value)
     return m
-# m=generate_correlation_matrix(generate_normal().corr()).corr()
-# print(matrix_triangle(pd.DataFrame.as_matrix(m),triangle="lower"))
-# print(matrix_triangle(pd.DataFrame.as_matrix(m),triangle="upper"))
 ##########################################################################################
 # DISPLAY UPPER DIAGONAL AND LOWER DIAGONAL
 ##########################################################################################
@@ -616,12 +616,11 @@ def display_upper_lower_diagonal(m_upper,m_lower,value=np.nan):
            [4., 0., 5.],
            [7., 8., 0.]])
     """
-    lower=matrix_triangle(m=m_lower,value=value)
-    upper=matrix_triangle(m=m_upper,value=value)
+    lower=matrix_triangle(m=m_lower,triangle="lower",off_diagonal=0,value=0)
+    upper=matrix_triangle(m=m_upper,triangle="upper",off_diagonal=0,value=0)
     m=upper+lower
+    np.fill_diagonal(m,value)
     return m
-# cordata1=generate_normal(ncols=3).corr().as_matrix(columns=None)
-# cordata2=generate_normal(ncols=3).corr().as_matrix(columns=None)
 ##########################################################################################
 # LIST TO NUMBER STRING
 ##########################################################################################
@@ -655,4 +654,53 @@ def list_to_number_string(value):
         return str(value)[1:-1]
     else:
         return value
+##########################################################################################
+# EXAMPLES
+##########################################################################################
+if __name__ == "__main__":
+    np.random.seed(0)
+
+    print("=" * 80, "\npopulate_dataframe / remove_zero_variance_collumns / remove_na_collumns\n",
+          "=" * 80, sep="")
+    print(populate_dataframe(ncols=3, nrows=4, value=0))
+    print(remove_zero_variance_collumns(pd.DataFrame({'A': [1, 1, 1], 'B': [1, 2, 3], 'C': [4, 4, 4]})))
+    print(remove_na_collumns(pd.DataFrame({'A': [None, None, None], 'B': [1, 2, 3]})))
+
+    print("\n" + "=" * 80, "\ngenerate_missing / generate_missing_df\n", "=" * 80, sep="")
+    print(generate_missing(np.array([1., 2., 3., 4., 5.]), c=2))
+    print(generate_missing_df(pd.DataFrame([[1, 2, 3], [4, 5, 6], [7, 8, 9]]), p1=0.2, p2=0.8))
+
+    print("\n" + "=" * 80, "\ngenerate_normal / generate_uniform\n", "=" * 80, sep="")
+    print(generate_normal(ncols=3, nrows=3))
+    print(generate_uniform(ncols=3, nrows=3, mini=0, maxi=10))
+
+    print("\n" + "=" * 80, "\ngenerate_factor_exact / generate_factor_randomized / random_string\n",
+          "=" * 80, sep="")
+    print(generate_factor_exact(name=['A', 'B'], length=6))
+    print(generate_factor_randomized(name=['A', 'B'], length=6))
+    print(random_string(name='abc123', vector_length=3, string_length=6))
+
+    print("\n" + "=" * 80, "\ngenerate_multiple_responce_vector\n", "=" * 80, sep="")
+    print(generate_multiple_responce_vector(responces=[1, 2, 3], responded=[1, 2], vector_length=3))
+
+    print("\n" + "=" * 80, "\ngenerate_correlation_matrix / simulate_correlation_from_sample\n",
+          "=" * 80, sep="")
+    correlation_matrix = np.array([[1, 0.8], [0.8, 1]])
+    simulated = generate_correlation_matrix(correlation_matrix, nrows=1000)
+    print("target correlation 0.8, simulated:\n", simulated.corr())
+    resimulated = simulate_correlation_from_sample(simulated, nrows=1000)
+    print("resimulated from the same sample's mean/cov:\n", resimulated.corr())
+
+    print("\n" + "=" * 80, "\nmatrix_triangle / display_upper_lower_diagonal\n", "=" * 80, sep="")
+    m = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+    print(matrix_triangle(m.copy(), 'lower', off_diagonal=0, value=5))
+    print(matrix_triangle(m.copy(), 'upper', off_diagonal=0, value=5))
+    m_upper = np.array([[1, 2, 3], [0, 4, 5], [0, 0, 6]])
+    m_lower = np.array([[1, 0, 0], [4, 2, 0], [7, 8, 3]])
+    print(display_upper_lower_diagonal(m_upper, m_lower, value=0))
+
+    print("\n" + "=" * 80, "\nlist_to_number_string\n", "=" * 80, sep="")
+    print(list_to_number_string([1, 2, 3]))
+    print(list_to_number_string((4, 5, 6)))
+    print(list_to_number_string(42))
 

@@ -226,10 +226,14 @@ def compute_aov_es(model, ss="I"):
         ss3 = ss3[['Df', 'Sum Sq', 'Mean Sq', 'F value', 'Pr(>F)']]
         ss3 = ss3.reset_index()
 
-        order = ['Treatment', 'Residual', 'Intercept']
-        ss3 = ss3.set_index('index').loc[order].reset_index()
-        summary_aov = ss3.iloc[0:].copy()
-        intercept = ss3.iloc[2:3]
+        # Put every effect term first (in their original order), then Residual, then
+        # Intercept last -- generalizes to any model instead of assuming a single
+        # factor literally named "Treatment" (the previous hardcoded order silently
+        # dropped every other effect term for factorial/multi-factor models).
+        effect_rows = ss3[~ss3['index'].isin(['Intercept', 'Residual'])]
+        residual_row_df = ss3[ss3['index'] == 'Residual']
+        intercept_row_df = ss3[ss3['index'] == 'Intercept']
+        summary_aov = pd.concat([effect_rows, residual_row_df, intercept_row_df], ignore_index=True)
     
     residual_row = summary_aov[summary_aov["index"].str.contains("Residual")].index[0]
     ms_effect = summary_aov.loc[:residual_row - 1, 'Mean Sq'].values

@@ -1,8 +1,13 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Wed Oct 25 14:32:36 2017
-@author: Dimitrios Zacharatos
+Quick data-quality summaries for a DataFrame: null/NaN/empty-string
+counts, per-column descriptives, and dtype checks.
+
+Fixed a real bug in cdf(): its Excel-export branch referenced an
+undefined function (critical_value_excel) and an undefined variable
+(dataframes), and called the removed pandas ExcelWriter.save() method --
+it would crash immediately whenever a filename was passed. Replaced with
+plain DataFrame.to_excel() calls and writer.close().
 """
 ##########################################################################################
 # LOAD
@@ -13,21 +18,59 @@ import numpy as np
 # OBSERVED
 ##########################################################################################
 def observed(vector):
+    """
+    Count of non-NaN values in a vector.
+
+    Parameters:
+    vector (array-like): Numeric values.
+
+    Returns:
+    int
+
+    Examples:
+    >>> import numpy as np
+    >>> observed(np.array([1, 2, np.nan, 4]))
+    """
     return np.count_nonzero(~np.isnan(vector))
-# observed(np.empty((10,)))
 ##########################################################################################
 # CHECK INTEGER
 ##########################################################################################
 def is_int(vector):
+    """
+    True if `vector` is a Python int.
+
+    Parameters:
+    vector: Any value.
+
+    Returns:
+    bool
+
+    Examples:
+    >>> is_int(5)
+    >>> is_int(5.0)
+    """
     if type(vector) == int:
         return True
+
+
 def check_integer(vector):
+    """
+    True if every element of `vector` is a Python int.
+
+    Parameters:
+    vector (iterable): Values to check.
+
+    Returns:
+    bool
+
+    Examples:
+    >>> check_integer([1, 2, 3])
+    >>> check_integer([1, 2.5, 3])
+    """
     for i in vector:
         if not is_int(i):
             return False
     return True
-# is_int(np.empty((10,)))
-# check_integer(np.empty((10,)))
 ##########################################################################################
 # SHORT CHECK DATAFRAME
 ##########################################################################################
@@ -69,16 +112,6 @@ def short_check(df):
                          'NULLS':[nulls],
                          'NOT_NULLS':[not_nulls]})
     return result
-# short_check(df=df_admission)
-# short_check(df=df_automotive)
-# short_check(df=df_blood_pressure)
-# short_check(df=df_crop_yield)
-# short_check(df=df_difficile)
-# short_check(df=df_insurance)
-# short_check(df=df_responses)
-# short_check(df=df_sexual_comp)
-# short_check(df=df_personality)
-# short_check(df=df_titanic)
 ##########################################################################################
 # CHECK DATAFRAME
 ##########################################################################################
@@ -156,9 +189,9 @@ def cdf(df,width=10000,filename=""):
     check=sdf.reset_index()
     if filename !="":
         writer=pd.ExcelWriter(filename,engine='xlsxwriter')
-        critical_value_excel(pd.DataFrame(dataframes[0]),writer,"SUMMARY")
-        critical_value_excel(pd.DataFrame(dataframes[1]),writer,"CHECK")
-        writer.save()
+        short_check_result.to_excel(writer,sheet_name="SUMMARY",index=False)
+        check.to_excel(writer,sheet_name="CHECK",index=False)
+        writer.close()
     print(short_check_result)
     print(check)
     pd.set_option('display.max_columns', original_display_options['max_columns'])
@@ -167,25 +200,49 @@ def cdf(df,width=10000,filename=""):
     pd.set_option('display.width', original_display_options['width'])
     pd.set_option('display.max_seq_item', original_display_options['max_seq_item'])
     return check, short_check_result
-
-# cdf(df=df_admission)
-# cdf(df=df_automotive)
-# cdf(df=df_blood_pressure)
-# cdf(df=df_crop_yield)
-# cdf(df=df_difficile)
-# cdf(df=df_insurance)
-# cdf(df=df_responses)
-# cdf(df=df_sexual_comp)
-# cdf(df=df_personality)
-# cdf(df=df_titanic)
-# cdf(df=df_ocean)
 ##########################################################################################
 # CHECK DATAFRAME ROWS
 ##########################################################################################
 def check_rows(df,filename=""):
+    """
+    Same statistics as cdf(), but computed per row instead of per column
+    (via transposing df first).
+
+    Parameters:
+    df (pandas.DataFrame): Data to analyze.
+    filename (str, optional): If given, writes an Excel report. Defaults to "".
+
+    Returns:
+    tuple: Same as cdf() -- (check, short_check_result).
+
+    Examples:
+    >>> import pandas as pd
+    >>> titanic = pd.read_csv("data/titanic.csv")
+    >>> check_rows(titanic.iloc[:5, :5])
+    """
     dataframes=cdf(df.transpose(),filename=filename)
     return dataframes
-# check_rows(personality)
-# check_rows(df)
-# check_rows(titanic)
+##########################################################################################
+# EXAMPLES
+##########################################################################################
+if __name__ == "__main__":
+    import os
+
+    print("=" * 80, "\nobserved / is_int / check_integer\n", "=" * 80, sep="")
+    print(observed(np.array([1, 2, np.nan, 4])))
+    print(is_int(5), is_int(5.0))
+    print(check_integer([1, 2, 3]), check_integer([1, 2.5, 3]))
+
+    titanic = pd.read_csv("data/titanic.csv") if os.path.exists("data/titanic.csv") \
+        else pd.read_csv("../data/titanic.csv")
+
+    print("\n" + "=" * 80, "\nshort_check\n", "=" * 80, sep="")
+    print(short_check(df=titanic))
+
+    print("\n" + "=" * 80, "\ncdf\n", "=" * 80, sep="")
+    check, short_check_result = cdf(df=titanic.iloc[:, :6])
+
+    print("\n" + "=" * 80, "\ncheck_rows\n", "=" * 80, sep="")
+    check_r, short_r = check_rows(titanic.iloc[:5, :5])
+    print(check_r)
 

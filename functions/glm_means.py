@@ -1,25 +1,19 @@
-# !/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Dec  4 14:20:04 2017
-@author: Dimitrios Zacharatos
+Pairwise group-comparison reports: t-tests, Mann-Whitney U/Wilcoxon, and
+standalone Levene/Bartlett homogeneity-of-variance tests, each run over
+every pairwise combination of factor levels.
 """
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
-import os
-import sys
 import numpy as np
 import pandas as pd
 import pingouin as pg
 import itertools
 from scipy.stats import levene, bartlett
-try:
-    from . import functions_excel as fe
-except ImportError:
-    import functions_excel as fe
 ##########################################################################################
-# 
+# T-TEST
 ##########################################################################################
 def report_ttests(df,dv,iv,paired=False,alternative="two-sided",correction=False):
     """
@@ -125,23 +119,6 @@ def report_ttests(df,dv,iv,paired=False,alternative="two-sided",correction=False
                 result=pd.concat([descriptives,ttest],axis=1)
                 result_iterative=pd.concat([result_iterative,result],axis=0)
     return result_iterative
-
-# import pandas as pd
-# DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
-# df_blood_pressure=pd.read_csv(DATA_DIR / "blood_pressure.csv")
-# with pd.option_context('display.max_columns', None, 'display.width', 180):
-#     print(report_ttests(df=df_blood_pressure, dv="bp_before", iv=["sex","agegrp"]).round(2))
-# with pd.option_context('display.max_columns', None, 'display.width', 180):
-#     print(report_ttests(df=df_blood_pressure, dv=["bp_before","bp_after"], iv=["sex","agegrp"]).round(2))
-# df_long = pd.melt(
-#     df_blood_pressure,
-#     id_vars=['patient', 'sex', 'agegrp'],
-#     value_vars=['bp_before', 'bp_after'],
-#     var_name='time',
-#     value_name='bp'
-# )
-# with pd.option_context('display.max_columns', None, 'display.width', 180):
-#     print(report_ttests(df=df_long, dv='bp', iv=['time'], paired=True))
 ##########################################################################################
 # WILCOXON / MANN-WHITNEY
 ##########################################################################################
@@ -256,30 +233,9 @@ def report_wtests(df,dv,iv,paired=False,alternative="two-sided"):
                 result=pd.concat([descriptives,wtest],axis=1)
                 result_iterative=pd.concat([result_iterative,result],axis=0)
     return result_iterative
-
-# import pandas as pd
-# DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
-# df_blood_pressure=pd.read_csv(DATA_DIR / "blood_pressure.csv")
-# with pd.option_context('display.max_columns', None, 'display.width', 180):
-#     print(report_wtests(df=df_blood_pressure, dv="bp_before", iv=["sex","agegrp"]).round(2))
-# with pd.option_context('display.max_columns', None, 'display.width', 180):
-#     print(report_wtests(df=df_blood_pressure, dv=["bp_before","bp_after"], iv=["sex","agegrp"]).round(2))
-# df_long = pd.melt(
-#     df_blood_pressure,
-#     id_vars=['patient', 'sex', 'agegrp'],
-#     value_vars=['bp_before', 'bp_after'],
-#     var_name='time',
-#     value_name='bp'
-# )
-# with pd.option_context('display.max_columns', None, 'display.width', 180):
-#     print(report_wtests(df=df_long, dv='bp', iv=['time'], paired=True))
 ##########################################################################################
 # LEVENE
 ##########################################################################################
-from scipy.stats import levene
-import pandas as pd
-import itertools
-
 def report_levene_bartlett(df, dv, iv):
     """
     Run pairwise Levene and Bartlett homogeneity-of-variance tests across
@@ -353,9 +309,28 @@ def report_levene_bartlett(df, dv, iv):
             })
             result_iterative = pd.concat([result_iterative, result], ignore_index=True)
     return result_iterative
+##########################################################################################
+# EXAMPLES
+##########################################################################################
+if __name__ == "__main__":
+    import os
 
-# import pandas as pd
-# DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
-# df_blood_pressure=pd.read_csv(DATA_DIR / "blood_pressure.csv")
-# report_levene_bartlett(df=df_blood_pressure,dv="bp_before",iv=["sex","agegrp"])
+    df_blood_pressure = pd.read_csv("data/blood_pressure.csv") if os.path.exists("data/blood_pressure.csv") \
+        else pd.read_csv("../data/blood_pressure.csv")
+
+    with pd.option_context('display.max_columns', None, 'display.width', 200):
+        print("=" * 80, "\nreport_ttests\n", "=" * 80, sep="")
+        print(report_ttests(df=df_blood_pressure, dv="bp_before", iv=["sex", "agegrp"]).round(2))
+        print(report_ttests(df=df_blood_pressure, dv=["bp_before", "bp_after"], iv=["sex", "agegrp"]).round(2))
+
+        df_long = pd.melt(df_blood_pressure, id_vars=['patient', 'sex', 'agegrp'],
+                           value_vars=['bp_before', 'bp_after'], var_name='time', value_name='bp')
+        print(report_ttests(df=df_long, dv='bp', iv=['time'], paired=True).round(2))
+
+        print("\n" + "=" * 80, "\nreport_wtests\n", "=" * 80, sep="")
+        print(report_wtests(df=df_blood_pressure, dv="bp_before", iv=["sex", "agegrp"]).round(2))
+        print(report_wtests(df=df_long, dv='bp', iv=['time'], paired=True).round(2))
+
+        print("\n" + "=" * 80, "\nreport_levene_bartlett\n", "=" * 80, sep="")
+        print(report_levene_bartlett(df=df_blood_pressure, dv="bp_before", iv=["sex", "agegrp"]))
 
