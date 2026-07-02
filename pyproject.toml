@@ -31,6 +31,8 @@ full = [
     "nltk",
     "rpy2",
     "semopy",
+    "networkx",
+    "pydot",
 ]
 dev = ["pytest", "build", "twine", "pdoc"]
 

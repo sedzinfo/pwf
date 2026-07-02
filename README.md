@@ -57,7 +57,7 @@ Each module below can also be imported directly, e.g. `from pwf.explore_assumpti
 | `functions_train_test_full` | Extended train/test and model-evaluation helpers |
 | `functions_unix_time` | Unix timestamp conversion helpers |
 
-### GLM And Model Helpers
+### GLM And Modeling
 
 | Module | Contents |
 | --- | --- |
@@ -65,18 +65,18 @@ Each module below can also be imported directly, e.g. `from pwf.explore_assumpti
 | `glm_correlation` | Correlation and association helpers |
 | `glm_efa` | Exploratory factor analysis: scree plots, loadings, EFA report |
 | `glm_hlr` | Hierarchical linear regression helpers |
-| `glm_irt` | Item-response-theory utilities |
-| `glm_irt_t` | IRT tooling (T-parameterization variants) |
-| `glm_irt_u` | IRT tooling (U-parameterization variants) |
+| `glm_irt` | Item response theory utilities |
+| `glm_irt_t` | IRT tooling (T parameterization variants) |
+| `glm_irt_u` | IRT tooling (U parameterization variants) |
 | `glm_lda` | Linear discriminant analysis helpers |
-| `glm_linear_regression` | OLS/linear regression helpers |
+| `glm_linear_regression` | OLS and linear regression helpers |
 | `glm_logistic_regression` | Logistic regression helpers |
 | `glm_means` | t-tests, Levene/Bartlett homogeneity tests |
 | `glm_one_way_anova` | One-way ANOVA, Kruskal-Wallis, Games-Howell post hoc |
 | `glm_reliability` | Reliability/Cronbach's alpha reporting |
 | `glm_sem` | Structural equation modeling via `semopy` *(work in progress)* |
 
-### Utility Modules
+### Utilities
 
 | Module | Contents |
 | --- | --- |
@@ -84,7 +84,7 @@ Each module below can also be imported directly, e.g. `from pwf.explore_assumpti
 | `nltk` | NLTK corpus download helper |
 | `plot_corrplot` | Correlation matrix plotting |
 
-Some modules are still experimental or carry known issues (for example: `glm_sem`, `glm_reliability`, `helper`, `nltk`, and `plot_corrplot`). See git history/issues for current status.
+Some modules are still experimental or carry known issues (for example: `glm_sem`, `glm_reliability`, `helper`, `nltk`, and `plot_corrplot`). Check issues and git history for current status.
 
 ## Data
 
