@@ -91,9 +91,8 @@ def plot_multiplot(*plots, plotlist=None, cols=2, layout=None):
     pages = []
     counter = 0
     for _ in range(pages_count):
-        fig, axes = plt.subplots(nrows_layout, ncols_layout,
+        fig, axes = plt.subplots(nrows_layout, ncols_layout, squeeze=False,
                                   figsize=(ncols_layout * 5, nrows_layout * 4))
-        axes = np.atleast_2d(axes)
         for i in range(1, plots_per_page + 1):
             positions = np.argwhere(layout == i)
             ax = None
@@ -211,7 +210,8 @@ if __name__ == "__main__":
     fig, ax = plt.subplots()
     ax.plot(df['x'], df['y'])
     plot_duplicate_y_axis(ax)
-    print("secondary axes on figure:", len(fig.axes))
+    print("secondary y-axis attached:", len(ax.child_axes) == 1,
+          "position:", ax.child_axes[0].yaxis.get_ticks_position())
     fig.savefig("duplicate_y_axis.png")
     print("saved duplicate_y_axis.png")
 
