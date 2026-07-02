@@ -361,11 +361,11 @@ def report_logistic(model, validation_data=None, file=None, title="", w=10, h=10
     scores = pd.concat([
         variable_df,
         pd.DataFrame({
-            "weights": model.model.family.weights(model.fittedvalues).to_numpy(),
+            "weights": np.asarray(model.model.family.weights(model.fittedvalues)),
             "prior_weights": np.ones(n_obs),
-            "linear_predictors": model.model.family.link(model.fittedvalues).to_numpy(),
-            "fitted": model.fittedvalues.to_numpy(),
-            "residuals": model.resid_response.to_numpy(),
+            "linear_predictors": np.asarray(model.model.family.link(model.fittedvalues)),
+            "fitted": np.asarray(model.fittedvalues),
+            "residuals": np.asarray(model.resid_response),
             "standardized_residuals": rstandard,
             "student_residuals": rstudent,
         }),

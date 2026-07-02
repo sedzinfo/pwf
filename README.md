@@ -29,24 +29,45 @@ Each module below can also be imported directly, e.g. `from pwf.explore_assumpti
 
 | Module | Contents |
 | --- | --- |
-| `functions_generic` | Data generation and manipulation: missing data, random/correlated matrices, dummy columns, factor simulation |
-| `functions_statistical` | General statistical helpers (`compute_standard`, ...) |
-| `functions_cdf` | CDF/observed-value checks and helpers |
-| `functions_timestamp` | Timestamp/date decomposition helpers |
-| `functions_excel` | Excel export formatting via `xlsxwriter` |
-| `functions_train_test` | Train/test evaluation: ROC, confusion matrix, separability plots |
-| `explore_descriptives` | Descriptive summaries (`describe_by_mean`, `flatten`) |
 | `explore_assumptions` | Normality/outlier diagnostics: histograms, QQ plots, boxplots |
-| `helper` | Moment/cumulant conversions (`mc2mnc`, `cov2corr`, ...) |
+| `explore_descriptives` | Descriptive summaries (`describe_by_mean`, `flatten`) |
+| `explore_time_series` | Time-series exploration and plotting helpers |
+| `functions` | Legacy/all-in-one convenience wrapper of assorted helpers |
+| `functions_cdf` | CDF/observed-value checks and helpers |
+| `functions_environment` | Runtime/environment helpers |
+| `functions_excel` | Excel export formatting via `xlsxwriter` |
+| `functions_generate_data` | Synthetic data generators |
+| `functions_generic` | Data generation and manipulation: missing data, random/correlated matrices, dummy columns, factor simulation |
+| `functions_keys` | Key/index lookup helpers |
+| `functions_mathematical` | Mathematical utilities |
+| `functions_matrix` | Matrix operations and matrix diagnostics |
+| `functions_plot` | Generic plotting helpers |
+| `functions_recode` | Value and category recoding helpers |
+| `functions_statistical` | General statistical helpers (`compute_standard`, ...) |
+| `functions_strings` | String-cleaning and text utilities |
+| `functions_timestamp` | Timestamp/date decomposition helpers |
+| `functions_train_test` | Train/test evaluation: ROC, confusion matrix, separability plots |
+| `functions_train_test_full` | Extended train/test and model-evaluation helpers |
+| `functions_unix_time` | Unix timestamp conversion helpers |
+| `glm_anova_plot` | ANOVA-focused plotting helpers |
+| `glm_correlation` | Correlation and association helpers |
+| `glm_efa` | Exploratory factor analysis: scree plots, loadings, EFA report |
+| `glm_hlr` | Hierarchical linear regression helpers |
+| `glm_irt` | Item-response-theory utilities |
+| `glm_irt_t` | IRT tooling (T-parameterization variants) |
+| `glm_irt_u` | IRT tooling (U-parameterization variants) |
+| `glm_lda` | Linear discriminant analysis helpers |
+| `glm_linear_regression` | OLS/linear regression helpers |
+| `glm_logistic_regression` | Logistic regression helpers |
 | `glm_means` | t-tests, Levene/Bartlett homogeneity tests |
 | `glm_one_way_anova` | One-way ANOVA, Kruskal-Wallis, Games-Howell post hoc |
-| `glm_efa` | Exploratory factor analysis: scree plots, loadings, EFA report |
 | `glm_reliability` | Reliability/Cronbach's alpha reporting |
 | `glm_sem` | Structural equation modeling via `semopy` *(work in progress)* |
-| `plot_corrplot` | Correlation matrix plotting |
+| `helper` | Moment/cumulant conversions (`mc2mnc`, `cov2corr`, ...) |
 | `nltk` | NLTK corpus download helper |
+| `plot_corrplot` | Correlation matrix plotting |
 
-`glm_sem`, `glm_reliability`, `helper`, `nltk`, and `plot_corrplot` currently have known issues (leftover scratch code, version-incompatible dependencies, or hardcoded paths) — see git history for status.
+Some modules are still experimental or carry known issues (for example: `glm_sem`, `glm_reliability`, `helper`, `nltk`, and `plot_corrplot`). See git history/issues for current status.
 
 ## Data
 
