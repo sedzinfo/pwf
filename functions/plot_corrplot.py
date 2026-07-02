@@ -1,26 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Oct 17 16:17:36 2018
-@author: Dimitrios Zacharatos
+Correlation heatmap plot built with plotnine.
+
+Note: functions/glm_correlation.py also defines a plot_corrplot(), with a
+different signature (mydata, title="", base_size=10, fill_limits=(-1,0,1))
+and its own diverging color scale. This file's version predates that one
+and has not been merged with it -- keep that in mind if both get imported
+into the same namespace (the later import wins).
 """
 ##########################################################################################
-# LOAD
+# LOAD SYSTEM
 ##########################################################################################
-import os
-import sys
-
-path_script = os.getcwd()
-# path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if(path_script.find('functions')==-1):
-  path_script=path_script+"\\GitHub\\pwf\\functions"
-path_root=path_script.replace('\\functions', '')
-os.chdir(path_script)
-
-sys.path.insert(1,path_script)
-from plotnine import ggplot, aes, scale_x_discrete, scale_y_discrete
-from plotnine import geom_tile, geom_text, scale_fill_gradient2, theme_bw, theme, ggsave
-from plotnine import element_text, element_blank
-import matplotlib.pyplot as plt
+from plotnine import (
+    ggplot, aes, scale_x_discrete, scale_y_discrete, geom_tile, geom_text,
+    scale_fill_gradient2, theme_bw, theme, element_text, element_blank, labs,
+)
 import pandas as pd
 ##########################################################################################
 # PLOT CORRPLOT
@@ -94,15 +88,17 @@ def plot_corrplot(df,base_size=15,title=""):
                 legend_text=element_text(hjust=1)))
     return gp
 ##########################################################################################
-# 
+# EXAMPLES
 ##########################################################################################
-df=personality=pd.read_csv(path_root+"/data/personality.csv")
-gp=plot_corrplot(personality.iloc[:,1:20].corr(),base_size=5,title="Personality")
-gp.show()
+if __name__ == "__main__":
+    import os
 
-output_path = os.path.join(path_root, "output")
-os.makedirs(output_path, exist_ok=True)
+    personality = pd.read_csv("data/personality.csv") if os.path.exists("data/personality.csv") \
+        else pd.read_csv("../data/personality.csv")
 
-gp.save(filename="correlation.png", path=output_path, width=20, height=20, units="cm", dpi=1200)
+    print("=" * 80, "\nplot_corrplot\n", "=" * 80, sep="")
+    gp = plot_corrplot(personality.iloc[:, 1:20].corr(), base_size=5, title="Personality")
+    gp.save("plot_corrplot_personality.png", verbose=False, width=20, height=20, units="cm", dpi=200)
+    print("saved plot_corrplot_personality.png")
 
 

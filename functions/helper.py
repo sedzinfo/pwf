@@ -6,15 +6,14 @@ contains:
 * cov2corr : convert covariance matrix to correlation matrix
 Author: Josef Perktold
 License: BSD-3'''
-from statsmodels.compat.python import range
 import numpy as np
-from scipy.misc import comb
+from scipy.special import comb
 #############################################################################################################################################################################################################
 #
 #############################################################################################################################################################################################################
 ## start moment helpers
 def mc2mnc(mc):
-    '''
+    r'''
     convert central to non-central moments, uses recursive formula optionally adjusts first moment to return mean
     
     This function transforms a list of central moments into non-central moments 
@@ -66,7 +65,7 @@ def mc2mnc(mc):
 #
 #############################################################################################################################################################################################################
 def mnc2mc(mnc, wmean = True):
-    '''
+    r'''
     convert non-central to central moments, uses recursive formula optionally adjusts first moment to return mean
     
     This function transforms a list of non-central moments into central moments.
@@ -122,7 +121,7 @@ def mnc2mc(mnc, wmean = True):
 #
 #############################################################################################################################################################################################################
 def cum2mc(kappa):
-    '''
+    r'''
     convert non-central moments to cumulants recursive formula produces as many cumulants as moments
 
     This function takes a list of cumulants and converts them into 
@@ -179,7 +178,7 @@ def cum2mc(kappa):
 #
 #############################################################################################################################################################################################################
 def mnc2cum(mnc):
-    '''
+    r'''
     convert non-central moments to cumulants recursive formula produces as many cumulants as moments
     
     This function converts a list of non-central moments into cumulants
@@ -528,3 +527,38 @@ def se_cov(cov):
     std : ndarray
         standard deviation from diagonal of cov'''
     return np.sqrt(np.diag(cov))
+#############################################################################################################################################################################################################
+# EXAMPLES
+#############################################################################################################################################################################################################
+if __name__ == "__main__":
+    import numpy as np
+
+    print("=" * 80, "\nmc2mnc / mnc2mc (central <-> non-central moments)\n", "=" * 80, sep="")
+    mc = [3, 2, 4]
+    mnc = mc2mnc(mc)
+    print("mc2mnc([3, 2, 4]) =", mnc)
+    print("mnc2mc(...) round-trip =", mnc2mc(mnc), "(should recover [3, 2, 4])")
+
+    print("\n" + "=" * 80, "\ncum2mc / mnc2cum / mc2cum (cumulants <-> moments)\n", "=" * 80, sep="")
+    kappa = [3, 2, 4]
+    mc_from_cum = cum2mc(kappa)
+    print("cum2mc([3, 2, 4]) =", mc_from_cum)
+    print("mnc2cum(mc2mnc(kappa)) round-trip =", mnc2cum(mc2mnc(kappa)), "(should recover [3, 2, 4])")
+    print("mc2cum([3, 2, 4]) =", mc2cum([3, 2, 4]))
+
+    print("\n" + "=" * 80, "\nmvsk2mc / mvsk2mnc / mc2mvsk / mnc2mvsk (mean/var/skew/kurtosis <-> moments)\n",
+          "=" * 80, sep="")
+    mvsk = (2.0, 4.0, 0.5, 1.2)
+    central = mvsk2mc(mvsk)
+    noncentral = mvsk2mnc(mvsk)
+    print("mvsk2mc(mean=2, var=4, skew=.5, kurt=1.2) =", central)
+    print("mvsk2mnc(mean=2, var=4, skew=.5, kurt=1.2) =", noncentral)
+    print("mc2mvsk(...) round-trip from central moments =", mc2mvsk(central), "(should recover", mvsk, ")")
+    print("mnc2mvsk(...) round-trip from non-central moments =", mnc2mvsk(noncentral), "(should recover", mvsk, ")")
+
+    print("\n" + "=" * 80, "\ncov2corr / corr2cov / se_cov\n", "=" * 80, sep="")
+    cov = np.array([[4.0, 2.0], [2.0, 9.0]])
+    corr, std = cov2corr(cov, return_std=True)
+    print("cov2corr(cov, return_std=True) ->\ncorr:\n", corr, "\nstd:", std)
+    print("corr2cov(corr, std) round-trip:\n", corr2cov(corr, std), "(should recover the original cov)")
+    print("se_cov(cov) =", se_cov(cov))
