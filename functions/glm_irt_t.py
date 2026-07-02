@@ -617,7 +617,7 @@ def compute_solve(a, b=None):
     if a.shape[1] != n:
         raise ValueError("'a' must be square")
 
-    b_was_vector = b is None or np.ndim(b) == 1
+    b_was_vector = b is not None and np.ndim(b) == 1
     if b is None:
         b = np.eye(n)
     else:
@@ -648,6 +648,15 @@ def score_tirt_pattern(pattern, lambda_, theta_diag, tau, Psi, nu=None, init=Non
     """
     MAP (empirical Bayes modal) latent trait estimate for one Thurstonian
     IRT response pattern, given lavaan-fitted measurement parameters.
+
+    Note: this is an independent, hand-rolled BFGS-based MAP scorer, not
+    a port of thurstonianIRT's own predict() method — R's own docstring
+    for this function invites exactly this comparison ("Check same
+    scores from thurstonianIRT package"), and running both confirms they
+    are meaningfully different (different estimators, e.g. differing in
+    how the prior/latent covariance is used), not that one is a bug.
+    This Python port was verified to match R's score_tirt_pattern (the
+    function being ported) to ~5-6 decimal places, not thurstonianIRT::predict().
 
     Parameters:
     pattern (array-like): Observed responses (0/1), NaN allowed for
