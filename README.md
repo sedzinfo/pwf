@@ -27,11 +27,18 @@ Each module below can also be imported directly, e.g. `from pwf.explore_assumpti
 
 ## Modules
 
+### Explore
+
 | Module | Contents |
 | --- | --- |
 | `explore_assumptions` | Normality/outlier diagnostics: histograms, QQ plots, boxplots |
 | `explore_descriptives` | Descriptive summaries (`describe_by_mean`, `flatten`) |
 | `explore_time_series` | Time-series exploration and plotting helpers |
+
+### Core Functions
+
+| Module | Contents |
+| --- | --- |
 | `functions` | Legacy/all-in-one convenience wrapper of assorted helpers |
 | `functions_cdf` | CDF/observed-value checks and helpers |
 | `functions_environment` | Runtime/environment helpers |
@@ -49,6 +56,11 @@ Each module below can also be imported directly, e.g. `from pwf.explore_assumpti
 | `functions_train_test` | Train/test evaluation: ROC, confusion matrix, separability plots |
 | `functions_train_test_full` | Extended train/test and model-evaluation helpers |
 | `functions_unix_time` | Unix timestamp conversion helpers |
+
+### GLM And Model Helpers
+
+| Module | Contents |
+| --- | --- |
 | `glm_anova_plot` | ANOVA-focused plotting helpers |
 | `glm_correlation` | Correlation and association helpers |
 | `glm_efa` | Exploratory factor analysis: scree plots, loadings, EFA report |
@@ -63,6 +75,11 @@ Each module below can also be imported directly, e.g. `from pwf.explore_assumpti
 | `glm_one_way_anova` | One-way ANOVA, Kruskal-Wallis, Games-Howell post hoc |
 | `glm_reliability` | Reliability/Cronbach's alpha reporting |
 | `glm_sem` | Structural equation modeling via `semopy` *(work in progress)* |
+
+### Utility Modules
+
+| Module | Contents |
+| --- | --- |
 | `helper` | Moment/cumulant conversions (`mc2mnc`, `cov2corr`, ...) |
 | `nltk` | NLTK corpus download helper |
 | `plot_corrplot` | Correlation matrix plotting |
