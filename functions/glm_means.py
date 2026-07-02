@@ -126,22 +126,22 @@ def report_ttests(df,dv,iv,paired=False,alternative="two-sided",correction=False
                 result_iterative=pd.concat([result_iterative,result],axis=0)
     return result_iterative
 
-import pandas as pd
-DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
-df_blood_pressure=pd.read_csv(DATA_DIR / "blood_pressure.csv")
-with pd.option_context('display.max_columns', None, 'display.width', 180):
-    print(report_ttests(df=df_blood_pressure, dv="bp_before", iv=["sex","agegrp"]).round(2))
-with pd.option_context('display.max_columns', None, 'display.width', 180):
-    print(report_ttests(df=df_blood_pressure, dv=["bp_before","bp_after"], iv=["sex","agegrp"]).round(2))
-df_long = pd.melt(
-    df_blood_pressure,
-    id_vars=['patient', 'sex', 'agegrp'],
-    value_vars=['bp_before', 'bp_after'],
-    var_name='time',
-    value_name='bp'
-)
-with pd.option_context('display.max_columns', None, 'display.width', 180):
-    print(report_ttests(df=df_long, dv='bp', iv=['time'], paired=True))
+# import pandas as pd
+# DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
+# df_blood_pressure=pd.read_csv(DATA_DIR / "blood_pressure.csv")
+# with pd.option_context('display.max_columns', None, 'display.width', 180):
+#     print(report_ttests(df=df_blood_pressure, dv="bp_before", iv=["sex","agegrp"]).round(2))
+# with pd.option_context('display.max_columns', None, 'display.width', 180):
+#     print(report_ttests(df=df_blood_pressure, dv=["bp_before","bp_after"], iv=["sex","agegrp"]).round(2))
+# df_long = pd.melt(
+#     df_blood_pressure,
+#     id_vars=['patient', 'sex', 'agegrp'],
+#     value_vars=['bp_before', 'bp_after'],
+#     var_name='time',
+#     value_name='bp'
+# )
+# with pd.option_context('display.max_columns', None, 'display.width', 180):
+#     print(report_ttests(df=df_long, dv='bp', iv=['time'], paired=True))
 ##########################################################################################
 # WILCOXON / MANN-WHITNEY
 ##########################################################################################
@@ -257,22 +257,22 @@ def report_wtests(df,dv,iv,paired=False,alternative="two-sided"):
                 result_iterative=pd.concat([result_iterative,result],axis=0)
     return result_iterative
 
-import pandas as pd
-DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
-df_blood_pressure=pd.read_csv(DATA_DIR / "blood_pressure.csv")
-with pd.option_context('display.max_columns', None, 'display.width', 180):
-    print(report_wtests(df=df_blood_pressure, dv="bp_before", iv=["sex","agegrp"]).round(2))
-with pd.option_context('display.max_columns', None, 'display.width', 180):
-    print(report_wtests(df=df_blood_pressure, dv=["bp_before","bp_after"], iv=["sex","agegrp"]).round(2))
-df_long = pd.melt(
-    df_blood_pressure,
-    id_vars=['patient', 'sex', 'agegrp'],
-    value_vars=['bp_before', 'bp_after'],
-    var_name='time',
-    value_name='bp'
-)
-with pd.option_context('display.max_columns', None, 'display.width', 180):
-    print(report_wtests(df=df_long, dv='bp', iv=['time'], paired=True))
+# import pandas as pd
+# DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
+# df_blood_pressure=pd.read_csv(DATA_DIR / "blood_pressure.csv")
+# with pd.option_context('display.max_columns', None, 'display.width', 180):
+#     print(report_wtests(df=df_blood_pressure, dv="bp_before", iv=["sex","agegrp"]).round(2))
+# with pd.option_context('display.max_columns', None, 'display.width', 180):
+#     print(report_wtests(df=df_blood_pressure, dv=["bp_before","bp_after"], iv=["sex","agegrp"]).round(2))
+# df_long = pd.melt(
+#     df_blood_pressure,
+#     id_vars=['patient', 'sex', 'agegrp'],
+#     value_vars=['bp_before', 'bp_after'],
+#     var_name='time',
+#     value_name='bp'
+# )
+# with pd.option_context('display.max_columns', None, 'display.width', 180):
+#     print(report_wtests(df=df_long, dv='bp', iv=['time'], paired=True))
 ##########################################################################################
 # LEVENE
 ##########################################################################################
@@ -354,8 +354,8 @@ def report_levene_bartlett(df, dv, iv):
             result_iterative = pd.concat([result_iterative, result], ignore_index=True)
     return result_iterative
 
-import pandas as pd
-DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
-df_blood_pressure=pd.read_csv(DATA_DIR / "blood_pressure.csv")
-report_levene_bartlett(df=df_blood_pressure,dv="bp_before",iv=["sex","agegrp"])
+# import pandas as pd
+# DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
+# df_blood_pressure=pd.read_csv(DATA_DIR / "blood_pressure.csv")
+# report_levene_bartlett(df=df_blood_pressure,dv="bp_before",iv=["sex","agegrp"])
 

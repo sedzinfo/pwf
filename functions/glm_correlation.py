@@ -37,13 +37,11 @@ try:
     from .functions import change_data_type
     from .functions_matrix import matrix_triangle
     from .functions_plot import plot_multiplot, report_pdf
-    from .functions_excel import excel_matrix, excel_generic_format
     from .glm_linear_regression import plot_scatterplot
 except ImportError:
     from functions import change_data_type
     from functions_matrix import matrix_triangle
     from functions_plot import plot_multiplot, report_pdf
-    from functions_excel import excel_matrix, excel_generic_format
     from glm_linear_regression import plot_scatterplot
 ##########################################################################################
 # CORRELATION MATRIX PLOT
@@ -265,6 +263,10 @@ def report_correlation(x, y=None, use="pairwise", method="pearson", adjust="holm
         report_pdf(plotlist=figures, file=file, title="scatterplot", w=w, h=h, print_plot=(file is None))
 
     if file is not None:
+        try:
+            from .functions_excel import excel_matrix, excel_generic_format
+        except ImportError:
+            from functions_excel import excel_matrix, excel_generic_format
         writer = pd.ExcelWriter(f"{file}.xlsx", engine='xlsxwriter')
         excel_matrix(r_mat, writer, sheetname="r", decimals=2)
         excel_matrix(r_squared_mat, writer, sheetname="r_squared", decimals=2)
@@ -402,6 +404,10 @@ def report_choric_serial(x, y=None, file=None, w=10, h=10, type="polyserial"):
     report_pdf(corrplot, w=w, h=h, file=file, title=type, print_plot=(file is None))
 
     if file is not None:
+        try:
+            from .functions_excel import excel_generic_format
+        except ImportError:
+            from functions_excel import excel_generic_format
         writer = pd.ExcelWriter(f"{file}.xlsx", engine='xlsxwriter')
         excel_generic_format(result.reset_index(), writer, sheetname=type)
         writer._save()

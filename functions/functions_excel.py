@@ -94,20 +94,20 @@ def excel_generic_format(df, writer, sheetname, comments=None):
                 sheet.set_column(col_idx, col_idx, None, num_format)
 
 
-DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
-df_blood_pressure=pd.read_csv(DATA_DIR / "blood_pressure.csv")
-output_file='/home/dimitrios/GitHub/pwf/output/generic.xlsx'
-if os.path.exists(output_file):
-    os.remove(output_file)
-ge=pd.ExcelWriter(output_file,engine='xlsxwriter')
-comments = {
-    'sex': "This is a general comment for the sheet.",
-    'bp_before': "This cell contains important data."
-}
-excel_generic_format(df=df_blood_pressure,writer=ge,sheetname="ge",comments=comments)
-ge._save()
-ge.close()
-os.remove(output_file)
+# DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
+# df_blood_pressure=pd.read_csv(DATA_DIR / "blood_pressure.csv")
+# output_file='/home/dimitrios/GitHub/pwf/output/generic.xlsx'
+# if os.path.exists(output_file):
+#     os.remove(output_file)
+# ge=pd.ExcelWriter(output_file,engine='xlsxwriter')
+# comments = {
+#     'sex': "This is a general comment for the sheet.",
+#     'bp_before': "This cell contains important data."
+# }
+# excel_generic_format(df=df_blood_pressure,writer=ge,sheetname="ge",comments=comments)
+# ge._save()
+# ge.close()
+# os.remove(output_file)
 ##########################################################################################
 # MATRIX EXCEL
 ##########################################################################################
@@ -179,21 +179,21 @@ def excel_matrix(df,writer,sheetname,comments=None,decimals=2):
         'mid_value': 0,
     })
 
-DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
-df_personality=pd.read_csv(DATA_DIR / "personality.csv")
-output_file='/home/dimitrios/GitHub/pwf/output/matrix.xlsx'
-if os.path.exists(output_file):
-    os.remove(output_file)
-me=pd.ExcelWriter(output_file,engine='xlsxwriter')
-comments={'A1': "This is a general comment for the sheet.",
-          'B2': "This cell contains important data."}
-excel_matrix(df=pd.DataFrame(df_personality.corr()),
-             writer=me,
-             sheetname="me",
-             comments=comments)
-me._save()
-me.close()
-os.remove(output_file)
+# DATA_DIR = pathlib.Path("/home/dimitrios/GitHub/pwf") / "data"
+# df_personality=pd.read_csv(DATA_DIR / "personality.csv")
+# output_file='/home/dimitrios/GitHub/pwf/output/matrix.xlsx'
+# if os.path.exists(output_file):
+#     os.remove(output_file)
+# me=pd.ExcelWriter(output_file,engine='xlsxwriter')
+# comments={'A1': "This is a general comment for the sheet.",
+#           'B2': "This cell contains important data."}
+# excel_matrix(df=pd.DataFrame(df_personality.corr()),
+#              writer=me,
+#              sheetname="me",
+#              comments=comments)
+# me._save()
+# me.close()
+# os.remove(output_file)
 ##########################################################################################
 # CRITICAL VALUE EXCEL
 ##########################################################################################
