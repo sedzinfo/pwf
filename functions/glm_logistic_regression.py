@@ -219,12 +219,14 @@ def _compute_descriptives(df):
         sd = x.std(ddof=1)
         median = np.median(x)
         q10, q25, q50, q75, q90 = np.quantile(x, [.1, .25, .5, .75, .9])
+        with np.errstate(invalid="ignore", divide="ignore"):
+            skew = np.sum((x - mean) ** 3) / (n * sd ** 3)
+            kurtosis = np.sum((x - mean) ** 4) / (n * sd ** 4) - 3
         rows.append({
             "variable": col, "n": n, "mean": mean, "sd": sd, "median": median,
             "trimmed": trim_mean(x, 0.1), "mad": np.median(np.abs(x - median)) * 1.4826,
             "min": x.min(), "max": x.max(), "range": x.max() - x.min(),
-            "skew": np.sum((x - mean) ** 3) / (n * sd ** 3),
-            "kurtosis": np.sum((x - mean) ** 4) / (n * sd ** 4) - 3,
+            "skew": skew, "kurtosis": kurtosis,
             "se": sd / np.sqrt(n), "IQR": q75 - q25,
             "Q0.1": q10, "Q0.25": q25, "Q0.5": q50, "Q0.75": q75, "Q0.9": q90,
         })
