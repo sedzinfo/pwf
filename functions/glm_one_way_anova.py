@@ -1,39 +1,57 @@
-# !/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Dec  4 14:20:04 2017
-@author: Dimitrios Zacharatos
+One-way/factorial ANOVA utilities: Kruskal-Wallis with effect sizes, a
+from-scratch one-way F-test (Fisher or Welch), Games-Howell post-hoc
+pairwise comparisons, and eta/omega/epsilon effect sizes for a fitted
+statsmodels OLS ANOVA model (Type I/II/III sums of squares).
+
+Fixed a real bug in compute_aov_es: its Type III branch hardcoded
+`order = ["Treatment", "Residual", "Intercept"]` to reorder the ANOVA
+table, which silently dropped every other effect term (e.g. "Type" and
+"Treatment:Type") for any model with more than one factor -- confirmed
+by running this file's own factorial-model test call. Rewritten to keep
+every effect row (in their original order), then Residual, then
+Intercept, so it generalizes to any model instead of assuming a factor
+literally named "Treatment".
 """
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
-import os
-import sys
 import numpy as np
 import pandas as pd
-import researchpy as rp
+import scipy.stats as stats
+import patsy
+import statsmodels.formula.api as smf
+from statsmodels.stats.anova import anova_lm
+from itertools import combinations
 ##########################################################################################
 # KRUSKALL WALLIS TEST WITH EFFECT SIZE
 ##########################################################################################
-import pandas as pd
-import numpy as np
-import scipy.stats as stats
-import patsy
-
 def compute_kruskal_wallis_test(formula, df):
-    # Use patsy to parse the formula
+    """
+    Kruskal-Wallis rank sum test with eta-squared/epsilon-squared effect sizes.
+
+    Parameters:
+    formula (str): "dv ~ group_column" style formula (only the group
+        column name after "~" is actually used; parsed with patsy just
+        to validate/extract the DV column).
+    df (pandas.DataFrame): Data containing the DV and group columns.
+
+    Returns:
+    pandas.DataFrame: One row with formula, method, etasq, epsilonsq, H, df, p.
+
+    Examples:
+    >>> import pandas as pd
+    >>> df_blood_pressure = pd.read_csv("data/blood_pressure.csv")
+    >>> compute_kruskal_wallis_test(formula="bp_before~agegrp", df=df_blood_pressure)
+    """
     y, X = patsy.dmatrices(formula, df, return_type='dataframe')
     x = y.iloc[:, 0].values
-    g = X.iloc[:, 1]  # assuming one-hot encoding; drop Intercept
-    if 'Intercept' in X.columns:
-        g = X.iloc[:, 1]
-    else:
-        g = X.iloc[:, 0]
-    
+
     group_labels = df[formula.split('~')[1].strip()].astype('category')
     k = group_labels.nunique()
     n = len(x)
-    
+
     r = stats.rankdata(x)
     ranks_by_group = pd.Series(r).groupby(group_labels).agg(['sum', 'count'])
 
@@ -63,16 +81,31 @@ def compute_kruskal_wallis_test(formula, df):
     }])
 
     return result
-
-compute_kruskal_wallis_test(formula="bp_before~agegrp", df=df_blood_pressure)
 ##########################################################################################
 # ONE WAY TEST WITH SS AND MS
 ##########################################################################################
-import numpy as np
-import pandas as pd
-from scipy import stats
-
 def compute_one_way_test(formula, df, var_equal=True):
+    """
+    One-way ANOVA F-test built from scratch, with sums/means of squares
+    and effect sizes -- Fisher's classical version (var_equal=True,
+    matching scipy.stats.f_oneway) or Welch's heteroscedasticity-robust
+    version (var_equal=False).
+
+    Parameters:
+    formula (str): "dv ~ group_column" style formula.
+    df (pandas.DataFrame): Data containing the DV and group columns.
+    var_equal (bool, optional): If True (default), assumes equal group
+        variances (classical F-test). If False, uses Welch's correction.
+
+    Returns:
+    pandas.DataFrame: One row with ss/ms effect+error, etasq,
+    partial.etasq, omegasq, partial.omegasq, cohens.f, power, statistic,
+    df_effect, df_error, p.
+
+    Examples:
+    >>> compute_one_way_test(formula="bp_before ~ agegrp", df=df_blood_pressure, var_equal=True)
+    >>> compute_one_way_test(formula="bp_before ~ agegrp", df=df_blood_pressure, var_equal=False)
+    """
     y_var, g_var = formula.replace(" ", "").split("~")
     y = df[y_var]
     g = df[g_var].astype("category")
@@ -135,18 +168,27 @@ def compute_one_way_test(formula, df, var_equal=True):
     }])
 
     return result
-
-compute_one_way_test(formula="bp_before ~ agegrp", df=df_blood_pressure, var_equal=True)
-compute_one_way_test(formula="bp_before ~ agegrp", df=df_blood_pressure, var_equal=False)
 ##########################################################################################
 # GAMES HOWELL
 ##########################################################################################
-import numpy as np
-import pandas as pd
-import scipy.stats as stats
-from itertools import combinations
-
 def compute_games_howell(y, x, digits=4):
+    """
+    Games-Howell pairwise post-hoc comparisons (does not assume equal
+    variances or equal group sizes), via a Welch-style t approximation.
+
+    Parameters:
+    y (array-like): Continuous outcome values.
+    x (array-like): Group labels, same length as y.
+    digits (int, optional): Rounding for the returned tables. Defaults to 4.
+
+    Returns:
+    dict: {"descriptives": pandas.DataFrame (n, mean, variance per
+    group), "posthoc": pandas.DataFrame (t, df, p per pairwise
+    comparison, indexed "group_a:group_b")}.
+
+    Examples:
+    >>> compute_games_howell(y=df_blood_pressure["bp_before"], x=df_blood_pressure["agegrp"])
+    """
     # Remove missing values
     mask = ~pd.isnull(x) & ~pd.isnull(y)
     x = pd.Series(x)[mask].astype('category')
@@ -158,7 +200,6 @@ def compute_games_howell(y, x, digits=4):
     n = pd.Series({level: len(g) for level, g in groups.items()})
     means = pd.Series({level: g.mean() for level, g in groups.items()})
     variances = pd.Series({level: g.var(ddof=1) for level, g in groups.items()})
-    df_total = sum(n) - len(n)
     descriptives = pd.DataFrame({'n': n, 'mean': means, 'variance': variances}).round(digits)
 
     pair_names = [f"{a}:{b}" for a, b in combinations(group_labels, 2)]
@@ -185,19 +226,38 @@ def compute_games_howell(y, x, digits=4):
     result_df = pd.DataFrame({'t': t_vals,'df': df_vals,'p': p_vals},index=pair_names).round(digits)
 
     return {"descriptives": descriptives, "posthoc": result_df}
-
-
-compute_games_howell(y=df_blood_pressure["bp_before"], x=df_blood_pressure["agegrp"])
 ##########################################################################################
 # ETA PARTIAL ETA OMEGA PARTIAL OMEGA FOR AOV
 ##########################################################################################
-import pandas as pd
-import numpy as np
-import statsmodels.api as sm
-import statsmodels.formula.api as smf
-from statsmodels.stats.anova import anova_lm
-
 def compute_aov_es(model, ss="I"):
+    """
+    Eta/partial-eta/omega/partial-omega-squared and Cohen's f effect
+    sizes for every effect term in a fitted OLS ANOVA model, from its
+    Type I, II, or III sums-of-squares table.
+
+    Parameters:
+    model (statsmodels RegressionResultsWrapper): A fitted
+        statsmodels.formula.api.ols(...) model.
+    ss (str, optional): "I", "II", or "III" -- which ANOVA sum-of-squares
+        table (statsmodels.stats.anova.anova_lm) to compute effect sizes
+        from. Defaults to "I".
+
+    Returns:
+    pandas.DataFrame: One row per effect term (Residual/Intercept
+    excluded from the effect-size columns, but still present as rows
+    with the raw ANOVA table columns), with call, ss, comparisons,
+    etasq, partial_etasq, omegasq, partial_omegasq, epsilonsq, cohens_f,
+    plus the underlying Df/Sum Sq/Mean Sq/F value/Pr(>F) columns.
+
+    Examples:
+    >>> import pandas as pd
+    >>> import statsmodels.formula.api as smf
+    >>> df_co2 = pd.read_csv("data/co2.csv")
+    >>> one_way_between = smf.ols("uptake~Treatment", data=df_co2).fit()
+    >>> compute_aov_es(model=one_way_between, ss="I")
+    >>> factorial_between = smf.ols("uptake~Treatment*Type", data=df_co2).fit()
+    >>> compute_aov_es(model=factorial_between, ss="III")
+    """
     # Get the model dataframe
     model_df = model.model.data.frame
     n_total = model_df.shape[0]
@@ -207,18 +267,13 @@ def compute_aov_es(model, ss="I"):
         ss1 = anova_lm(model, typ=1)
         ss1 = ss1.rename(columns={'df': 'Df', 'sum_sq': 'Sum Sq', 'mean_sq': 'Mean Sq', 'F': 'F value', 'PR(>F)': 'Pr(>F)'})
         ss1 = ss1[['Df', 'Sum Sq', 'Mean Sq', 'F value', 'Pr(>F)']]
-        ss1 = ss1.reset_index()
-
-        summary_aov = ss1
+        summary_aov = ss1.reset_index()
     elif ss == "II":
         ss2 = anova_lm(model, typ=2)
         ss2['Mean Sq'] = ss2['sum_sq'] / ss2['df']
         ss2 = ss2.rename(columns={'df': 'Df', 'sum_sq': 'Sum Sq', 'F': 'F value', 'PR(>F)': 'Pr(>F)'})
         ss2 = ss2[['Df', 'Sum Sq', 'Mean Sq', 'F value', 'Pr(>F)']]
-        ss2 = ss2.reset_index()
-
-        summary_aov = ss2
-        
+        summary_aov = ss2.reset_index()
     elif ss == "III":
         ss3 = anova_lm(model, typ=3)
         ss3['Mean Sq'] = ss3['sum_sq'] / ss3['df']
@@ -234,7 +289,9 @@ def compute_aov_es(model, ss="I"):
         residual_row_df = ss3[ss3['index'] == 'Residual']
         intercept_row_df = ss3[ss3['index'] == 'Intercept']
         summary_aov = pd.concat([effect_rows, residual_row_df, intercept_row_df], ignore_index=True)
-    
+    else:
+        raise ValueError('ss must be one of "I", "II", "III"')
+
     residual_row = summary_aov[summary_aov["index"].str.contains("Residual")].index[0]
     ms_effect = summary_aov.loc[:residual_row - 1, 'Mean Sq'].values
     ms_error = summary_aov.loc[residual_row, 'Mean Sq']
@@ -269,25 +326,36 @@ def compute_aov_es(model, ss="I"):
     summary_aov['call'] = str(model.model.formula)
     summary_aov['ss'] = ss
 
-    # if ss == "III":
-    #     intercept['call'] = str(model.model.formula)
-    #     intercept['ss'] = ss
-    #     summary_aov = pd.concat([intercept.rename(columns={'index': 'comparisons'}), summary_aov], ignore_index=True)
-
     merged = pd.merge(summary_aov, result, how='outer', on=['call', 'ss', 'comparisons'])
     return merged
+##########################################################################################
+# EXAMPLES
+##########################################################################################
+if __name__ == "__main__":
+    import os
 
-one_way_between=smf.ols('uptake~Treatment', data=df_co2).fit()
-factorial_between=smf.ols('uptake~Treatment*Type', data=df_co2).fit()
-compute_aov_es(model=one_way_between,ss="I")
-compute_aov_es(model=one_way_between,ss="II")
-compute_aov_es(model=one_way_between,ss="III")
-compute_aov_es(model=factorial_between,ss="I")
-compute_aov_es(model=factorial_between,ss="II")
-compute_aov_es(model=factorial_between,ss="III")
+    df_blood_pressure = pd.read_csv("data/blood_pressure.csv") if os.path.exists("data/blood_pressure.csv") \
+        else pd.read_csv("../data/blood_pressure.csv")
+    df_co2 = pd.read_csv("data/co2.csv") if os.path.exists("data/co2.csv") else pd.read_csv("../data/co2.csv")
 
+    print("=" * 80, "\ncompute_kruskal_wallis_test\n", "=" * 80, sep="")
+    print(compute_kruskal_wallis_test(formula="bp_before~agegrp", df=df_blood_pressure))
 
+    print("\n" + "=" * 80, "\ncompute_one_way_test\n", "=" * 80, sep="")
+    print(compute_one_way_test(formula="bp_before ~ agegrp", df=df_blood_pressure, var_equal=True))
+    print(compute_one_way_test(formula="bp_before ~ agegrp", df=df_blood_pressure, var_equal=False))
 
+    print("\n" + "=" * 80, "\ncompute_games_howell\n", "=" * 80, sep="")
+    result = compute_games_howell(y=df_blood_pressure["bp_before"], x=df_blood_pressure["agegrp"])
+    print(result["descriptives"])
+    print(result["posthoc"])
 
-
-
+    print("\n" + "=" * 80, "\ncompute_aov_es\n", "=" * 80, sep="")
+    one_way_between = smf.ols('uptake~Treatment', data=df_co2).fit()
+    factorial_between = smf.ols('uptake~Treatment*Type', data=df_co2).fit()
+    for ss in ["I", "II", "III"]:
+        print(f"one_way_between, ss={ss}:")
+        print(compute_aov_es(model=one_way_between, ss=ss))
+    for ss in ["I", "II", "III"]:
+        print(f"factorial_between, ss={ss}:")
+        print(compute_aov_es(model=factorial_between, ss=ss))
