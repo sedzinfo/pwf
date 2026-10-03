@@ -96,3 +96,14 @@ Some modules are still experimental or carry known issues (for example: `glm_sem
 pip install -e ".[dev]"
 pytest
 ```
+
+![Stars](https://img.shields.io/github/stars/sedzinfo/pwf)
+![Watchers](https://img.shields.io/github/watchers/sedzinfo/pwf)
+![Repo Size](https://img.shields.io/github/repo-size/sedzinfo/pwf)
+![Open Issues](https://img.shields.io/github/issues/sedzinfo/pwf)
+![Forks](https://img.shields.io/github/forks/sedzinfo/pwf)
+![Last Commit](https://img.shields.io/github/last-commit/sedzinfo/pwf)
+![Contributors](https://img.shields.io/github/contributors/sedzinfo/pwf)
+![License](https://img.shields.io/github/license/sedzinfo/pwf)
+![Release](https://img.shields.io/github/v/release/sedzinfo/pwf)
+![Workflow Status](https://img.shields.io/github/actions/workflow/status/sedzinfo/pwf/main.yml)
