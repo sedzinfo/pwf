@@ -1,0 +1,2 @@
+"formula","method","ss_effect","ss_error","ms_effect","ms_error","etasq","partial.etasq","omegasq","partial.omegasq","cohens.f","power","statistic","df_effect","df_error","p"
+"charges ~ region","Assuming heteroscedasticity",23.5148510497863,2226.87108992612,7.8382836832621,3.00539842371174,0.010449252557803,0.010449252557803,0.00643414906463341,0.00643414906463341,0.102759877412141,0.897362543116311,2.6080680755737,3,740.957029975374,0.050592763219329

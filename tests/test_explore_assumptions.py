@@ -31,7 +31,7 @@ def test_plot_outlier(df_blood_pressure_na, reference, method):
         assert p.labels.x == row["x"]
         assert p.labels.y == row["y"]
         assert p.labels.caption == row["caption"]
-        hlines = [float(layer.data["yintercept"].iloc[0]) for layer in p.layers
+        hlines = [float(layer.geom.data["yintercept"].iloc[0]) for layer in p.layers
                   if type(layer.geom).__name__ == "geom_hline"]
         np.testing.assert_allclose([float(v) for v in hlines], [float(v) for v in row["hlines"].split(";")],
                                    rtol=1e-12)
@@ -59,7 +59,7 @@ def test_report_normality_tests(df_normality, reference, capsys):
     result = ea.report_normality_tests(df=df_normality)
     expected = reference("report_normality_tests", keep_default_na=False, na_values=["NA"],
                          dtype={"alternative": str})
-    assert_matches_reference(result, expected, rtol=1e-6)
+    assert_matches_reference(result, expected)
     printed = capsys.readouterr().out
     assert "OUT OF BOUNDS SAMPLE SIZE FOR few" in printed
     assert "OUT OF BOUNDS SAMPLE SIZE FOR constant" in printed
@@ -83,6 +83,6 @@ def test_kolmogorov_exact_small_sample():
     x = np.array([0.61, -1.2, 0.33, 2.1, -0.4, 0.05, 1.7, -0.9, 0.12, -2.3])
     ks = ea._kolmogorov_smirnov(x)
     assert ks["method"] == "Exact one-sample Kolmogorov-Smirnov test"
-    expected = stats.kstest(x, "norm", args=(x.mean(), x.std(ddof=1)), method="exact")
+    expected = stats.kstest(x, lambda v: stats.norm.cdf(v, loc=x.mean(), scale=x.std(ddof=1)), method="exact")
     assert ks["statistic"] == pytest.approx(expected.statistic)
     assert ks["p"] == pytest.approx(expected.pvalue)

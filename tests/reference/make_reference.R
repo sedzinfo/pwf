@@ -136,6 +136,63 @@ ref("compute_kruskal_wallis_test_na",
 set.seed(1)
 ref("compute_kruskal_wallis_test_ci",
     compute_kruskal_wallis_test(formula = bp_before ~ agegrp, df = df_blood_pressure, ci = TRUE, nboot = 5000))
+df_co2 <- load_data("co2")
+for (var_equal in c(TRUE, FALSE)) {
+  ref(paste0("compute_one_way_test_", var_equal),
+      compute_one_way_test(bp_before ~ agegrp, df = df_blood_pressure, var.equal = var_equal))
+  ref(paste0("compute_one_way_test_na_", var_equal),
+      compute_one_way_test(bp_before ~ agegrp, df = df_blood_pressure_na, var.equal = var_equal))
+  ref(paste0("compute_one_way_test_region_", var_equal),
+      compute_one_way_test(charges ~ region, df = df_insurance, var.equal = var_equal))
+}
+for (case in list(list("bp", df_blood_pressure$bp_before, df_blood_pressure$agegrp),
+                  list("region", df_insurance$charges, df_insurance$region))) {
+  post_hoc <- compute_posthoc(case[[2]], case[[3]])$output
+  ref(paste0("compute_posthoc_", case[[1]], "_tukey"), data.frame(pair = rownames(post_hoc$tukey), post_hoc$tukey))
+  ref(paste0("compute_posthoc_", case[[1]], "_games_howell"),
+      data.frame(pair = rownames(post_hoc$games.howell), post_hoc$games.howell))
+}
+ref("compute_friedman_test", compute_friedman_test(uptake ~ conc | Plant, df = df_co2))
+df_co2_missing <- df_co2[-c(3, 40), ]
+ref("compute_friedman_test_incomplete", compute_friedman_test(uptake ~ conc | Plant, df = df_co2_missing))
+set.seed(1)
+ref("compute_friedman_test_ci", compute_friedman_test(uptake ~ conc | Plant, df = df_co2, ci = TRUE, nboot = 5000))
+# factorial designs: 36 participants, B1 and B2 between (4 per cell), W1 and W2 within
+set.seed(12345)
+df_factorial <- expand.grid(W1 = c("A", "B", "C"), W2 = c("D", "E", "F"), id = 1:36, stringsAsFactors = FALSE)
+df_factorial$B1 <- c("G", "H", "I")[(df_factorial$id - 1) %% 3 + 1]
+df_factorial$B2 <- c("J", "K", "L")[(df_factorial$id - 1) %/% 3 %% 3 + 1]
+df_factorial <- df_factorial[, c("id", "B1", "B2", "W1", "W2")]
+df_factorial$DV1 <- round(rnorm(nrow(df_factorial), 10), 3) + match(df_factorial$W1, c("A", "B", "C")) +
+  match(df_factorial$B1, c("G", "H", "I"))
+df_factorial$DV2 <- round(rnorm(nrow(df_factorial), 10), 3) + (df_factorial$W2 == "F") * 0.8
+ref("factorial_data", df_factorial)
+factorial_cases <- list(
+  between = list(between = c("B1", "B2")),
+  between_unadjusted = list(between = c("B1", "B2"), white.adjust = FALSE),
+  within = list(within = c("W1", "W2"), within_full = c("W1", "W2")),
+  within_unadjusted = list(within = c("W1", "W2"), white.adjust = FALSE),
+  mixed = list(within = "W1", between = "B1"),
+  mixed_2x2 = list(within = c("W1", "W2"), between = c("B1", "B2")),
+  mixed_observed = list(within = "W1", between = "B1", white.adjust = FALSE, observed = "B1")
+)
+for (case in names(factorial_cases)) {
+  result <- suppressMessages(suppressWarnings(do.call(report_factorial_anova,
+    c(list(df = df_factorial, wid = "id", dv = c("DV1", "DV2")), factorial_cases[[case]]))))
+  ref(paste0("report_factorial_anova_", case, "_omnibus"), result$omnibus)
+  ref(paste0("report_factorial_anova_", case, "_effect_size"), result$omnibus_effect_size)
+  ref(paste0("report_factorial_anova_", case, "_post_hoc"), result$post_hoc)
+}
+unbalanced <- df_factorial[!df_factorial$id %in% c(1, 2, 14), ]
+result <- suppressMessages(suppressWarnings(report_factorial_anova(df = unbalanced, wid = "id", dv = "DV1",
+                                                                    within = "W1", between = "B1")))
+ref("report_factorial_anova_unbalanced_omnibus", result$omnibus)
+ref("report_factorial_anova_unbalanced_effect_size", result$omnibus_effect_size)
+ref("report_factorial_anova_unbalanced_post_hoc", result$post_hoc)
+oneway <- report_oneway(df = df_blood_pressure_na, dv = 4:5, iv = 2:3)
+for (table in c("fisher", "welch", "kruskal_wallis", "games_howell", "tukey", "homogeneity")) {
+  ref(paste0("report_oneway_", table), oneway[[table]])
+}
 ##########################################################################################
 # GLM_MEANS
 ##########################################################################################

@@ -1,0 +1,5 @@
+"IV","DV","formula","method","etasq","epsilonsq","H","df","p","bonferroni_p","significant"
+"sex","bp_before","bp_before ~ sex","Kruskal-Wallis rank sum test",0.0524183852751407,0.0605871922986309,7.02811430664118,1,0.00802398015355483,0.0125,"TRUE"
+"agegrp","bp_before","bp_before ~ agegrp","Kruskal-Wallis rank sum test",0.13865812056888,0.153769381611532,17.5297095037146,2,0.000156124818529964,0.0125,"TRUE"
+"sex","bp_after","bp_after ~ sex","Kruskal-Wallis rank sum test",0.0810388845463355,0.0887612468610721,10.5625883764676,1,0.00115399491070064,0.0125,"TRUE"
+"agegrp","bp_after","bp_after ~ agegrp","Kruskal-Wallis rank sum test",0.160304525438753,0.174658294234671,20.4350204254565,2,3.65251237322717e-05,0.0125,"TRUE"

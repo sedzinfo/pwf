@@ -1,0 +1,2 @@
+"formula","method","ss_effect","ss_error","ms_effect","ms_error","etasq","partial.etasq","omegasq","partial.omegasq","cohens.f","power","statistic","df_effect","df_error","p"
+"charges ~ region","Assuming homoscedasticity",1300759681.31012,194773461887.057,433586560.436707,146007092.868858,0.00663401680703127,0.00663401680703127,0.00439678624670762,0.00439678624670762,0.0817209942433733,0.706384846657607,2.96962669358912,3,1334,0.0308933560704974

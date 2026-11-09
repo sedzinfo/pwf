@@ -35,6 +35,10 @@ from plotnine import (
     scale_fill_identity, scale_color_identity, scale_x_continuous, scale_y_continuous,
     coord_fixed, theme_minimal,
 )
+try:
+    from ._rcompat import r_color_ramp as _r_color_ramp, r_label as _r_label
+except ImportError:
+    from _rcompat import r_color_ramp as _r_color_ramp, r_label as _r_label
 ##########################################################################################
 # PLOT ROC
 ##########################################################################################
@@ -326,27 +330,6 @@ def proportion_accurate(observed, predicted):
 ##########################################################################################
 # PLOT CONFUSION EXTENDED
 ##########################################################################################
-def _r_label(value):
-    """R's as.character() of a class label: 1.0 -> "1"."""
-    if isinstance(value, (float, np.floating)) and float(value).is_integer():
-        return str(int(value))
-    if isinstance(value, (bool, np.bool_)):
-        return "TRUE" if value else "FALSE"
-    return str(value)
-
-
-def _r_color_ramp(low, high, n):
-    """
-    grDevices::colorRampPalette(c(low, high))(n): linear RGB steps as upper-case
-    hex. R's rgb(..., maxColorValue = 255) truncates fractional channel values.
-    """
-    low = np.array([int(low[i:i + 2], 16) for i in (1, 3, 5)], dtype=float)
-    high = np.array([int(high[i:i + 2], 16) for i in (1, 3, 5)], dtype=float)
-    steps = np.linspace(0, 1, n)[:, None]
-    rgb = np.floor(low + (high - low) * steps + 1e-9).astype(int)
-    return ["#{:02X}{:02X}{:02X}".format(*row) for row in rgb]
-
-
 def plot_confusion_extended(observed, predicted, positive=None, base_size=10, title=""):
     """
     2x2 confusion matrix with its row, column and overall measures (port of

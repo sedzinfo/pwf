@@ -1,0 +1,2 @@
+"formula","method","kendall_w","Q","df","n","p"
+"uptake ~ conc | Plant","Friedman rank sum test",0.828842315369262,59.6766467065868,6,12,5.2358689620774e-11

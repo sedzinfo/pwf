@@ -1,0 +1,2 @@
+"formula","method","ss_effect","ss_error","ms_effect","ms_error","etasq","partial.etasq","omegasq","partial.omegasq","cohens.f","power","statistic","df_effect","df_error","p"
+"bp_before ~ agegrp","Assuming homoscedasticity",2485.54999999999,12952.15,1242.775,110.702136752137,0.161005201552044,0.161005201552044,0.145619190099535,0.145619190099535,0.438066778782985,0.992572625251084,11.2262964063881,2,117,3.46670747488522e-05

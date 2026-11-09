@@ -18,8 +18,10 @@ from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 import numpy as np
 try:
+    from ._rcompat import r_number as _r_number
     from .functions_excel import excel_critical_value
 except ImportError:
+    from _rcompat import r_number as _r_number
     from functions_excel import excel_critical_value
 ##########################################################################################
 # OBSERVED
@@ -232,28 +234,6 @@ def check_rows(df,filename=""):
 ##########################################################################################
 # CHECK DATAFRAME (OPTIMISED)
 ##########################################################################################
-def _r_number(x):
-    """R's as.character() of one number: 15 significant digits, scientific when shorter."""
-    if isinstance(x, (bool, np.bool_)):
-        return "TRUE" if x else "FALSE"
-    if isinstance(x, (int, np.integer)):
-        return str(int(x))
-    x = float(x)
-    if np.isnan(x):
-        return np.nan
-    if np.isinf(x):
-        return "Inf" if x > 0 else "-Inf"
-    if x == 0:
-        return "0"
-    mantissa, exponent = f"{x:.14e}".split("e")
-    exponent = int(exponent)
-    digits = mantissa.lstrip("-").replace(".", "").rstrip("0") or "0"
-    sign = "-" if x < 0 else ""
-    sci = f"{sign}{digits[0]}{'.' + digits[1:] if len(digits) > 1 else ''}e{'+' if exponent >= 0 else '-'}{abs(exponent):02d}"
-    fixed = f"{x:.{max(0, len(digits) - 1 - exponent)}f}"
-    return fixed if len(fixed) <= len(sci) else sci
-
-
 def _r_column_kind(s):
     """Classify a pandas column as the R vector type it corresponds to."""
     dtype = s.dtype

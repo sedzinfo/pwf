@@ -23,9 +23,11 @@ import pandas as pd
 from scipy import optimize, stats
 from scipy.stats import levene, bartlett
 try:
+    from ._rcompat import r_label as _level_label, r_levels as _factor_levels, resolve_columns as _resolve_columns
     from .functions_excel import report_dataframe
     from .functions_statistical import compute_adjustment
 except ImportError:
+    from _rcompat import r_label as _level_label, r_levels as _factor_levels, resolve_columns as _resolve_columns
     from functions_excel import report_dataframe
     from functions_statistical import compute_adjustment
 ##########################################################################################
@@ -37,29 +39,10 @@ _COHENS_D_COMMENT = ("measure of effect size\n\ncohen's d\n\nVery small\t0.01\t\
                      "Huge\t\t12.0\t\tSawilowsky (2009)")
 
 
-def _resolve_columns(df, columns):
-    """Column names from names or 1-based positions (as rwf's names(df)[iv])."""
-    if isinstance(columns, (str, int, np.integer)):
-        columns = [columns]
-    return [df.columns[c - 1] if isinstance(c, (int, np.integer)) else c for c in columns]
-
-
 def _parse_formula(formula):
     """Split "dv ~ group" into ("dv", "group")."""
     dv, group = (part.strip() for part in formula.split("~"))
     return dv, group
-
-
-def _factor_levels(values):
-    """Sorted unique non-missing values, like the levels of R's factor()."""
-    return sorted(pd.unique(values.dropna()))
-
-
-def _level_label(level):
-    """R's as.character() of a factor level."""
-    if isinstance(level, (float, np.floating)) and float(level).is_integer():
-        return str(int(level))
-    return str(level)
 
 
 def _t_test_two_sample(x, y, alternative="two.sided", mu=0, var_equal=False, conf_level=0.95):
