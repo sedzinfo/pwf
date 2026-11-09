@@ -16,6 +16,7 @@ Deviations from the R originals, by design:
 import io
 import importlib
 import os
+import re
 import subprocess
 import sys
 import warnings
@@ -174,32 +175,75 @@ def detach_package(package):
     for name in to_remove:
         del sys.modules[name]
 ##########################################################################################
+# COMBINE FILES
+##########################################################################################
+def combine_files(input_dir="functions", output_file="all_functions.py", pattern=r"\.py$", recursive=True):
+    """
+    Concatenate every file in input_dir whose name matches pattern into one
+    output file, each preceded by a banner with its path (port of
+    rwf::combine_files). The output file itself is skipped if it lies inside
+    input_dir. Defaults are adapted to Python sources; rwf's are
+    "working_functions", "all_functions.R" and "\\.[Rr]$".
+
+    Parameters:
+    input_dir (str, optional): Directory to read. Defaults to "functions".
+    output_file (str, optional): File to write. Defaults to "all_functions.py".
+    pattern (str, optional): Regular expression matched against file names
+        (not paths). Defaults to r"\\.py$".
+    recursive (bool, optional): Include subdirectories. Defaults to True.
+
+    Returns:
+    list of str: Paths of the files combined, in the order written.
+
+    Examples:
+    >>> combine_files(input_dir="functions", output_file="all_functions.py")
+    """
+    regex = re.compile(pattern)
+    files = []
+    for root, dirs, names in os.walk(input_dir):
+        files.extend(os.path.join(root, name).replace(os.sep, "/") for name in names if regex.search(name))
+        if not recursive:
+            break
+    output_path = os.path.realpath(output_file)
+    files = sorted(f for f in files if os.path.realpath(f) != output_path)
+    lines = []
+    for f in files:
+        with open(f, encoding="utf-8", errors="replace") as handle:
+            content = handle.read().splitlines()
+        lines += ["#" * 90, f"# FILE: {f}", "#" * 90, *content, ""]
+    with open(output_file, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("".join(line + "\n" for line in lines))
+    print("Combined", len(files), "files into", output_file)
+    return files
+##########################################################################################
 # GET WORKING FILE PATH
 ##########################################################################################
-def getfwp():
+def get_fwd():
     """
-    Return the absolute path of the currently running script. Tries, in
-    order: the `--file=`-style argument the harness/launcher used to
-    start the process (if any), then the `__main__` module's `__file__`.
-    Returns "" if the path can't be determined (e.g. an interactive
-    REPL) — the Python analogue of R's Rscript/source()/RStudio fallback
-    chain, minus the RStudio-specific branches (no equivalent here).
+    Absolute path of the currently running script (port of rwf::get_fwd).
+    Tries, in order: a "--file=" command-line argument (as Rscript passes),
+    then the __main__ module's __file__. Returns "" when the path can't be
+    determined, e.g. in an interactive session. rwf's RStudio fallbacks have
+    no Python equivalent.
 
     Returns:
     str: Absolute path of the running script, or "".
 
     Examples:
-    >>> getfwp()
+    >>> get_fwd()
     """
     for arg in sys.argv:
-        if arg.startswith('--file='):
-            return os.path.realpath(arg[len('--file='):])
+        if arg.startswith("--file="):
+            return os.path.realpath(arg[len("--file="):].replace("~+~", " "))
 
-    main_module = sys.modules.get('__main__')
-    if main_module is not None and hasattr(main_module, '__file__'):
+    main_module = sys.modules.get("__main__")
+    if main_module is not None and getattr(main_module, "__file__", None):
         return os.path.realpath(main_module.__file__)
 
     return ""
+
+
+getfwp = get_fwd  # earlier pwf name, kept so existing code keeps working
 ##########################################################################################
 # LOG FILE
 ##########################################################################################
@@ -257,8 +301,8 @@ if __name__ == "__main__":
     detach_package("json")
     print("json" in sys.modules)
 
-    print("\n" + "=" * 80, "\ngetfwp\n", "=" * 80, sep="")
-    print(getfwp())
+    print("\n" + "=" * 80, "\nget_fwd\n", "=" * 80, sep="")
+    print(get_fwd())
 
     print("\n" + "=" * 80, "\nwrite_txt\n", "=" * 80, sep="")
     write_txt("hello console only")

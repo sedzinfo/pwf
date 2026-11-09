@@ -5,12 +5,16 @@ Python port of R rwf::FUNCTIONS.R (generic dataframe/vector utilities).
 Deviations from the R originals, by design:
   - c_bind takes name=data keyword arguments instead of unevaluated
     expressions (R's `substitute()`-based automatic naming from the call
-    site has no Python equivalent) — dotnames() is folded into this and
-    dropped as a separate function.
+    site has no Python equivalent).
+  - dotnames() reads the argument expressions back from the caller's
+    source code, since Python has no unevaluated arguments.
 """
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
+import ast
+import inspect
+import linecache
 import os
 import sys
 from itertools import combinations as _combinations
@@ -378,6 +382,60 @@ def get_script_directory():
         return os.path.dirname(os.path.abspath(main_module.__file__)) + '/'
     return os.getcwd() + '/'
 ##########################################################################################
+# DOTNAMES
+##########################################################################################
+def _call_source(frame):
+    """Source text of the call expression currently running in frame (Python 3.11+)."""
+    positions = inspect.getframeinfo(frame).positions
+    if positions is None or positions.lineno is None:
+        return None
+    lines = [linecache.getline(frame.f_code.co_filename, n, frame.f_globals)
+             for n in range(positions.lineno, positions.end_lineno + 1)]
+    if not all(lines):
+        return None
+    if len(lines) == 1:
+        return lines[0][positions.col_offset:positions.end_col_offset]
+    lines[0] = lines[0][positions.col_offset:]
+    lines[-1] = lines[-1][:positions.end_col_offset]
+    return "".join(lines)
+
+
+def dotnames(*args, **kwargs):
+    """
+    The arguments of the call as written, one string per argument (port of
+    rwf::dotnames). dotnames(a, b + c) returns ["a", "b + c"]. Keyword
+    arguments give their value expression, as R drops argument names.
+
+    R captures unevaluated arguments; Python cannot, so the expressions are
+    read back from the caller's source code and normalised with
+    ast.unparse (spacing as R's deparse: b+c -> "b + c"). Where no source is
+    available (plain interactive interpreter), it falls back to each
+    argument's .name attribute (e.g. a pandas Series) or its repr.
+
+    Parameters:
+    *args, **kwargs: Any expressions.
+
+    Returns:
+    list of str: One string per argument, positional arguments first.
+
+    Examples:
+    >>> x, y = 1, 2
+    >>> dotnames(x, y, x + y)
+    ['x', 'y', 'x + y']
+    """
+    frame = inspect.currentframe().f_back
+    try:
+        source = _call_source(frame)
+        call = ast.parse(source.strip(), mode="eval").body if source else None
+    except SyntaxError:
+        call = None
+    finally:
+        del frame
+    if isinstance(call, ast.Call) and len(call.args) == len(args) and len(call.keywords) == len(kwargs):
+        return [ast.unparse(a) for a in call.args] + [ast.unparse(k.value) for k in call.keywords]
+    values = list(args) + list(kwargs.values())
+    return [str(v.name) if getattr(v, "name", None) is not None else repr(v) for v in values]
+##########################################################################################
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
@@ -438,3 +496,7 @@ if __name__ == "__main__":
 
     print("\n" + "=" * 80, "\nget_script_directory\n", "=" * 80, sep="")
     print(get_script_directory())
+
+    print("\n" + "=" * 80, "\ndotnames\n", "=" * 80, sep="")
+    a, b = 1, 2
+    print(dotnames(a, b, a+b, df_mixed["mpg"]))

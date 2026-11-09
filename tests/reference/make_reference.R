@@ -29,6 +29,27 @@ df_blood_pressure_na <- df_blood_pressure
 df_blood_pressure_na$bp_before[c(3, 50, 99)] <- NA
 df_blood_pressure_na$agegrp[c(10, 70)] <- NA
 ##########################################################################################
+# FUNCTIONS_CHECK_DATAFRAME
+##########################################################################################
+# titanic with one column of every type; rebuilt identically in tests/test_functions_cdf.py
+df_titanic <- load_data("titanic")
+df_types <- df_titanic[, c("survived", "pclass", "name", "sex", "age", "fare", "cabin", "body")]
+df_types$sex <- factor(df_types$sex)
+df_types$class <- factor(c("first", "second", "third")[df_types$pclass],
+                         levels = c("first", "second", "third"), ordered = TRUE)
+df_types$alive <- df_types$survived == 1
+df_types$alive[c(5, 9)] <- NA
+df_types$date <- as.Date("2020-01-01") + seq_len(nrow(df_types)) - 1
+df_types$fare[1:2] <- c(Inf, -Inf)
+for (case in list(list(name = "cdff_types", args = list()),
+                  list(name = "cdff_types_nuniques", args = list(nuniques = 3)),
+                  list(name = "cdff_head_nuniques", args = list(nuniques = 25, name_length = 5), rows = 20))) {
+  data <- if (is.null(case$rows)) df_types else df_types[seq_len(case$rows), ]
+  result <- do.call(cdff, c(list(df = data), case$args))
+  ref(paste0(case$name, "_check"), result$check)
+  ref(paste0(case$name, "_summary"), result$summary)
+}
+##########################################################################################
 # GLM_ANOVA
 ##########################################################################################
 ref("compute_kruskal_wallis_test",

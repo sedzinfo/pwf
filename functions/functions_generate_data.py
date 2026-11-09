@@ -124,38 +124,58 @@ def generate_string(vector=None, vector_length=1, nchar=5):
 ##########################################################################################
 # GENERATE MULTIPLE RESPONSE VECTOR
 ##########################################################################################
-def generate_multiple_responce_vector(responces=None, responded=None, length=10):
+def _r_sample_pool(x):
+    """The pool R's sample(x) draws from: 1..x when x is a single number >= 1, else x itself."""
+    x = list(np.atleast_1d(x))
+    if len(x) == 1 and isinstance(x[0], (int, float, np.integer, np.floating)) and x[0] >= 1:
+        return list(range(1, int(x[0]) + 1))
+    return x
+
+
+def _r_as_character(value):
+    """R's as.character for a scalar, for whole numbers: 2.0 -> "2"."""
+    if isinstance(value, (float, np.floating)) and float(value).is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def generate_multiple_response_vector(responses=range(1, 5), responded=range(1, 5), length=10):
     """
-    Generate a multiple-response survey-style vector: each element is a
-    comma-separated string of a random number of distinct sampled
-    categories.
+    Simulate a multiple-response survey item (port of
+    rwf::generate_multiple_response_vector): each element is a comma-separated
+    string of distinct responses, drawn without replacement, with how many
+    responses drawn from `responded`. Draws use numpy's global RNG, so
+    np.random.seed() makes them reproducible (the values differ from R's).
 
     Parameters:
-    responces (list, optional): Pool of unique response categories.
-        Defaults to [1, 2, 3, 4].
-    responded (list, optional): Candidate counts of how many categories
-        to select per observation; one value is drawn from this list at
-        each iteration. Defaults to [1, 2, 3, 4].
-    length (int, optional): Number of observations. Defaults to 10.
+    responses (sequence, optional): Possible responses. Defaults to 1..4. As
+        in R's sample(), a single number n means 1..n.
+    responded (sequence, optional): Possible numbers of responses per
+        element. Defaults to 1..4. A single number n means 1..n.
+    length (int, optional): Number of elements. Defaults to 10.
 
     Returns:
-    list of str: `length` comma-separated strings of sampled categories.
+    list of str: length strings such as "3, 1".
 
     Examples:
-    >>> generate_multiple_responce_vector(responces=[1,2,3,4], responded=[1,2,3,4], length=10)
+    >>> generate_multiple_response_vector(responses=range(1, 5), responded=range(1, 5), length=10)
+    >>> generate_multiple_response_vector(responses=["a", "b", "c"], responded=[1, 2], length=5)
     """
-    if responces is None:
-        responces = list(range(1, 5))
-    if responded is None:
-        responded = list(range(1, 5))
-
+    responses = _r_sample_pool(responses)
+    responded = _r_sample_pool(responded)
     result = []
     for _ in range(length):
         n = np.random.choice(responded)
-        # R's sample() defaults to replace=FALSE
-        sampled = np.random.choice(responces, size=n, replace=False)
-        result.append(", ".join(str(x) for x in sampled))
+        drawn = np.random.choice(len(responses), size=n, replace=False)
+        result.append(", ".join(_r_as_character(responses[i]) for i in drawn))
     return result
+
+
+def generate_multiple_responce_vector(responces=None, responded=None, length=10):
+    """Earlier pwf name of generate_multiple_response_vector, kept so existing code keeps working."""
+    return generate_multiple_response_vector(responses=range(1, 5) if responces is None else responces,
+                                             responded=range(1, 5) if responded is None else responded,
+                                             length=length)
 ##########################################################################################
 # SIMULATE CORRELATION MATRIX
 ##########################################################################################
@@ -288,8 +308,8 @@ if __name__ == "__main__":
     print("\n" + "=" * 80, "\ngenerate_string\n", "=" * 80, sep="")
     print(generate_string(nchar=10, vector_length=5))
 
-    print("\n" + "=" * 80, "\ngenerate_multiple_responce_vector\n", "=" * 80, sep="")
-    print(generate_multiple_responce_vector(responces=[1, 2, 3, 4], responded=[1, 2, 3, 4], length=10))
+    print("\n" + "=" * 80, "\ngenerate_multiple_response_vector\n", "=" * 80, sep="")
+    print(generate_multiple_response_vector(responses=[1, 2, 3, 4], responded=[1, 2, 3, 4], length=10))
 
     print("\n" + "=" * 80, "\ngenerate_correlation_matrix\n", "=" * 80, sep="")
     target = np.array([[1, .9], [.9, 1]])
