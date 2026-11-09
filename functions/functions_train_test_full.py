@@ -107,6 +107,7 @@ def confusion_matrix_percent(observed, predicted):
     pr2.append(np.array(pr2).sum() / len(pr2))
     pr2.append(overall_accuracy)
 
+    cmatrix = cmatrix.astype(float)  # the proportion row and column are fractions
     cmatrix['p'] = np.array(pr1)
     cmatrix.loc['p'] = np.array(pr2)
 
