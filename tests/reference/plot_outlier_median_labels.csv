@@ -5,11 +5,11 @@ Method=median
 Observations=117
 Mean=156.46
 SD=11.41
-Median=155","131.278724981468;178.721275018532;NULL"
+Median=155","155;131.278724981468;178.721275018532"
 "bp_after","Observation ID 
  Outliers: 4","bp_after","
 Method=median
 Observations=120
 Mean=151.36
 SD=14.18
-Median=149.5","118.365826538176;180.634173461824;NULL"
+Median=149.5","149.5;118.365826538176;180.634173461824"
