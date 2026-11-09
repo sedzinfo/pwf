@@ -131,8 +131,13 @@ def plot_duplicate_y_axis(ax):
 # REPORT PDF
 ##########################################################################################
 def _to_figure(p, w, h):
-    """Get a sized matplotlib Figure from a plotnine ggplot or matplotlib Figure."""
-    fig = p.draw() if hasattr(p, "draw") and not hasattr(p, "savefig") else p
+    """Get a sized matplotlib Figure from a plotnine ggplot, a seaborn grid (e.g. JointGrid) or a Figure."""
+    if hasattr(p, "savefig") and hasattr(p, "set_size_inches"):
+        fig = p
+    elif hasattr(p, "figure") and hasattr(p.figure, "set_size_inches"):
+        fig = p.figure  # seaborn JointGrid / FacetGrid / PairGrid
+    else:
+        fig = p.draw()
     fig.set_size_inches(w, h)
     return fig
 

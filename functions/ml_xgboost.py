@@ -56,17 +56,23 @@ def _booster(model):
 
 
 def _r_format(values, digits=5):
-    """R's format(x, digits = 5) of a numeric vector: common decimals, right-justified to a common width."""
+    """
+    R's format(x, digits = 5) of a numeric vector: enough significant digits (at most `digits`)
+    for every element, a common number of decimals, fixed or scientific notation, whichever is
+    narrower (fixed on a tie), right-justified to a common width.
+    """
     values = [float(v) for v in values]
-    decimals = 0
+    decimals, significant_max = 0, 1
     for v in values:
         if v == 0 or not np.isfinite(v):
             continue
-        text = f"{v:.{digits - 1}e}"
-        mantissa, exponent = text.split("e")
-        significant = mantissa.replace("-", "").replace(".", "").rstrip("0") or "0"
-        decimals = max(decimals, len(significant) - 1 - int(exponent))
-    strings = [f"{v:.{decimals}f}" for v in values]
+        mantissa, exponent = f"{v:.{digits - 1}e}".split("e")
+        significant = len(mantissa.replace("-", "").replace(".", "").rstrip("0") or "0")
+        significant_max = max(significant_max, significant)
+        decimals = max(decimals, significant - 1 - int(exponent))
+    fixed = [f"{v:.{decimals}f}" for v in values]
+    scientific = [f"{v:.{significant_max - 1}e}" for v in values]
+    strings = fixed if max(map(len, fixed)) <= max(map(len, scientific)) else scientific
     width = max(len(s) for s in strings)
     return [s.rjust(width) for s in strings]
 
