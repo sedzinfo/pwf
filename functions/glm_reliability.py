@@ -25,12 +25,11 @@ Deviations from the R original, by design:
     point-estimate "ase", which is sqrt(Q/n)). This is a randomized
     procedure in both R and here, so exact bootstrap CI values won't
     reproduce run-to-run in either language, only converge similarly.
-  - extract_components bridges to R's mixlm::Anova() via rpy2: Type III
-    variance-component decomposition for crossed random-effects designs
-    has no statsmodels equivalent (MixedLM handles nested/hierarchical
-    structures, not this), the same category of gap as mirt/lavaan in
-    glm_irt.py/glm_irt_t.py. It accepts an rpy2 mixlm model object built
-    via R calls (see the __main__ block for a full worked example).
+  - extract_components takes a model from random_anova() (Python only), a
+    balanced random-effects ANOVA with variance components from the expected
+    mean squares and Satterthwaite F tests, which reproduces
+    mixlm::Anova(mixlm::lm(...), type = "III") for fully random balanced
+    designs (rwf passes a mixlm model). No R installation is needed.
   - plot_mtmm's `round(value,2)` + "strip a leading zero" cell label
     (R: stringr::str_replace(round(value,2),"0\\.",".")) is reproduced by
     formatting to 2 decimals, stripping trailing zeros the way R's
@@ -42,8 +41,12 @@ Deviations from the R original, by design:
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
+import itertools
+import re
+
 import numpy as np
 import pandas as pd
+from scipy import stats
 from plotnine import (
     ggplot, aes, geom_tile, geom_text, facet_grid, labs, theme_bw, theme,
     element_rect, element_blank, element_line, element_text, scale_fill_brewer,
@@ -186,11 +189,8 @@ def plot_mtmm(df, key, method, subject, title=""):
     plotnine.ggplot
 
     Examples:
-    >>> import rpy2.robjects as ro
-    >>> from rpy2.robjects.packages import importr
-    >>> lavaan = importr("lavaan")
     >>> # see glm_reliability.py's __main__ block for a full worked example
-    >>> # building model_data via lavaan::simulateData through rpy2.
+    >>> plot_mtmm(df=model_data, key={"t1": ["x1", "x2", "x3"]}, method="method", subject="id")
     """
     # R builds `trait` with one row per row of `df` (not per unique subject) and relies
     # on silent vector recycling to fill it from each (usually shorter) per-method subset
@@ -502,45 +502,141 @@ def report_alpha(df, key=None, questions=None, reverse=None, mini=None, maxi=Non
     return {"result_total": result_total, "result_boot": result_boot,
             "result_item_statistics": result_item_statistics, "result_dropped": result_dropped}
 ##########################################################################################
-# EXTRACT COMPONENTS (rpy2 bridge to R mixlm::Anova -- see module docstring)
+# EXTRACT COMPONENTS
 ##########################################################################################
-def extract_components(model, title=""):
+class RandomAnova:
+    """Balanced random-effects ANOVA: the anova table and variance components (mixlm::Anova)."""
+
+
+def _random_terms(formula):
+    """Response and model terms of "y ~ r(a) * r(b) + r(c) * r(b)", in R's term order."""
+    response, right = (part.strip() for part in formula.split("~"))
+    factors, groups = [], []
+    for addend in right.split("+"):
+        names = [re.sub(r"^r\((.*)\)$", r"\1", part.strip()) for part in addend.split("*")]
+        groups.append(names)
+        for name in names:
+            if name not in factors:
+                factors.append(name)
+    terms = []
+    for names in groups:
+        for size in range(1, len(names) + 1):
+            for subset in itertools.combinations(names, size):
+                term = tuple(sorted(subset, key=factors.index))
+                if term not in terms:
+                    terms.append(term)
+    terms.sort(key=len)
+    return response, factors, terms
+
+
+def random_anova(formula, data):
     """
-    Extract variance components (Type III) from an R mixlm::lm() mixed
-    model and their percentage contribution to total variance, plus a
-    horizontal bar chart. Bridges to R via rpy2 — see module docstring.
+    ANOVA of a balanced design in which every factor is random, with variance components from the
+    expected mean squares, as mixlm::Anova(mixlm::lm(formula, data), type = "III") gives them for
+    such designs. Python only: it stands in for the mixlm model rwf's extract_components takes.
 
     Parameters:
-    model: An rpy2 R model object from mixlm::lm() (with random effects
-        specified via r(), e.g. "response ~ r(time)*r(person)").
+    formula (str): e.g. "response ~ r(time) * r(person) + r(item) * r(person)"; every factor is
+        random (r() may be left out).
+    data (pandas.DataFrame): One row per observation; the design must be balanced (the same number
+        of observations in every cell of every term) and hierarchical.
+
+    Returns:
+    RandomAnova: anova (DataFrame indexed by term, with Mean Sq, Sum Sq, Df, F value, Pr(>F); F
+    tests use expected-mean-square denominators with Satterthwaite degrees of freedom) and
+    var_comps (Series of variance components, Residuals last).
+
+    Examples:
+    >>> model = random_anova("response ~ r(time) * r(person) + r(item) * r(person)", design)
+    >>> model.var_comps
+    """
+    response, factors, terms = _random_terms(formula)
+    data = data[[response] + factors].dropna()
+    y = data[response].to_numpy(dtype=float)
+    n = len(y)
+    codes = {f: pd.factorize(data[f])[0] for f in factors}
+    levels = {f: codes[f].max() + 1 for f in factors}
+
+    def cell_means(subset):
+        if not subset:
+            return np.full(n, y.mean())
+        key = np.zeros(n, dtype=np.int64)
+        for f in subset:
+            key = key * levels[f] + codes[f]
+        _, inverse, counts = np.unique(key, return_inverse=True, return_counts=True)
+        return (np.bincount(inverse, weights=y) / counts)[inverse]
+
+    rows, cell_size = [], {}
+    for term in terms:
+        effect = np.zeros(n)
+        for size in range(len(term) + 1):
+            for subset in itertools.combinations(term, size):
+                effect += (-1) ** (len(term) - size) * cell_means(subset)
+        ss = float(effect @ effect)
+        df = int(np.prod([levels[f] - 1 for f in term]))
+        rows.append((":".join(term), ss, df))
+        cell_size[term] = n / np.prod([levels[f] for f in term])
+    ss_res = float(np.sum((y - y.mean()) ** 2)) - sum(r[1] for r in rows)
+    df_res = n - 1 - sum(r[2] for r in rows)
+    names = [r[0] for r in rows] + ["Residuals"]
+    ss = np.array([r[1] for r in rows] + [ss_res])
+    df = np.array([r[2] for r in rows] + [df_res], dtype=float)
+    ms = ss / df
+    # expected mean squares: E(MS_T) = sigma_e + sum over model terms U containing T of c_U sigma_U
+    k = len(terms)
+    ems = np.zeros((k + 1, k + 1))
+    for i, term in enumerate(terms):
+        for j, other in enumerate(terms):
+            if set(term) <= set(other):
+                ems[i, j] = cell_size[other]
+        ems[i, k] = 1
+    ems[k, k] = 1
+    var_comps = np.linalg.solve(ems, ms)
+    f_values, p_values = np.full(k + 1, np.nan), np.full(k + 1, np.nan)
+    for i in range(k):
+        target = ems[i].copy()
+        target[i] = 0  # the expected mean square without the term's own component
+        weights = np.linalg.lstsq(np.delete(ems, i, axis=0).T, target, rcond=None)[0]
+        weights = np.insert(weights, i, 0.0)
+        denominator = weights @ ms
+        f_values[i] = ms[i] / denominator
+        df_denominator = denominator ** 2 / np.sum((weights * ms) ** 2 / df)
+        p_values[i] = stats.f.sf(f_values[i], df[i], df_denominator)
+    out = RandomAnova()
+    out.anova = pd.DataFrame({"Mean Sq": ms, "Sum Sq": ss, "Df": df, "F value": f_values, "Pr(>F)": p_values},
+                             index=names)
+    out.var_comps = pd.Series(var_comps, index=names)
+    out.formula = formula
+    return out
+
+
+def extract_components(model, title=""):
+    """
+    Variance components of a random-effects model and their percentage of
+    the total absolute variance, with a bar chart (port of
+    rwf::extract_components).
+
+    Parameters:
+    model (RandomAnova): A model from random_anova() (rwf: a mixlm::lm model).
     title (str, optional): Plot title. Defaults to "".
 
     Returns:
-    dict: {"components": pandas.DataFrame (component, VC, vc_percent),
-    "plot": plotnine.ggplot}.
+    dict: components (DataFrame with component, VC, vc_percent) and plot
+    (plotnine.ggplot), as in rwf.
 
     Examples:
-    >>> import rpy2.robjects as ro
-    >>> from rpy2.robjects.packages import importr
-    >>> mixlm = importr("mixlm")
-    >>> # see glm_reliability.py's __main__ block for a full worked example
+    >>> model = random_anova("response ~ r(time) * r(person) + r(item) * r(person)", design)
+    >>> extract_components(model)["components"]
     """
-    import rpy2.robjects as ro
-    from rpy2.robjects.packages import importr
-    importr("mixlm")
-    base = importr("base")
-
-    res = ro.r["Anova"](model, type="III")
-    anova_table = res.rx2("anova")
-    var_comps = np.asarray(res.rx2("var.comps"))
-    name_components = list(base.rownames(anova_table))
-
+    if not isinstance(model, RandomAnova):
+        raise TypeError("model must come from random_anova() (rwf: mixlm::lm)")
+    names = list(model.anova.index)
+    var_comps = model.var_comps.to_numpy()
     vc_percent = np.abs(var_comps) / np.nansum(np.abs(var_comps)) * 100
-    components = pd.DataFrame({"component": name_components, "VC": var_comps, "vc_percent": vc_percent})
-    components["component"] = pd.Categorical(components["component"], categories=name_components)
-
+    components = pd.DataFrame({"component": names, "VC": var_comps, "vc_percent": vc_percent})
+    plot_data = components.assign(component=pd.Categorical(names, categories=names))
     from plotnine import geom_bar, geom_line, geom_point, coord_flip
-    plot = (ggplot(components, aes(x="component", y="vc_percent", group=1))
+    plot = (ggplot(plot_data, aes(x="component", y="vc_percent", group=1))
             + geom_bar(stat="identity")
             + geom_line(color="#404040")
             + geom_point(size=5, color="#404040")
@@ -634,57 +730,31 @@ if __name__ == "__main__":
     import os
     print("Excel written:", os.path.exists("alpha_test.xlsx"))
 
-    print("\n" + "=" * 80, "\nplot_mtmm (via rpy2 lavaan::simulateData)\n", "=" * 80, sep="")
+    print("\n" + "=" * 80, "\nplot_mtmm\n", "=" * 80, sep="")
     try:
-        import rpy2.robjects as ro
-        from rpy2.robjects.packages import importr
-        lavaan = importr("lavaan")
-        base = importr("base")
+        from ._sem import simulate_data
+    except ImportError:
+        from _sem import simulate_data
+    population_model = "t1 =~ 1*x1 + 0.9*x2 + 0.9*x3; t2 =~ 1*x4 + 0.9*x5 + 0.9*x6; t3 =~ 1*x7 + 0.9*x8 + 0.9*x9"
+    sample = simulate_data(population_model, sample_nobs=1000, seed=12345)
+    model_data = pd.concat([sample, sample, sample], ignore_index=True)
+    model_data["method"] = ["m1"] * 1000 + ["m2"] * 1000 + ["m3"] * 1000
+    model_data["id"] = list(range(1, 1001)) * 3
+    key_mtmm = {"t1": [f"x{i}" for i in range(1, 4)], "t2": [f"x{i}" for i in range(4, 7)],
+                "t3": [f"x{i}" for i in range(7, 10)]}
+    p = plot_mtmm(df=model_data, key=key_mtmm, method="method", subject="id")
+    print("plot_mtmm built")
 
-        ro.r("set.seed(12345)")
-        population_model = ("t1=~x1+.9*x2+.9*x3\n"
-                             "t2=~x4+.9*x5+.9*x6\n"
-                             "t3=~x7+.9*x8+.9*x9")
-        model_data_r = lavaan.simulateData(population_model, sample_nobs=1000)
-        with_rows = ro.r["sample"](ro.IntVector(range(1, 1001)), 1000, replace=True)
-        model_data_r = model_data_r.rx(with_rows, True)
-        model_data = pd.DataFrame(np.asarray(base.as_matrix(model_data_r)),
-                                   columns=list(base.colnames(model_data_r)))
-        model_data = pd.concat([model_data, model_data, model_data], ignore_index=True)
-        model_data["method"] = ["m1"] * 1000 + ["m2"] * 1000 + ["m3"] * 1000
-        model_data["id"] = list(range(1, 1001)) * 3
-
-        key_mtmm = {"t1": [f"x{i}" for i in range(1, 4)], "t2": [f"x{i}" for i in range(4, 7)],
-                    "t3": [f"x{i}" for i in range(7, 10)]}
-        p = plot_mtmm(df=model_data, key=key_mtmm, method="method", subject="id")
-        p.save("plot_mtmm.png", verbose=False, width=10, height=8)
-        print("saved plot_mtmm.png")
-    except Exception as exc:
-        print(f"Skipped plot_mtmm example (rpy2/lavaan not available or failed): {exc}")
-
-    print("\n" + "=" * 80, "\nextract_components / compute_shrout (rpy2 bridge to R mixlm)\n", "=" * 80, sep="")
-    try:
-        import rpy2.robjects as ro
-        from rpy2.robjects.packages import importr
-        mixlm = importr("mixlm")
-        base = importr("base")
-
-        ro.r("""
-        design <- expand.grid(time=1:3, item=1:3, person=1:10)
-        design <- as.data.frame(lapply(design, as.factor))
-        design$response <- as.numeric(as.character(design$time)) + as.numeric(as.character(design$item)) +
-                            rnorm(90, 0, 0.1)
-        model <- mixlm::lm(response ~ r(time)*r(person) + r(item)*r(person), data=design)
-        """)
-        model = ro.r["model"]
-        result = extract_components(model)
-        print(result["components"])
-        result["plot"].save("plot_extract_components.png", verbose=False)
-        print("saved plot_extract_components.png")
-
-        vc = result["components"]
-        print("\ncompute_shrout:")
-        print(compute_shrout(sperson=vc.loc[1, "VC"], spersonitem=vc.loc[4, "VC"], stime=vc.loc[0, "VC"],
-                              spersontime=vc.loc[3, "VC"], serror=vc.loc[5, "VC"], m=3, k=3))
-    except Exception as exc:
-        print(f"Skipped extract_components/compute_shrout example (rpy2/mixlm not available or failed): {exc}")
+    print("\n" + "=" * 80, "\nrandom_anova / extract_components / compute_shrout\n", "=" * 80, sep="")
+    rng = np.random.default_rng(42)
+    design = pd.DataFrame([(t, i, p_) for p_ in range(1, 11) for i in range(1, 4) for t in range(1, 4)],
+                          columns=["time", "item", "person"])
+    design["response"] = design["time"] + design["item"] + rng.normal(0, 1, 10)[design["person"] - 1] \
+        + rng.normal(0, 0.5, len(design))
+    model = random_anova("response ~ r(time) * r(person) + r(item) * r(person)", design)
+    print(model.anova)
+    result = extract_components(model)
+    vc = result["components"]
+    print(vc)
+    print(compute_shrout(sperson=vc.loc[1, "VC"], spersonitem=vc.loc[4, "VC"], stime=vc.loc[0, "VC"],
+                         spersontime=vc.loc[3, "VC"], serror=vc.loc[5, "VC"], m=3, k=3))

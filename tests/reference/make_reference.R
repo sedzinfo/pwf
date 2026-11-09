@@ -430,3 +430,17 @@ efa_result <- suppressMessages(suppressWarnings(compute_efa_cfa(dimensions = efa
 ref("compute_efa_cfa_models", efa_result$efa_cfa_models)
 ref("compute_efa_cfa_scores", efa_result$cfa_scores)
 ref("compute_efa_cfa_coefficients", efa_result$cfa_coefficients)
+##########################################################################################
+# GLM_RELIABILITY (variance components)
+##########################################################################################
+set.seed(42)
+vc_design <- expand.grid(time = 1:3, item = 1:3, person = 1:10)
+vc_design$response <- vc_design$time + vc_design$item + rnorm(10, 0, 1)[vc_design$person] + rnorm(90, 0, 0.5)
+ref("vc_design", vc_design)
+vc_factors <- change_data_type(vc_design, type = "factor")
+vc_factors$response <- vc_design$response
+vc_model <- mixlm::lm(response ~ r(time) * r(person) + r(item) * r(person), data = vc_factors)
+vc_result <- extract_components(vc_model)
+ref("extract_components", vc_result$components)
+vc_anova <- mixlm::Anova(vc_model, type = "III")
+ref("extract_components_anova", data.frame(term = rownames(vc_anova$anova), as.data.frame(vc_anova$anova), check.names = FALSE))

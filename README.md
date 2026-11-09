@@ -27,74 +27,100 @@ Each module below can also be imported directly, e.g. `from pwf.explore_assumpti
 
 ## Modules
 
+Every module is a port of an R file of [rwf](https://github.com/sedzinfo/rwf), which is the original:
+functions, arguments and output columns keep rwf's names. Where a Python module ports one R file, the
+R file is named in the module docstring. No R installation is needed.
+
 ### Explore
 
 | Module | Contents |
 | --- | --- |
-| `explore_assumptions` | Normality/outlier diagnostics: histograms, QQ plots, boxplots |
-| `explore_descriptives` | Descriptive summaries (`describe_by_mean`, `flatten`) |
+| `explore_assumptions` | Normality diagnostics, outlier plots (`plot_outlier`), eight normality tests (`report_normality_tests`) |
+| `explore_descriptives` | `compute_descriptives`, `compute_aggregate`, frequency and response tables, cross-tabulations, mosaic and bubble plots |
 | `explore_time_series` | Time-series exploration and plotting helpers |
 
 ### Core Functions
 
 | Module | Contents |
 | --- | --- |
-| `functions` | Legacy/all-in-one convenience wrapper of assorted helpers |
-| `functions_cdf` | CDF/observed-value checks and helpers |
-| `functions_environment` | Runtime/environment helpers |
-| `functions_excel` | Excel export formatting via `xlsxwriter` |
+| `functions` | Data frame and vector utilities (`round_dataframe`, `remove_nc`, `dotnames`, ...) |
+| `functions_cdf` | Data frame checks (`cdff`, `cdf`) |
+| `functions_environment` | Runtime and file helpers (`get_fwd`, `combine_files`, `write_txt`, ...) |
+| `functions_excel` | Excel export (`report_dataframe`, `excel_critical_value`, `excel_matrix`, ...) |
 | `functions_generate_data` | Synthetic data generators |
-| `functions_generic` | Data generation and manipulation: missing data, random/correlated matrices, dummy columns, factor simulation |
+| `functions_generic` | Data generation and manipulation helpers |
 | `functions_keys` | Key/index lookup helpers |
 | `functions_mathematical` | Mathematical utilities |
-| `functions_matrix` | Matrix operations and matrix diagnostics |
-| `functions_plot` | Generic plotting helpers |
-| `functions_recode` | Value and category recoding helpers |
-| `functions_statistical` | General statistical helpers (`compute_standard`, ...) |
-| `functions_strings` | String-cleaning and text utilities |
-| `functions_timestamp` | Timestamp/date decomposition helpers |
-| `functions_train_test` | Train/test evaluation: ROC, confusion matrix, separability plots |
-| `functions_train_test_full` | Extended train/test and model-evaluation helpers |
-| `functions_unix_time` | Unix timestamp conversion helpers |
+| `functions_matrix` | Matrix operations and diagnostics |
+| `functions_plot` | Plot helpers (`report_pdf`, `plot_multiplot`, ...) |
+| `functions_recode` | Value and category recoding |
+| `functions_statistical` | Statistical helpers (`compute_standard`, `compute_adjustment`, ...) |
+| `functions_strings` | String helpers |
+| `functions_timestamp`, `functions_unix_time` | Date and time helpers |
+| `functions_train_test` | ROC, confusion matrices (`plot_confusion_extended`), separability plots |
+| `functions_train_test_full` | Cross-validation splits and cut-point performance |
 
 ### GLM And Modeling
 
 | Module | Contents |
 | --- | --- |
-| `glm_anova_plot` | ANOVA-focused plotting helpers |
-| `glm_correlation` | Correlation and association helpers |
+| `glm_one_way_anova` | Port of GLM_ANOVA.R: Kruskal-Wallis, Friedman, one-way tests, Tukey/Games-Howell (`compute_posthoc`), `report_oneway`, `report_factorial_anova` (between, within, mixed), `report_manova`, `compute_aov_es` |
+| `glm_anova_plot` | ANOVA plots |
+| `glm_means` | Pairwise t-tests and Wilcoxon tests (`report_ttests`, `report_wtests`), Cohen's d, Wilcoxon r |
+| `glm_correlation` | Correlation reports |
 | `glm_efa` | Exploratory factor analysis: scree plots, loadings, EFA report |
-| `glm_hlr` | Hierarchical linear regression helpers |
-| `glm_irt` | Item response theory utilities |
-| `glm_irt_t` | IRT tooling (T parameterization variants) |
-| `glm_irt_u` | IRT tooling (U parameterization variants) |
-| `glm_lda` | Linear discriminant analysis helpers |
-| `glm_linear_regression` | OLS and linear regression helpers |
-| `glm_logistic_regression` | Logistic regression helpers |
-| `glm_means` | t-tests, Levene/Bartlett homogeneity tests |
-| `glm_one_way_anova` | One-way ANOVA, Kruskal-Wallis, Games-Howell post hoc |
-| `glm_reliability` | Reliability/Cronbach's alpha reporting |
-| `glm_sem` | Structural equation modeling via `semopy` *(work in progress)* |
+| `glm_validity` | `compute_efa_cfa`: EFA and CFA of questionnaire dimensions |
+| `glm_sem` | CFA/SEM: `cfa`, `sem`, `report_cfa`, path diagrams, `simulate_cfa_fit` |
+| `glm_reliability` | Cronbach's alpha (`report_alpha`), MTMM plots, variance components (`random_anova`, `extract_components`), Shrout-Fleiss reliability |
+| `glm_hlr`, `glm_lda`, `glm_linear_regression`, `glm_logistic_regression` | Regression and discriminant analysis reports |
+| `glm_irt`, `glm_irt_t`, `glm_irt_u` | Item response theory (`glm_irt` and parts of `glm_irt_t` still call R through rpy2) |
+
+### Machine Learning
+
+| Module | Contents |
+| --- | --- |
+| `ml_nlp` | Text cleaning, stopwords, part-of-speech tagging, text similarity, spelling statistics |
+| `ml_xgboost` | `report_xgboost`, `plot_trees_xgboost` |
+
+### Engines
+
+`_sem` (a lavaan-compatible CFA/SEM engine: ML with listwise deletion or FIML, standard errors,
+standardized solutions, lavaan's fit measures, modification indices, factor scores) and `_efa`
+(a `psych::fa` compatible maximum likelihood EFA with oblimin rotation) are used by the modules above.
 
 ### Utilities
 
 | Module | Contents |
 | --- | --- |
 | `helper` | Moment/cumulant conversions (`mc2mnc`, `cov2corr`, ...) |
-| `nltk` | NLTK corpus download helper |
+| `download_nltk_data` | Script that downloads all NLTK data |
 | `plot_corrplot` | Correlation matrix plotting |
-
-Some modules are still experimental or carry known issues (for example: `glm_sem`, `glm_reliability`, `helper`, `nltk`, and `plot_corrplot`). Check issues and git history for current status.
 
 ## Data
 
-`data/` contains example CSV datasets (titanic, insurance, blood pressure, personality, ocean, ...) used across the module docstrings and examples, mirroring the datasets shipped with the `rwf` R package.
+`data/` contains the example datasets of rwf as CSV (titanic, insurance, blood pressure, personality,
+ocean, admission, ...), used in the docstrings, examples and tests.
 
-## Development
+## Tests
+
+The tests check pwf against rwf itself. `tests/reference/make_reference.R` runs rwf (and lavaan,
+psych, mixlm, xgboost) on the same data and saves the results as CSV; the tests compare pwf's output
+with them. Running the tests needs only Python; regenerating the references needs R with rwf:
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[full,dev]"
 pytest
+make reference RSCRIPT="C:/Program Files/R/R-4.6.2/bin/Rscript.exe"   # regenerate the R references
+```
+
+## Documentation
+
+The docstrings (description, Parameters, Returns, Examples) are the reference documentation. To build
+it as a website with [pdoc](https://pdoc.dev):
+
+```bash
+make docs        # writes docs/
+make docs-serve  # serves it locally
 ```
 
 ![Stars](https://img.shields.io/github/stars/sedzinfo/pwf)

@@ -752,6 +752,8 @@ class SEMFit:
             # the same standardization as parameter_estimates' std.all, parameter by parameter
             ov, lv = self._index["ov"], self._index["lv"]
             for prm in self.table:
+                if prm.op == "~1":
+                    continue  # intercepts are reported separately, as nu
                 value = self._standardized(prm)[1]
                 if prm.op == "=~":
                     lam[ov[prm.rhs], lv[prm.lhs]] = value

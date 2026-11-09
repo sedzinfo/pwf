@@ -64,10 +64,6 @@ Deviations/quirks, by design:
 import re
 import numpy as np
 import pandas as pd
-import rpy2.robjects as ro
-from rpy2.robjects.packages import importr
-from rpy2.robjects import pandas2ri
-from rpy2.robjects.conversion import localconverter
 from plotnine import ggplot, aes, geom_line, geom_point, theme_bw, theme, labs, facet_wrap
 
 try:
@@ -77,8 +73,25 @@ except ImportError:
     from functions import remove_nc
     from functions_matrix import matrix_triangle
 
-_base = importr("base")
-_mirt = importr("mirt")
+# These functions still run R's mirt through rpy2. The import is optional, so the module (and its
+# documentation) loads without R; the functions say what is missing when they are called.
+try:
+    import rpy2.robjects as ro
+    from rpy2.robjects.packages import importr
+    from rpy2.robjects import pandas2ri
+    from rpy2.robjects.conversion import localconverter
+    _base = importr("base")
+    _mirt = importr("mirt")
+    _R_ERROR = None
+except Exception as _error:  # noqa: BLE001 - rpy2, R or mirt missing
+    ro = importr = pandas2ri = localconverter = _base = _mirt = None
+    _R_ERROR = _error
+
+
+def _require_r():
+    if _R_ERROR is not None:
+        raise ImportError("this function needs R with the mirt package and the rpy2 Python package "
+                          f"(pip install rpy2): {_R_ERROR}")
 ##########################################################################################
 # R <-> PANDAS CONVERSION HELPERS (internal)
 ##########################################################################################
@@ -154,6 +167,7 @@ def fit_irt(data, n_factors=1, itemtype=None, **kwargs):
     >>> items = pd.DataFrame(np.array(sim.rx2("items")), columns=[f"V{i+1}" for i in range(5)])
     >>> model = fit_irt(items, n_factors=1, empiricalhist=True, calcNull=True, verbose=False)
     """
+    _require_r()
     with localconverter(ro.default_converter + pandas2ri.converter):
         r_data = ro.conversion.py2rpy(pd.DataFrame(data))
     call_kwargs = dict(kwargs)
@@ -184,6 +198,7 @@ def plot_irt_onefactor(model, theta=None, title="", base_size=10):
     >>> model = fit_irt(df_items, n_factors=1, empiricalhist=True, calcNull=True, verbose=False)
     >>> plot_irt_onefactor(model=model, base_size=10, title="Normal Test")
     """
+    _require_r()
     if theta is None:
         theta = np.arange(-6, 6.01, 0.1)
     theta = np.asarray(theta, dtype=float)
@@ -265,6 +280,7 @@ def report_irt(model, m2=True, file=None):
     >>> model = fit_irt(df_items, n_factors=1, empiricalhist=True, calcNull=True, verbose=False)
     >>> report_irt(model=model, file=None)
     """
+    _require_r()
     comment = {
         "a1": "discrimination", "d": "difficulty", "g": "guessing", "u": "inattentiveness",
         "G2": "PARSCALE's G^2", "TLI": "Tucker Lewis Index TLI>0.95", "CFI": "Comparative Fit Index CFI>0.95",
