@@ -1,0 +1,26 @@
+"Matrix","variable","MR2","MR1","type","row.names.model.Vaccounted."
+"Pattern","E5",0.79,-0.01,NA,NA
+"Pattern","E2",-0.76,-0.14,NA,NA
+"Pattern","E4",-0.7,0.01,NA,NA
+"Pattern","E3",0.69,-0.16,NA,NA
+"Pattern","E1",0.67,-0.04,NA,NA
+"Pattern","N1",0.02,0.9,NA,NA
+"Pattern","N3",-0.02,0.67,NA,NA
+"Pattern","N2",0.06,-0.55,NA,NA
+"Pattern","N5",0.02,0.45,NA,NA
+"Pattern","N4",0.09,-0.34,NA,NA
+"Structure","E5",0.8,-0.23,NA,NA
+"Structure","E3",0.73,-0.35,NA,NA
+"Structure","E2",-0.72,0.07,NA,NA
+"Structure","E4",-0.71,0.2,NA,NA
+"Structure","E1",0.69,-0.23,NA,NA
+"Structure","N1",-0.23,0.89,NA,NA
+"Structure","N3",-0.21,0.68,NA,NA
+"Structure","N2",0.21,-0.57,NA,NA
+"Structure","N5",-0.11,0.45,NA,NA
+"Structure","N4",0.19,-0.37,NA,NA
+NA,NA,2.66584098328933,1.95649051613367,"variance accounted","SS loadings"
+NA,NA,0.266584098328933,0.195649051613367,"variance accounted","Proportion Var"
+NA,NA,0.266584098328933,0.4622331499423,"variance accounted","Cumulative Var"
+NA,NA,0.576730808602132,0.423269191397868,"variance accounted","Proportion Explained"
+NA,NA,0.576730808602132,1,"variance accounted","Cumulative Proportion"

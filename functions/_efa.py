@@ -75,15 +75,6 @@ def _minres_loadings(psi, s, nf):
     return vectors[:, :nf] * np.sqrt(np.maximum(values[:nf], 0))
 
 
-def _mat_sqrt(m, inverse=False):
-    """psych's matSqrt / invMatSqrt (eigen decomposition)."""
-    values, vectors = np.linalg.eigh(m)
-    values = np.maximum(values, 0)
-    root = np.sqrt(values)
-    if inverse:
-        root = np.where(root > 0, 1 / np.where(root > 0, root, 1), 0)
-    return vectors @ np.diag(root) @ vectors.T
-
 
 def _oblimin(loadings):
     """GPArotation's vgQ.oblimin with gamma = 0 (quartimin)."""
@@ -238,15 +229,9 @@ def fa(data, nfactors=1, rotate="oblimin", fm="ml", alpha=0.1):
     _factor_stats(out, r, model, n, nfactors, n_obs, np_obs, alpha)
     out.complexity = pd.Series((loadings ** 2).sum(axis=1) ** 2 / (loadings ** 4).sum(axis=1), index=names)
 
-    # factor scores, psych's default tenBerge method (Thurstone's regression scores for one factor)
+    # factor scores by psych::fa's default, scores = "regression" (Thurstone): W = R^-1 F Phi
     phi_matrix = np.eye(nfactors) if phi is None else phi
-    if nfactors == 1:
-        weights = np.linalg.solve(r, loadings @ phi_matrix)
-    else:
-        l_phi = loadings @ _mat_sqrt(phi_matrix)
-        r_half_inv = _mat_sqrt(r, inverse=True)
-        c = r_half_inv @ l_phi @ _mat_sqrt(l_phi.T @ np.linalg.inv(r) @ l_phi, inverse=True)
-        weights = r_half_inv @ c @ _mat_sqrt(phi_matrix)
+    weights = np.linalg.solve(r, loadings @ phi_matrix)
     out.weights = pd.DataFrame(weights, index=names, columns=columns)
     standardized = (data - data.mean()) / data.std(ddof=1)
     out.scores = pd.DataFrame(standardized.to_numpy() @ weights, columns=columns, index=data.index)

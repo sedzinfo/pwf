@@ -1,0 +1,4 @@
+"residual_statistics","value","critical","formula"
+"Root Mean Squared Residual",0.0397743336662642,NA,"sqrt(mean(residuals^2))"
+"Number of absolute residuals > 0.05",10,NA,"abs(residuals)>0.05"
+"Proportion of absolute residuals > 0.05",0.222222222222222,0.5,"numberLargeResiduals/nrow(residuals)"
