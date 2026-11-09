@@ -1,0 +1,6 @@
+"Statistic","value"
+"Objective","reg:squarederror"
+"Boosting rounds","15"
+"Features","3"
+"Best iteration",NA
+"Best score",NA
