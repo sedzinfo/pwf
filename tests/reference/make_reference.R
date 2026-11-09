@@ -78,7 +78,7 @@ for (method in c("mean", "median", "boxplot")) {
     x = sapply(outlier_plots, function(p) p$labels$x),
     y = sapply(outlier_plots, function(p) p$labels$y),
     caption = sapply(outlier_plots, function(p) p$labels$caption),
-    hlines = sapply(outlier_plots, function(p) paste(sapply(p$layers[4:6], function(l) format(l$data$yintercept, digits = 15)), collapse = ";"))))
+    hlines = sapply(outlier_plots, function(p) paste(sapply(p$layers[3:5], function(l) format(l$data$yintercept, digits = 15)), collapse = ";"))))
 }
 # report_normality_tests returns NULL; a copy that returns its result table gives the exact values
 report_normality_tests_table <- rwf::report_normality_tests
