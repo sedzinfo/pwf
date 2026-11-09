@@ -1,0 +1,15 @@
+"name","x","y","caption","hlines"
+"bp_before","Observation ID 
+ Outliers: 0","bp_before","
+Method=boxplot
+Observations=117
+Mean=156.46
+SD=11.41
+Median=155","121.5;189.5;NULL"
+"bp_after","Observation ID 
+ Outliers: 0","bp_after","
+Method=boxplot
+Observations=120
+Mean=151.36
+SD=14.18
+Median=149.5","110.375;191.375;NULL"

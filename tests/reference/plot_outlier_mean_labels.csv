@@ -1,0 +1,15 @@
+"name","x","y","caption","hlines"
+"bp_before","Observation ID 
+ Outliers: 5","bp_before","
+Method=mean
+Observations=117
+Mean=156.46
+SD=11.41
+Median=155","133.634545272835;179.288531650242;NULL"
+"bp_after","Observation ID 
+ Outliers: 4","bp_after","
+Method=mean
+Observations=120
+Mean=151.36
+SD=14.18
+Median=149.5","123.003088880936;179.71357778573;NULL"

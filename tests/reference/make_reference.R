@@ -32,6 +32,64 @@ df_blood_pressure_na <- df_blood_pressure
 df_blood_pressure_na$bp_before[c(3, 50, 99)] <- NA
 df_blood_pressure_na$agegrp[c(10, 70)] <- NA
 ##########################################################################################
+# EXPLORE_DESCRIPTIVES
+##########################################################################################
+df_ocean <- utils::read.delim(file.path(data_dir, "ocean.csv"), stringsAsFactors = FALSE)
+df_ocean_N <- df_ocean[, grep("^N", names(df_ocean))]
+df_responses <- load_data("responses")
+ref("compute_descriptives", compute_descriptives(df = df_insurance, dv = c(1, 3, 7)))
+ref("compute_descriptives_iv", compute_descriptives(df = df_insurance, dv = c(1, 7), iv = c(2, 4)))
+ref("compute_descriptives_na", compute_descriptives(df = df_blood_pressure_na, dv = 4:5, iv = 3))
+ref("compute_aggregate", compute_aggregate(df = df_insurance, iv = c(2, 5)))
+ref("compute_aggregate_na", compute_aggregate(df = df_blood_pressure_na[, -1], iv = 2))
+ref("compute_frequencies", compute_frequencies(df = df_insurance[, c(2, 4, 5, 6)]))
+ref("compute_frequencies_na", compute_frequencies(df = df_blood_pressure_na[, c(2, 3)]))
+ref("response_frequency", response_frequency(df_ocean_N))
+for (type in c("frequency", "proportion", "percent", "all")) {
+  ref(paste0("response_frequency_", type), response_frequency(df_ocean_N, uniqueitems = 1:5, type = type))
+}
+ref("response_frequency_responses_na", response_frequency(df_responses[, 2:12], uniqueitems = 1:5, type = "all"))
+ref("compute_crosstable", compute_crosstable(df = df_insurance, factor_index = c(2, 5, 6)))
+ref("compute_crosstable_combinations", compute_crosstable(
+  df = df_insurance, combinations = data.frame(index1 = c("sex", "smoker"), index2 = c("region", "children"))))
+ref("compute_crosstable_na", compute_crosstable(df = df_blood_pressure_na, factor_index = 2:3))
+crosstable_plots <- plot_crosstable(df = df_insurance, factor_index = c(2, 5, 6))
+ref("plot_crosstable_names", data.frame(name = names(crosstable_plots)))
+ref("plot_crosstable_region_sex", crosstable_plots[["region_sex"]]$data)
+mosaic_plots <- plot_mosaic(df = df_insurance, factor_index = c(2, 5, 6))
+ref("plot_mosaic_names", data.frame(name = names(mosaic_plots)))
+ref("plot_mosaic_region_smoker", mosaic_plots[["region smoker"]]$data)
+mosaic_na <- plot_mosaic(df = df_blood_pressure_na, factor_index = 2:3)
+ref("plot_mosaic_na_agegrp_sex", mosaic_na[["agegrp sex"]]$data)
+response_plots <- plot_response_frequencies(df = df_ocean_N, factor_index = 1:2)
+ref("plot_response_frequencies_N1", response_plots[["N1"]]$data)
+ref("plot_response_frequencies_titles", data.frame(name = names(response_plots),
+  title = sapply(response_plots, function(p) p$labels$title),
+  caption = sapply(response_plots, function(p) p$labels$caption)))
+grDevices::pdf(NULL)  # plot_* functions print their plots
+##########################################################################################
+# EXPLORE_ASSUMPTIONS
+##########################################################################################
+for (method in c("mean", "median", "boxplot")) {
+  outlier_plots <- plot_outlier(df = df_blood_pressure_na[, c("bp_before", "bp_after")], method = method, title = "bp")
+  ref(paste0("plot_outlier_", method), outlier_plots[["bp_before"]]$data)
+  ref(paste0("plot_outlier_", method, "_labels"), data.frame(
+    name = names(outlier_plots),
+    x = sapply(outlier_plots, function(p) p$labels$x),
+    y = sapply(outlier_plots, function(p) p$labels$y),
+    caption = sapply(outlier_plots, function(p) p$labels$caption),
+    hlines = sapply(outlier_plots, function(p) paste(sapply(p$layers[4:6], function(l) format(l$data$yintercept, digits = 15)), collapse = ";"))))
+}
+# report_normality_tests returns NULL; a copy that returns its result table gives the exact values
+report_normality_tests_table <- rwf::report_normality_tests
+body(report_normality_tests_table) <- as.call(c(as.list(body(report_normality_tests_table)), quote(result_df)))
+environment(report_normality_tests_table) <- asNamespace("rwf")
+df_normality <- data.frame(df_insurance[, c("age", "bmi", "charges")],
+                           bp = c(df_blood_pressure$bp_before, rep(NA, 1218)),
+                           few = c(1:5, rep(NA, 1333)), constant = 1)
+invisible(capture.output(normality <- suppressWarnings(report_normality_tests_table(df = df_normality))))
+ref("report_normality_tests", normality)
+##########################################################################################
 # FUNCTIONS_CHECK_DATAFRAME
 ##########################################################################################
 # titanic with one column of every type; rebuilt identically in tests/test_functions_cdf.py
