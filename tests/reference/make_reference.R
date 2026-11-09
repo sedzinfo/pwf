@@ -339,3 +339,22 @@ for (case in names(xgb_cases)) {
   ref(paste0("plot_trees_xgboost_", case, "_nodes"), multi$nodes)
   ref(paste0("plot_trees_xgboost_", case, "_edges"), multi$edges)
 }
+##########################################################################################
+# LAVAAN ENGINE (pwf's Python CFA/SEM estimator is checked against lavaan itself)
+##########################################################################################
+df_ocean_500 <- df_ocean[1:500, c(paste0("E", 1:5), paste0("N", 1:5), paste0("A", 1:3))]
+ref("lavaan_data", df_ocean_500)
+lavaan_cases <- list(
+  cfa2 = list(model = "E =~ E1 + E2 + E3 + E4 + E5; N =~ N1 + N2 + N3 + N4 + N5", std.lv = FALSE),
+  cfa2_stdlv = list(model = "E =~ E1 + E2 + E3 + E4 + E5; N =~ N1 + N2 + N3 + N4 + N5", std.lv = TRUE),
+  sem = list(model = "E =~ E1 + E2 + 0.8*E3 + E4; N =~ N1 + N2 + N3 + N4; A =~ A1 + A2 + A3; A ~ E + N; E1 ~~ E2",
+             std.lv = FALSE)
+)
+for (case in names(lavaan_cases)) {
+  k <- lavaan_cases[[case]]
+  fit <- lavaan::sem(k$model, data = df_ocean_500, std.lv = k$std.lv)
+  pe <- lavaan::parameterEstimates(fit, standardized = TRUE, rsquare = TRUE)
+  ref(paste0("lavaan_", case, "_parameters"), pe)
+  fm <- lavaan::fitMeasures(fit)
+  ref(paste0("lavaan_", case, "_fit"), data.frame(measure = names(fm), value = as.numeric(fm)))
+}

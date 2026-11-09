@@ -80,7 +80,8 @@ def test_plot_trees_xgboost(case, reference, tmp_path):
     expected_edges = reference(f"plot_trees_xgboost_{name}_edges")
     assert list(zip(out["edges"]["From"], out["edges"]["To"])) == list(zip(expected_edges["From"].astype(str),
                                                                            expected_edges["To"].astype(str)))
-    page = open(out["file"], encoding="utf-8").read()
+    with open(out["file"], encoding="utf-8") as handle:
+        page = handle.read()
     assert page.count("<rect") == len(expected_nodes)
 
 
