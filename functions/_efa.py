@@ -45,6 +45,46 @@ def _fa_loadings(psi, s, nf):
     return np.sqrt(psi)[:, None] * load
 
 
+def _minres_objective(psi, s, nf):
+    """psych's fit.residuals for fm = "minres": squared lower-triangle residuals."""
+    reduced = s.copy()
+    np.fill_diagonal(reduced, 1 - psi)
+    values, vectors = np.linalg.eigh(reduced)
+    values, vectors = values[::-1], vectors[:, ::-1]
+    values = np.where(values < np.finfo(float).eps, 100 * np.finfo(float).eps, values)
+    load = vectors[:, :nf] * np.sqrt(values[:nf])
+    residual = reduced - load @ load.T
+    return np.sum(residual[np.tril_indices_from(residual, -1)] ** 2)
+
+
+def _minres_gradient(psi, s, nf):
+    """psych's FAgr.minres."""
+    values, vectors = np.linalg.eigh(s - np.diag(psi))
+    values, vectors = values[::-1], vectors[:, ::-1]
+    load = vectors[:, :nf] * np.sqrt(np.maximum(values[:nf], 0))
+    g = load @ load.T + np.diag(psi) - s
+    return np.diag(g)
+
+
+def _minres_loadings(psi, s, nf):
+    """psych's FAout.wls."""
+    reduced = s.copy()
+    np.fill_diagonal(reduced, np.diag(s) - psi)
+    values, vectors = np.linalg.eigh(reduced)
+    values, vectors = values[::-1], vectors[:, ::-1]
+    return vectors[:, :nf] * np.sqrt(np.maximum(values[:nf], 0))
+
+
+def _mat_sqrt(m, inverse=False):
+    """psych's matSqrt / invMatSqrt (eigen decomposition)."""
+    values, vectors = np.linalg.eigh(m)
+    values = np.maximum(values, 0)
+    root = np.sqrt(values)
+    if inverse:
+        root = np.where(root > 0, 1 / np.where(root > 0, root, 1), 0)
+    return vectors @ np.diag(root) @ vectors.T
+
+
 def _oblimin(loadings):
     """GPArotation's vgQ.oblimin with gamma = 0 (quartimin)."""
     squared = loadings ** 2
@@ -124,8 +164,8 @@ def fa(data, nfactors=1, rotate="oblimin", fm="ml", alpha=0.1):
     >>> model = fa(df_ocean[["E1", "E2", "E3", "E4", "E5"]], nfactors=1)
     >>> model.loadings
     """
-    if fm != "ml":
-        raise NotImplementedError('only fm = "ml" is ported')
+    if fm not in ("ml", "minres"):
+        raise NotImplementedError('fm must be "ml" or "minres"')
     data = pd.DataFrame(data).apply(pd.to_numeric, errors="coerce")
     names = list(data.columns)
     r = data.corr().to_numpy()
@@ -139,12 +179,21 @@ def fa(data, nfactors=1, rotate="oblimin", fm="ml", alpha=0.1):
     upper = max(np.max(smc), 1)
     start = np.full(nfactors, 0.5) if (np.sum(smc) == nfactors and nfactors > 1) else 1 - smc
     scale = 0.01  # R's optim(..., control = list(parscale = 0.01))
-    result = optimize.minimize(lambda z: _fa_objective(z * scale, r, nfactors), start / scale,
-                               jac=lambda z: _fa_gradient(z * scale, r, nfactors) * scale, method="L-BFGS-B",
+    if fm == "minres":
+        objective, gradient, extract = _minres_objective, _minres_gradient, _minres_loadings
+        start = 1 - smc
+    else:
+        objective, gradient, extract = _fa_objective, _fa_gradient, _fa_loadings
+    result = optimize.minimize(lambda z: objective(z * scale, r, nfactors), start / scale,
+                               jac=lambda z: gradient(z * scale, r, nfactors) * scale, method="L-BFGS-B",
                                bounds=[(0.005 / scale, upper / scale)] * n,
                                options={"ftol": 1e-15, "gtol": 1e-12, "maxiter": 10000})
     psi = result.x * scale
-    loadings = _fa_loadings(psi, r, nfactors)
+    loadings = extract(psi, r, nfactors)
+    unrotated_model = loadings @ loadings.T
+    reduced = r.copy()
+    np.fill_diagonal(reduced, np.diag(unrotated_model))
+    values = np.linalg.eigvalsh(reduced)[::-1]
     if nfactors > 1:
         signs = np.sign(loadings.sum(axis=0))
         signs[signs == 0] = 1
@@ -161,7 +210,8 @@ def fa(data, nfactors=1, rotate="oblimin", fm="ml", alpha=0.1):
     loadings = loadings * signs
     if phi is not None:
         phi = np.diag(signs) @ phi @ np.diag(signs)
-    columns = [f"ML{i + 1}" for i in range(nfactors)]
+    prefix = "ML" if fm == "ml" else "MR"
+    columns = [f"{prefix}{i + 1}" for i in range(nfactors)]
     if nfactors > 1:
         variance = np.diag(loadings.T @ loadings) if phi is None else np.diag(phi @ loadings.T @ loadings)
         order = np.argsort(-variance, kind="stable")
@@ -179,8 +229,35 @@ def fa(data, nfactors=1, rotate="oblimin", fm="ml", alpha=0.1):
     out.uniquenesses = pd.Series(np.diag(r - model), index=names)
     out.r = pd.DataFrame(r, index=names, columns=names)
     out.n_obs = n_obs
+    out.np_obs = pd.DataFrame(np_obs, index=names, columns=names)
     out.factors = nfactors
+    out.fm = fm
+    out.values = values
+    out.e_values = np.linalg.eigvalsh(r)[::-1]
+    out.communalities = pd.Series(1 - psi, index=names)
     _factor_stats(out, r, model, n, nfactors, n_obs, np_obs, alpha)
+    out.complexity = pd.Series((loadings ** 2).sum(axis=1) ** 2 / (loadings ** 4).sum(axis=1), index=names)
+
+    # factor scores, psych's default tenBerge method (Thurstone's regression scores for one factor)
+    phi_matrix = np.eye(nfactors) if phi is None else phi
+    if nfactors == 1:
+        weights = np.linalg.solve(r, loadings @ phi_matrix)
+    else:
+        l_phi = loadings @ _mat_sqrt(phi_matrix)
+        r_half_inv = _mat_sqrt(r, inverse=True)
+        c = r_half_inv @ l_phi @ _mat_sqrt(l_phi.T @ np.linalg.inv(r) @ l_phi, inverse=True)
+        weights = r_half_inv @ c @ _mat_sqrt(phi_matrix)
+    out.weights = pd.DataFrame(weights, index=names, columns=columns)
+    standardized = (data - data.mean()) / data.std(ddof=1)
+    out.scores = pd.DataFrame(standardized.to_numpy() @ weights, columns=columns, index=data.index)
+
+    variance = np.diag(phi_matrix @ loadings.T @ loadings) if nfactors > 1 else np.array([np.sum(loadings ** 2)])
+    total = np.sum(out.communality + out.uniquenesses)
+    rows = {"SS loadings": variance, "Proportion Var": variance / total}
+    if nfactors > 1:
+        rows.update({"Cumulative Var": np.cumsum(variance / total), "Proportion Explained": variance / variance.sum(),
+                     "Cumulative Proportion": np.cumsum(variance / variance.sum())})
+    out.Vaccounted = pd.DataFrame(rows, index=columns).T
     return out
 
 
@@ -195,6 +272,17 @@ def _factor_stats(out, r, model, n, nfactors, n_obs, np_obs, alpha):
     rstar_off = np.sum(off ** 2 * np_obs)
     harmonic = stats.hmean(np_obs.ravel())
     out.rms = np.sqrt(rstar_off / (harmonic * n * (n - 1)))
+    chi = rstar_off / 2
+    out.chi, out.nh = chi, harmonic
+    if dof > 0:
+        out.crms = np.sqrt(rstar_off / (2 * harmonic * dof))
+        out.EBIC = chi - dof * np.log(harmonic)
+        out.ESABIC = chi - dof * np.log((harmonic + 2) / 24)
+    else:
+        out.crms = out.EBIC = out.ESABIC = np.nan
+    r2_weighted = r * r * np_obs
+    out.fit = 1 - np.sum(residual * residual) / np.sum(r * r)
+    out.fit_off = 1 - rstar_off / (np.sum(r2_weighted) - np.trace(r2_weighted))
     fitted = model.copy()
     np.fill_diagonal(fitted, np.diag(r))
     m_inv_r = np.linalg.solve(fitted, r)
@@ -229,6 +317,8 @@ def _factor_stats(out, r, model, n, nfactors, n_obs, np_obs, alpha):
         if lower > rmsea:
             lower = np.nan
     out.RMSEA = pd.Series({"RMSEA": rmsea, "lower": lower, "upper": upper, "confidence": 1 - alpha})
+    out.BIC = chisq - dof * np.log(n_obs) if dof > 0 else np.nan
+    out.SABIC = chisq - dof * np.log((n_obs + 2) / 24) if dof > 0 else np.nan
 
 
 def fa_sort(loadings):

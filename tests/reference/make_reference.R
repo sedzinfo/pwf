@@ -444,3 +444,32 @@ vc_result <- extract_components(vc_model)
 ref("extract_components", vc_result$components)
 vc_anova <- mixlm::Anova(vc_model, type = "III")
 ref("extract_components_anova", data.frame(term = rownames(vc_anova$anova), as.data.frame(vc_anova$anova), check.names = FALSE))
+##########################################################################################
+# GLM_EFA (psych::fa with minres and ml, and rwf::report_efa)
+##########################################################################################
+for (data_case in names(efa_data)) {
+  for (fm in c("minres", "ml")) {
+    for (nfactors in 1:3) {
+      model <- psych::fa(efa_data[[data_case]], nfactors = nfactors, rotate = "oblimin", fm = fm)
+      prefix <- paste0("psych_fa_full_", data_case, "_", fm, "_", nfactors)
+      ref(paste0(prefix, "_loadings"), data.frame(unclass(model$loadings), check.names = FALSE))
+      ref(paste0(prefix, "_items"), data.frame(communality = model$communality, communalities = model$communalities,
+                                               uniquenesses = model$uniquenesses, complexity = model$complexity,
+                                               values = model$values, e.values = model$e.values))
+      ref(paste0(prefix, "_weights"), data.frame(unclass(model$weights), check.names = FALSE))
+      ref(paste0(prefix, "_scores"), data.frame(model$scores, check.names = FALSE))
+      ref(paste0(prefix, "_vaccounted"), data.frame(unclass(model$Vaccounted), check.names = FALSE))
+      stats_out <- c(crms = model$crms, BIC = model$BIC, SABIC = model$SABIC, EBIC = model$EBIC, ESABIC = model$ESABIC,
+                     fit = model$fit, fit.off = model$fit.off, rms = model$rms, TLI = model$TLI, CFI = model$CFI,
+                     RMSEA = unname(model$RMSEA[1]), STATISTIC = model$STATISTIC)
+      ref(paste0(prefix, "_stats"), data.frame(stat = names(stats_out), value = unname(stats_out)))
+    }
+  }
+}
+for (data_case in names(efa_data)) {
+  model <- psych::fa(efa_data[[data_case]], nfactors = 2, rotate = "oblimin", fm = "minres")
+  report <- report_efa(model, efa_data[[data_case]])
+  for (part in c("residual_stats", "determinant_test", "bartlett_test", "kmo_test", "loadings", "correlations")) {
+    ref(paste0("report_efa_", data_case, "_", part), report[[part]])
+  }
+}
