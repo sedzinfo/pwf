@@ -42,7 +42,8 @@ def test_report_xgboost(case, reference):
     report = ml_xgboost.report_xgboost(booster, validation_data=test, label=label, file=None,
                                        evals_result=evals_from_reference(log))
     result = report["result"]
-    assert_matches_reference(result["importance"], reference(f"report_xgboost_{name}_importance"))
+    # split gains are float32 in xgboost; R and Python read them from different dump formats
+    assert_matches_reference(result["importance"], reference(f"report_xgboost_{name}_importance"), rtol=1e-6)
     assert_matches_reference(result["model_summary"],
                              reference(f"report_xgboost_{name}_model_summary", dtype={"value": str}))
     # predictions are float32 in xgboost
@@ -67,7 +68,15 @@ def test_plot_trees_xgboost(case, reference, tmp_path):
     name, booster, test, _, features = case
     out = ml_xgboost.plot_trees_xgboost(booster, train=test[features], file=str(tmp_path / "trees"))
     expected_nodes = reference(f"plot_trees_xgboost_{name}_nodes", keep_default_na=False)
-    assert out["nodes"]["Text"].tolist() == expected_nodes["Text"].tolist()
+    assert out["nodes"]["abs.node.position"].tolist() == expected_nodes["abs.node.position"].astype(str).tolist()
+    for got, want in zip(out["nodes"]["Text"], expected_nodes["Text"]):
+        got_lines, want_lines = got.split("\n"), want.split("\n")
+        assert [g.split(" (")[0] for g in got_lines] == [w.split(" (")[0] for w in want_lines]
+        # same notation as R's format(digits = 5); values agree to float32 precision
+        assert ["e+" in g for g in got_lines] == ["e+" in w for w in want_lines]
+        got_values = [float(g.split(" (")[1].rstrip(")")) for g in got_lines]
+        want_values = [float(w.split(" (")[1].rstrip(")")) for w in want_lines]
+        np.testing.assert_allclose(got_values, want_values, rtol=1e-6)
     expected_edges = reference(f"plot_trees_xgboost_{name}_edges")
     assert list(zip(out["edges"]["From"], out["edges"]["To"])) == list(zip(expected_edges["From"].astype(str),
                                                                            expected_edges["To"].astype(str)))
