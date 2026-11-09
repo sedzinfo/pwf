@@ -16,6 +16,7 @@ root-finding behind its confidence interval.
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
+import functools
 import itertools
 import numpy as np
 import pandas as pd
@@ -90,116 +91,192 @@ def _t_test_two_sample(x, y, alternative="two.sided", mu=0, var_equal=False, con
     return {"statistic": tstat, "parameter": df, "p_value": p, "conf_int": cint, "method": method}
 
 
-def _wilcox_counts(m, n):
-    """Number of arrangements giving each Mann-Whitney statistic 0..m*n (R's cwilcox)."""
-    total = m + n
-    max_rank_sum = m * total
-    dp = np.zeros((m + 1, max_rank_sum + 1))
-    dp[0, 0] = 1.0
-    for rank in range(1, total + 1):
-        new = dp.copy()
-        new[1:, rank:] += dp[:-1, :max_rank_sum + 1 - rank]
-        dp = new
-    offset = m * (m + 1) // 2
-    return dp[m, offset:offset + m * n + 1]
+@functools.lru_cache(maxsize=4096)
+def _rank_sum_distribution(scores, m):
+    """
+    Exact null distribution of the sum of m scores drawn without replacement
+    from `scores` (sorted tuple of non-negative ints), as (sums, probabilities)
+    over every reachable sum. With scores 1..N this is the Wilcoxon rank-sum
+    distribution; with (doubled) mid-ranks it is the conditional distribution
+    given the ties (R's C_dpermdist2, used by stats:::.dwilcox).
+    """
+    total = sum(sorted(scores)[-m:]) if m else 0
+    counts = np.zeros((m + 1, total + 1))
+    counts[0, 0] = 1.0
+    for i, score in enumerate(scores):
+        top = min(i + 1, m)
+        if score == 0:
+            counts[1:top + 1] += counts[:top].copy()
+        else:
+            counts[1:top + 1, score:] += counts[:top, :total + 1 - score].copy()
+    dist = counts[m]
+    return np.flatnonzero(dist), dist[dist > 0] / dist.sum()
 
 
-def _pwilcox(q, m, n, lower_tail=True):
-    counts = _wilcox_counts(m, n)
-    probs = counts / counts.sum()
-    q = int(np.floor(q + 1e-7))
-    lower = probs[:max(0, min(q, m * n)) + 1].sum() if q >= 0 else 0.0
-    return lower if lower_tail else 1.0 - lower
+def _wilcox_null(m, n, z=None):
+    """
+    Null distribution of W for samples of size m and n, as (w, prob) arrays.
+    z=None gives the untied distribution (R's dwilcox); otherwise z are the
+    mid-ranks of the combined sample and the distribution is conditional on
+    the ties (R's stats:::.dwilcox with z).
+    """
+    if z is None:
+        scores = tuple(range(1, m + n + 1))
+        f = 1
+    else:
+        f = 1 if np.all(z == np.floor(z)) else 2
+        scores = tuple(sorted(int(round(f * v)) for v in z))
+    sums, prob = _rank_sum_distribution(scores, m)
+    return sums / f - m * (m + 1) / 2, prob
+
+
+def _pwilcox(q, m, n, z=None, lower_tail=True):
+    """R's pwilcox (z=None) or stats:::.pwilcox (tie-aware, z = mid-ranks)."""
+    w, prob = _wilcox_null(m, n, z)
+    if z is None:
+        q = np.floor(q + 1e-7)
+        lower = prob[w <= q].sum()
+        return lower if lower_tail else prob[w > q].sum()
+    y = prob[w < q + 1e-8].sum()
+    if lower_tail:
+        return min(y, 1.0)
+    if abs(y - 1) < 0.015625:
+        return prob[w >= q + 1e-8].sum()
+    return 1 - y
 
 
 def _qwilcox(p, m, n):
-    cumulative = np.cumsum(_wilcox_counts(m, n))
-    cumulative /= cumulative[-1]
-    return int(np.searchsorted(cumulative, p * (1 - 64 * np.finfo(float).eps)))
+    """R's qwilcox for a lower-tail probability p <= 0.5 (untied distribution)."""
+    w, prob = _wilcox_null(m, n)
+    index = np.searchsorted(np.cumsum(prob), p - 10 * np.finfo(float).eps)
+    return int(w[min(index, len(w) - 1)])
+
+
+def _wilcox_exact_cint(x, y, z, alternative, conf_level):
+    """stats:::.wilcox_test_two_cint_exact: exact Hodges-Lehmann interval."""
+    n_x, n_y = len(x), len(y)
+    alpha = 1 - conf_level
+    diffs = np.sort(np.subtract.outer(x, y).ravel())
+    toler = 10 * np.finfo(float).eps
+    if z is None:
+        level = alpha / 2 if alternative == "two.sided" else alpha
+        qu = _qwilcox(level, n_x, n_y)
+        if _pwilcox(qu, n_x, n_y) <= level + toler:
+            qu += 1
+        if qu == 0:
+            return (-np.inf, np.inf)
+        ql = n_x * n_y - qu
+        if alternative == "two.sided":
+            return (diffs[qu - 1], diffs[ql])
+        if alternative == "greater":
+            return (diffs[qu - 1], np.inf)
+        return (-np.inf, diffs[ql])
+
+    tails = {}
+
+    def ptail(mu, lower=True):
+        if (mu, lower) not in tails:
+            ranks = stats.rankdata(np.concatenate([x - mu, y]))
+            w = ranks[:n_x].sum() - n_x * (n_x + 1) / 2
+            tails[(mu, lower)] = (_pwilcox(w, n_x, n_y, ranks) if lower
+                                  else _pwilcox(w - 0.25, n_x, n_y, ranks, lower_tail=False))
+        return tails[(mu, lower)]
+
+    def lower_bound(a):
+        a += toler
+        if ptail(diffs[0] - 1, False) > a:
+            return -np.inf
+        for k in range(len(diffs) - 1):
+            if ptail((diffs[k] + diffs[k + 1]) / 2, False) > a:
+                return diffs[k]
+        return diffs[-1]
+
+    def upper_bound(a):
+        a += toler
+        if ptail(diffs[-1] + 1) > a:
+            return np.inf
+        for k in range(len(diffs) - 2, -1, -1):
+            if ptail((diffs[k] + diffs[k + 1]) / 2) > a:
+                return diffs[k + 1]
+        return diffs[0]
+
+    if alternative == "two.sided":
+        return (lower_bound(alpha / 2), upper_bound(alpha / 2))
+    if alternative == "greater":
+        return (lower_bound(alpha), np.inf)
+    return (-np.inf, upper_bound(alpha))
 
 
 def _wilcox_test_two_sample(x, y, alternative="two.sided", mu=0, exact=None, correct=True,
                             conf_int=False, conf_level=0.95):
-    """Two-sample stats::wilcox.test(x, y, ...): statistic W, p, conf_int, method."""
+    """
+    Two-sample stats::wilcox.test(x, y, ...) as in R >= 4.6: statistic W,
+    p value, confidence interval and method label. The exact test is used by
+    default when both samples have fewer than 50 values, with ties handled by
+    the exact conditional distribution of the mid-ranks.
+    """
     x, y = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
     n_x, n_y = len(x), len(y)
     r = stats.rankdata(np.concatenate([x - mu, y]))
     statistic = r[:n_x].sum() - n_x * (n_x + 1) / 2
+    ties = len(np.unique(r)) != len(r)
     if exact is None:
         exact = n_x < 50 and n_y < 50
-    ties = len(np.unique(r)) != len(r)
     cint = None
-    if exact and not ties:
+    if exact:
         method = "Wilcoxon rank sum exact test"
-        if alternative == "two.sided":
-            if statistic > n_x * n_y / 2:
-                p = _pwilcox(statistic - 1, n_x, n_y, lower_tail=False)
-            else:
-                p = _pwilcox(statistic, n_x, n_y)
-            p = min(2 * p, 1.0)
-        elif alternative == "greater":
-            p = _pwilcox(statistic - 1, n_x, n_y, lower_tail=False)
-        else:
-            p = _pwilcox(statistic, n_x, n_y)
+        z = r if ties else None
+        lower = _pwilcox(statistic, n_x, n_y, z)
+        upper = _pwilcox(statistic - 0.25, n_x, n_y, z, lower_tail=False)
+        p = {"two.sided": min(2 * lower, 2 * upper, 1.0), "greater": upper, "less": lower}[alternative]
         if conf_int:
-            alpha = 1 - conf_level
-            diffs = np.sort(np.subtract.outer(x, y).ravel())
-            if alternative == "two.sided":
-                qu = _qwilcox(alpha / 2, n_x, n_y) or 1
-                ql = n_x * n_y - qu
-                cint = (diffs[qu - 1], diffs[ql])
-            elif alternative == "greater":
-                qu = _qwilcox(alpha, n_x, n_y) or 1
-                cint = (diffs[qu - 1], np.inf)
-            else:
-                qu = _qwilcox(alpha, n_x, n_y) or 1
-                ql = n_x * n_y - qu
-                cint = (-np.inf, diffs[ql])
+            cint = _wilcox_exact_cint(x, y, z, alternative, conf_level)
+        return {"statistic": statistic, "p_value": p, "conf_int": cint, "method": method}
+
+    method = "Wilcoxon rank sum test" + (" with continuity correction" if correct else "")
+
+    def continuity(z):
+        if not correct:
+            return 0.0
+        return {"two.sided": np.sign(z) * 0.5, "greater": 0.5, "less": -0.5}[alternative]
+
+    def sigma(ranks):
+        _, nties = np.unique(ranks, return_counts=True)
+        return np.sqrt((n_x * n_y / 12) * ((n_x + n_y + 1)
+                       - np.sum(nties ** 3 - nties) / ((n_x + n_y) * (n_x + n_y - 1))))
+
+    z = statistic - n_x * n_y / 2
+    z = (z - continuity(z)) / sigma(r)
+    if alternative == "two.sided":
+        p = 2 * min(stats.norm.cdf(z), 1 - stats.norm.cdf(z))
+    elif alternative == "greater":
+        p = stats.norm.sf(z)
     else:
-        method = "Wilcoxon rank sum test"
+        p = stats.norm.cdf(z)
+    if conf_int:
+        alpha = 1 - conf_level
+        mumin, mumax = x.min() - y.max(), x.max() - y.min()
 
-        def continuity(z):
-            if not correct:
-                return 0.0
-            return {"two.sided": np.sign(z) * 0.5, "greater": 0.5, "less": -0.5}[alternative]
+        def w_of(d):
+            dr = stats.rankdata(np.concatenate([x - d, y]))
+            dz = dr[:n_x].sum() - n_x * (n_x + 1) / 2 - n_x * n_y / 2
+            return (dz - continuity(dz)) / sigma(dr)
 
-        def sigma(ranks):
-            _, nties = np.unique(ranks, return_counts=True)
-            return np.sqrt((n_x * n_y / 12) * ((n_x + n_y + 1)
-                           - np.sum(nties ** 3 - nties) / ((n_x + n_y) * (n_x + n_y - 1))))
+        w_min, w_max = w_of(mumin), w_of(mumax)
 
-        z = statistic - n_x * n_y / 2
-        z = (z - continuity(z)) / sigma(r)
+        def root(zq):
+            if w_min - zq <= 0:
+                return mumin
+            if w_max - zq >= 0:
+                return mumax
+            return optimize.brentq(lambda d: w_of(d) - zq, mumin, mumax, xtol=1e-4)
+
         if alternative == "two.sided":
-            p = 2 * min(stats.norm.cdf(z), stats.norm.sf(z))
+            cint = (root(stats.norm.isf(alpha / 2)), root(stats.norm.ppf(alpha / 2)))
         elif alternative == "greater":
-            p = stats.norm.sf(z)
+            cint = (root(stats.norm.isf(alpha)), np.inf)
         else:
-            p = stats.norm.cdf(z)
-        if correct:
-            method += " with continuity correction"
-        if conf_int:
-            alpha = 1 - conf_level
-            mumin, mumax = x.min() - y.max(), x.max() - y.min()
-
-            def wdiff(d, zq):
-                dr = stats.rankdata(np.concatenate([x - d, y]))
-                dz = dr[:n_x].sum() - n_x * (n_x + 1) / 2 - n_x * n_y / 2
-                return (dz - continuity(dz)) / sigma(dr) - zq
-
-            def root(zq):
-                if wdiff(mumin, zq) <= 0:
-                    return mumin
-                if wdiff(mumax, zq) >= 0:
-                    return mumax
-                return optimize.brentq(wdiff, mumin, mumax, args=(zq,), xtol=1e-4)
-
-            if alternative == "two.sided":
-                cint = (root(stats.norm.isf(alpha / 2)), root(stats.norm.ppf(alpha / 2)))
-            elif alternative == "greater":
-                cint = (root(stats.norm.isf(alpha)), np.inf)
-            else:
-                cint = (-np.inf, root(stats.norm.ppf(alpha)))
+            cint = (-np.inf, root(stats.norm.ppf(alpha)))
     return {"statistic": statistic, "p_value": p, "conf_int": cint, "method": method}
 
 

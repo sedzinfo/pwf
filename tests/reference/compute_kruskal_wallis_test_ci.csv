@@ -1,0 +1,2 @@
+"formula","method","etasq","etasq_lower","etasq_upper","epsilonsq","epsilonsq_lower","epsilonsq_upper","H","df","p"
+"bp_before ~ agegrp","Kruskal-Wallis rank sum test",0.150123223273419,0.0527212107509814,0.294074677346436,0.164406866579748,0.068641862671133,0.305938968483471,19.56441712299,2,5.64469916267292e-05

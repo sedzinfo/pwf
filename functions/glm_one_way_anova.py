@@ -20,67 +20,75 @@ literally named "Treatment".
 import numpy as np
 import pandas as pd
 import scipy.stats as stats
-import patsy
 import statsmodels.formula.api as smf
 from statsmodels.stats.anova import anova_lm
 from itertools import combinations
 ##########################################################################################
 # KRUSKALL WALLIS TEST WITH EFFECT SIZE
 ##########################################################################################
-def compute_kruskal_wallis_test(formula, df):
+def compute_kruskal_wallis_test(formula, df, ci=False, conf_level=0.95, nboot=1000):
     """
-    Kruskal-Wallis rank sum test with eta-squared/epsilon-squared effect sizes.
+    Kruskal-Wallis rank sum test with eta-squared and epsilon-squared effect
+    sizes, optionally with percentile bootstrap confidence intervals for both
+    (port of rwf::compute_kruskal_wallis_test). Rows with a missing value in
+    either variable are dropped.
 
     Parameters:
-    formula (str): "dv ~ group_column" style formula (only the group
-        column name after "~" is actually used; parsed with patsy just
-        to validate/extract the DV column).
+    formula (str): "dv ~ group".
     df (pandas.DataFrame): Data containing the DV and group columns.
+    ci (bool, optional): If True, adds bootstrap confidence intervals for
+        etasq and epsilonsq. Defaults to False.
+    conf_level (float, optional): Confidence level. R's conf.level. Defaults to 0.95.
+    nboot (int, optional): Number of bootstrap resamples. Defaults to 1000.
+        Resamples use numpy's global RNG, so np.random.seed() makes them
+        reproducible (as set.seed() does in R; the draws differ from R's).
 
     Returns:
-    pandas.DataFrame: One row with formula, method, etasq, epsilonsq, H, df, p.
+    pandas.DataFrame: One row with formula, method, etasq, epsilonsq, H, df,
+    p; with ci=True, etasq_lower/etasq_upper follow etasq and
+    epsilonsq_lower/epsilonsq_upper follow epsilonsq.
 
     Examples:
-    >>> import pandas as pd
-    >>> df_blood_pressure = pd.read_csv("data/blood_pressure.csv")
-    >>> compute_kruskal_wallis_test(formula="bp_before~agegrp", df=df_blood_pressure)
+    >>> compute_kruskal_wallis_test(formula="bp_before ~ agegrp", df=df_blood_pressure)
+    >>> np.random.seed(1)
+    >>> compute_kruskal_wallis_test(formula="bp_before ~ agegrp", df=df_blood_pressure, ci=True)
     """
-    y, X = patsy.dmatrices(formula, df, return_type='dataframe')
-    x = y.iloc[:, 0].values
+    dv, group = (part.strip() for part in formula.split("~"))
+    data = df[[dv, group]].dropna()
+    x = data[dv].to_numpy(dtype=float)
+    g = data[group].to_numpy()
 
-    group_labels = df[formula.split('~')[1].strip()].astype('category')
-    k = group_labels.nunique()
+    def kruskal_h(x, g):
+        n = len(x)
+        r = stats.rankdata(x)
+        rank_sums = pd.Series(r).groupby(g).agg(["sum", "count"])
+        h = np.sum(rank_sums["sum"] ** 2 / rank_sums["count"])
+        _, ties = np.unique(x, return_counts=True)
+        return (12 * h / (n * (n + 1)) - 3 * (n + 1)) / (1 - np.sum(ties ** 3 - ties) / (n ** 3 - n))
+
+    k = len(pd.unique(g))
     n = len(x)
-
-    r = stats.rankdata(x)
-    ranks_by_group = pd.Series(r).groupby(group_labels).agg(['sum', 'count'])
-
-    h = np.sum((ranks_by_group['sum'] ** 2) / ranks_by_group['count'])
-    H = (12 * h / (n * (n + 1))) - 3 * (n + 1)
-
-    # Correction for ties
-    ties = pd.Series(x).value_counts()
-    tie_correction = 1 - np.sum(ties**3 - ties) / (n**3 - n)
-    H /= tie_correction
-
+    H = kruskal_h(x, g)
     df_k = k - 1
     p = stats.chi2.sf(H, df_k)
-
-    # Effect sizes
     etasq = (H - k + 1) / (n - k)
     epsilonsq = H / ((n ** 2 - 1) / (n + 1))
-
-    result = pd.DataFrame([{
-        "formula": formula,
-        "method": "Kruskal-Wallis rank sum test",
-        "etasq": etasq,
-        "epsilonsq": epsilonsq,
-        "H": H,
-        "df": df_k,
-        "p": p
-    }])
-
-    return result
+    result = {"formula": f"{dv} ~ {group}", "method": "Kruskal-Wallis rank sum test", "etasq": etasq}
+    if ci:
+        boot = np.empty((nboot, 2))
+        for b in range(nboot):
+            i = np.random.randint(0, n, size=n)
+            k_boot = len(pd.unique(g[i]))
+            H_boot = kruskal_h(x[i], g[i])
+            boot[b] = ((H_boot - k_boot + 1) / (n - k_boot), H_boot / (n - 1))
+        probs = [(1 - conf_level) / 2, 1 - (1 - conf_level) / 2]
+        result["etasq_lower"], result["etasq_upper"] = np.nanquantile(boot[:, 0], probs)
+        result["epsilonsq"] = epsilonsq
+        result["epsilonsq_lower"], result["epsilonsq_upper"] = np.nanquantile(boot[:, 1], probs)
+    else:
+        result["epsilonsq"] = epsilonsq
+    result.update({"H": H, "df": df_k, "p": p})
+    return pd.DataFrame([result])
 ##########################################################################################
 # ONE WAY TEST WITH SS AND MS
 ##########################################################################################

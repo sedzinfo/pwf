@@ -35,6 +35,9 @@ ref("compute_kruskal_wallis_test",
     compute_kruskal_wallis_test(formula = bp_before ~ agegrp, df = df_blood_pressure))
 ref("compute_kruskal_wallis_test_na",
     compute_kruskal_wallis_test(formula = bp_before ~ agegrp, df = df_blood_pressure_na))
+set.seed(1)
+ref("compute_kruskal_wallis_test_ci",
+    compute_kruskal_wallis_test(formula = bp_before ~ agegrp, df = df_blood_pressure, ci = TRUE, nboot = 5000))
 ##########################################################################################
 # GLM_MEANS
 ##########################################################################################
