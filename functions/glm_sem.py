@@ -1,136 +1,68 @@
 # -*- coding: utf-8 -*-
 """
-Python port of R rwf::GLM_SEM.R.
+Python port of R rwf::GLM_SEM.R: path diagrams (plot_cfa_gg, plot_cfa), a
+full CFA/SEM report (report_cfa) and fit across sample sizes
+(simulate_cfa_fit).
 
-Every function here operates on a fitted lavaan model, and several go
-deep into lavaan's own introspection machinery (lavInspect, S4 slots like
-model@Model@ngroups, model@SampleStats@cov, model@Data@X, parameterEstimates,
-modificationIndices). There is no native Python SEM package with an
-equivalent surface (semopy's API/output structure is entirely different),
-so — consistent with mirt/lavaan/thurstonianIRT in glm_irt.py/glm_irt_t.py
-and mixlm in glm_reliability.py — this whole file bridges to real R lavaan
-via rpy2. Every function takes an rpy2 lavaan model object (built via rpy2
-calls to lavaan::cfa()/sem(), typically through ro.r("fit <- lavaan::cfa(...)")).
+Models are fitted with pwf's own lavaan-compatible engine (pwf._sem, also
+available here as cfa, sem and simulate_data), which reproduces lavaan's
+estimates, standard errors, standardized solution, fit measures,
+modification indices and factor scores for maximum likelihood, with
+listwise deletion (default) or with missing = "ml" (full information
+maximum likelihood, as lavaan's missing = "ml"). No R installation is
+needed. With missing = "ml", lavaan's FIML-corrected ("robust") fit indices,
+the GFI family and CRMR are not ported and come out missing.
 
 Deviations from the R original, by design:
   - R's igraph-based node layouts (layout_in_circle, layout_as_tree,
     layout_with_fr) are replaced with networkx (circular_layout,
-    graphviz's "dot" layout via nx.nx_pydot.graphviz_layout for "tree",
-    spring_layout for "spring"). "tree" needs a system graphviz install
-    (already present here); if unavailable, a simple hand-rolled 2-row
-    layout (latents on top, their own indicators below) is used instead
-    — good enough for a standard CFA model (a 2-level forest), not a
-    faithful Reingold-Tilford tree layout for deeper hierarchical SEMs.
-  - ggplot2::geom_curve (used for the latent-latent covariance arcs) has
-    no plotnine equivalent (plotnine has no curved-line geom); replaced
-    with a manually-computed quadratic Bezier arc rendered via geom_path
-    — visually similar, not the identical curve-drawing algorithm.
-  - Discovered and worked around an rpy2 stability issue: chained S4
-    slot access (model.slots["Model"].slots["ngroups"]) on a lavaan
-    model object reliably raises "ReferenceError: weakly-referenced
-    object no longer exists" after any lavInspect()/parameterEstimates()
-    call has run in the same session. Slot access here is instead done
-    via a small helper that binds the model to a temporary name in R's
-    global environment and evaluates the slot chain as an R expression
-    string (e.g. "name@Model@ngroups") — fully server-side, and immune
-    to whatever Python-side weak-reference caching causes the crash.
-    A useful side effect: unlike glm_irt.py's mirt models (fit via
-    direct Python-to-R function calls, which corrupts match.call()
-    capture), a lavaan model fit via ro.r("fit <- lavaan::cfa(...)") — a
-    plain R source string, not Python-side argument marshaling — has an
-    intact model@call, verified directly; report_cfa's call string is
-    therefore the real deparsed call, not a synthesized fallback.
-  - lavInspect(model, "est"/"std", ...)'s per-model-matrix (lambda,
-    theta, psi, ...) results are kept as a dict of pandas DataFrames
-    (one per matrix name) rather than reproducing R's exact nested
-    list-printing format — used for the same "just display/export it"
-    purpose as R's own version, not for further computation either way.
-  - simulate_cfa_fit's future/future.apply parallel-iteration branch is
-    not replicated (same rationale as every other file in this project:
-    plot/model objects don't reliably serialize across process
-    boundaries) — this runs the same loop sequentially. It's genuinely
-    slower for large sample-size sweeps than R's parallel version.
+    graphviz's "dot" layout for "tree", spring_layout for "spring"); without
+    Graphviz a simple 2-row layout (latents on top, their indicators below)
+    is used for "tree".
+  - ggplot2::geom_curve (latent covariance arcs) has no plotnine
+    equivalent; a quadratic Bezier arc drawn with geom_path is used instead.
+  - inspect(fit, "est"/"std") results are dicts of DataFrames (one per
+    model matrix), and the text summary written to the log is pwf's own
+    layout, not lavaan's summary() print.
+  - simulate_cfa_fit runs its sample sizes one after another (rwf runs them
+    in parallel with future.apply), and simulated data come from numpy, so
+    they differ from R's for the same seed.
 """
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
+import contextlib
+import io
+import os
+
 import numpy as np
 import pandas as pd
 import networkx as nx
-import rpy2.robjects as ro
-from rpy2.robjects.packages import importr
-from rpy2.robjects import pandas2ri
-from rpy2.robjects.conversion import localconverter
 from plotnine import (
     ggplot, aes, geom_segment, geom_rect, geom_text, geom_label, geom_path,
     coord_fixed, theme_void, theme, labs, arrow, element_text,
 )
 
 try:
+    from ._sem import SEMFit, cfa, sem, simulate_data
     from .functions import remove_nc
     from .functions_generate_data import simulate_correlation_from_sample
     from .functions_environment import write_txt
+    from .functions_excel import excel_critical_value, excel_generic_format, excel_matrix
     from .functions_strings import output_separator
     from .functions_plot import report_pdf
     from .glm_linear_regression import plot_scatterplot
 except ImportError:
+    from _sem import SEMFit, cfa, sem, simulate_data
     from functions import remove_nc
     from functions_generate_data import simulate_correlation_from_sample
     from functions_environment import write_txt
+    from functions_excel import excel_critical_value, excel_generic_format, excel_matrix
     from functions_strings import output_separator
     from functions_plot import report_pdf
     from glm_linear_regression import plot_scatterplot
 
-_base = importr("base")
-_lavaan = importr("lavaan")
-_MODEL_TMP_NAME = ".pwf_glm_sem_model"
-##########################################################################################
-# R <-> PANDAS / SLOT ACCESS HELPERS (internal)
-##########################################################################################
-def _is_r_null(x):
-    return bool(_base.is_null(x)[0])
-
-
-def _r_df_to_pandas(r_df):
-    data = {name: list(r_df.rx2(name)) for name in r_df.names}
-    return pd.DataFrame(data)
-
-
-def _r_matrix_to_pandas(r_mat):
-    df = pd.DataFrame(np.array(r_mat))
-    colnames = _base.colnames(r_mat)
-    rownames = _base.rownames(r_mat)
-    if not _is_r_null(colnames):
-        df.columns = list(colnames)
-    if not _is_r_null(rownames):
-        df.index = list(rownames)
-    return df
-
-
-def _r_slot(model, expr):
-    """
-    Evaluate an R slot-access expression (e.g. "@Model@ngroups") against
-    `model`, entirely server-side. See module docstring for why chained
-    Python-side .slots[...] access is avoided.
-    """
-    ro.globalenv[_MODEL_TMP_NAME] = model
-    return ro.r(f"{_MODEL_TMP_NAME}{expr}")
-
-
-def _r_call_string(model):
-    """
-    Deparsed model@call, as a plain Python string. Unlike _r_slot, this
-    does the deparse()+paste() server-side in a single R expression:
-    passing a fetched call/language object back into a *separate*
-    Python-side rpy2 function call (e.g. base.deparse(_r_slot(model,
-    "@call"))) reproduces the same match.call()-capture corruption bug
-    documented in glm_irt.py, just triggered by deparse() itself rather
-    than by how the model was originally fit -- verified directly: doing
-    it in one string gives the real short call every time, doing it in
-    two steps gives a multi-thousand-character dump of the entire model object.
-    """
-    ro.globalenv[_MODEL_TMP_NAME] = model
-    return ro.r(f'paste(deparse({_MODEL_TMP_NAME}@call), collapse=" ")')[0]
+__all__ = ["cfa", "sem", "simulate_data", "plot_cfa_gg", "plot_cfa", "report_cfa", "simulate_cfa_fit"]
 ##########################################################################################
 # GRAPH LAYOUT (internal)
 ##########################################################################################
@@ -170,17 +102,22 @@ def _bezier_arc(x0, y0, x1, y1, curvature=0.35, n=30):
     xs = (1 - t) ** 2 * x0 + 2 * (1 - t) * t * cx + t ** 2 * x1
     ys = (1 - t) ** 2 * y0 + 2 * (1 - t) * t * cy + t ** 2 * y1
     return xs, ys
+
+
+def _check_model(model):
+    if not isinstance(model, SEMFit):
+        raise TypeError("model must be a fitted model from pwf cfa() or sem() (rwf: a lavaan object)")
 ##########################################################################################
 # MODEL PLOT
 ##########################################################################################
 def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_size=2.6,
-                 color_latent="#4f8ef7", color_observed="#e8eaf0", **kwargs):
+                color_latent="#4f8ef7", color_observed="#e8eaf0", **kwargs):
     """
-    Path diagram for a fitted lavaan CFA/SEM model, built directly with
-    plotnine (no semPlot dependency).
+    Path diagram of a fitted CFA/SEM model, drawn with plotnine (port of
+    rwf::plot_cfa_gg).
 
     Parameters:
-    model: An rpy2 fitted lavaan model object.
+    model (SEMFit): A model fitted with cfa() or sem().
     what (str, optional): "std" (standardized), "est" (unstandardized),
         or "eq" (parameter labels). Defaults to "std".
     layout (str, optional): "tree", "circle", or "spring". Defaults to "tree".
@@ -194,23 +131,18 @@ def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_siz
     plotnine.ggplot
 
     Examples:
-    >>> import rpy2.robjects as ro
-    >>> ro.r('''
-    ...     model <- "LATENT1=~X1+X2+X3\\nLATENT2=~X4+X5+X6"
-    ...     df <- lavaan::simulateData(model=model, model.type="cfa",
-    ...                                return.type="data.frame", sample.nobs=100)
-    ...     fit <- lavaan::cfa(model, data=df)
-    ... ''')
-    >>> fit = ro.r["fit"]
+    >>> fit = cfa("LATENT1 =~ X1 + X2 + X3; LATENT2 =~ X4 + X5 + X6", df)
     >>> plot_cfa_gg(fit, what="std")
     >>> plot_cfa_gg(fit, what="std", layout="circle")
     """
+    _check_model(model)
     if what not in ("std", "est", "eq"):
         raise ValueError('what must be one of "std", "est", "eq"')
     if layout not in ("tree", "circle", "spring"):
         raise ValueError('layout must be one of "tree", "circle", "spring"')
 
-    pe = _r_df_to_pandas(ro.r["parameterEstimates"](model, standardized=True))
+    pe = model.parameter_estimates()
+    pe = pe[pe["op"] != "r2"]
     if "label" not in pe.columns:
         pe["label"] = ""
     edge_col = {"std": "std.all", "est": "est", "eq": "label"}[what]
@@ -256,19 +188,19 @@ def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_siz
 
     def _attach_coords(edf, xcol, ycol, side):
         merged = edf.merge(node_df[["name", "x", "y"]], left_on=side, right_on="name")
-        merged = merged.rename(columns={"x": xcol, "y": ycol}).drop(columns="name")
-        return merged
+        return merged.rename(columns={"x": xcol, "y": ycol}).drop(columns="name")
+
+    def _display(frame):
+        if what == "eq":
+            label_col = frame["label"] if "label" in frame.columns else pd.Series([""] * len(frame))
+            est_fmt = frame["est"].map(lambda v: f"{v:.3f}")
+            return np.where(label_col.isna() | (label_col == ""), est_fmt, label_col)
+        return frame[edge_col].map(lambda v: f"{v:.3f}")
 
     loadings = pe[pe["op"] == "=~"].copy()
     edge_df = _attach_coords(loadings, "x_from", "y_from", "lhs")
     edge_df = _attach_coords(edge_df, "x_to", "y_to", "rhs")
-
-    if what == "eq":
-        label_col = edge_df["label"] if "label" in edge_df.columns else pd.Series([""] * len(edge_df))
-        est_fmt = edge_df["est"].map(lambda v: f"{v:.3f}")
-        edge_df["display"] = np.where(label_col.isna() | (label_col == ""), est_fmt, label_col)
-    else:
-        edge_df["display"] = edge_df[edge_col].map(lambda v: f"{v:.3f}")
+    edge_df["display"] = _display(edge_df)
     edge_df["mx"] = (edge_df["x_from"] + edge_df["x_to"]) / 2
     edge_df["my"] = (edge_df["y_from"] + edge_df["y_to"]) / 2
 
@@ -277,12 +209,7 @@ def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_siz
     if len(cov_df) > 0:
         cov_df = _attach_coords(cov_df, "x_from", "y_from", "lhs")
         cov_df = _attach_coords(cov_df, "x_to", "y_to", "rhs")
-        if what == "eq":
-            label_col = cov_df["label"] if "label" in cov_df.columns else pd.Series([""] * len(cov_df))
-            est_fmt = cov_df["est"].map(lambda v: f"{v:.3f}")
-            cov_df["display"] = np.where(label_col.isna() | (label_col == ""), est_fmt, label_col)
-        else:
-            cov_df["display"] = cov_df[edge_col].map(lambda v: f"{v:.3f}")
+        cov_df["display"] = _display(cov_df)
         cov_df["mx"] = (cov_df["x_from"] + cov_df["x_to"]) / 2
         cov_df["my"] = (cov_df["y_from"] + cov_df["y_to"]) / 2
 
@@ -291,7 +218,7 @@ def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_siz
 
     p = (ggplot()
          + geom_segment(data=edge_df, mapping=aes(x="x_from", y="y_from", xend="x_to", yend="y_to"),
-                         colour="#555a6b", size=0.55, arrow=arrow(length=0.02, type="closed", ends="last"))
+                        colour="#555a6b", size=0.55, arrow=arrow(length=0.02, type="closed", ends="last"))
          + geom_label(data=edge_df, mapping=aes(x="mx", y="my", label="display"),
                       size=edge_label_size, fill="white", label_size=0, colour="#333745")
          + geom_rect(data=node_df[~node_df["is_lat"]],
@@ -326,17 +253,18 @@ def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_siz
 ##########################################################################################
 def plot_cfa(model, **kwargs):
     """
-    Batch-plot a CFA/SEM model across all layout x display-mode combinations.
+    Path diagrams of a CFA/SEM model in every layout x display combination
+    (port of rwf::plot_cfa).
 
     Parameters:
-    model: An rpy2 fitted lavaan model object.
-    **kwargs: Forwarded to plot_cfa_gg().
+    model (SEMFit): A model fitted with cfa() or sem().
+    **kwargs: Passed to plot_cfa_gg().
 
     Returns:
     dict: {"<layout>_<mode>": plotnine.ggplot}, e.g. "circle_estimates",
     "tree_standard_estimates", "spring_parameters_wih_equality_constraints"
-    (typo kept for parity with R's own key name). Combinations that raise
-    an error are silently dropped, with a printed message.
+    (spelled as rwf spells it). Combinations that fail are skipped with a
+    printed message.
 
     Examples:
     >>> plot_cfa(fit)
@@ -344,228 +272,157 @@ def plot_cfa(model, **kwargs):
     layouts = ["circle", "tree", "spring"]
     whats = ["est", "std", "eq"]
     what_key = {"est": "estimates", "std": "standard_estimates", "eq": "parameters_wih_equality_constraints"}
-
     plots = {}
     for lay in layouts:
         for wh in whats:
             key = f"{lay}_{what_key[wh]}"
             try:
                 plots[key] = plot_cfa_gg(model, what=wh, layout=lay, **kwargs)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - rwf also skips diagrams it cannot draw
                 print(f"Skipping {key}: {exc}")
     return plots
 ##########################################################################################
 # MODEL
 ##########################################################################################
+def _summary_text(model, fit_indices):
+    """A short text summary of the model, in place of lavaan's summary() print."""
+    fit = fit_indices["fit"]
+    lines = [
+        f"Estimator: ML    Observations: {model.n}    Free parameters: {len(model.free)}",
+        f"Chi-square: {fit['chisq']:.3f}    df: {fit['df']:.0f}    p: {fit['pvalue']:.4f}",
+        f"CFI: {fit['cfi']:.3f}    TLI: {fit['tli']:.3f}    RMSEA: {fit['rmsea']:.3f} "
+        f"[{fit['rmsea.ci.lower']:.3f}, {fit['rmsea.ci.upper']:.3f}]    SRMR: {fit['srmr']:.3f}",
+    ]
+    return "\n".join(lines)
+
+
 def report_cfa(model, file=None, w=10, h=10):
     """
-    Full report for a fitted lavaan CFA/SEM model: R^2, fit indices,
-    (un)standardized estimates, parameter table, modification indices,
-    sample covariance, factor scores, path diagrams, and (optionally) a
-    text log and Excel export.
+    Full report of a fitted CFA/SEM model (port of rwf::report_cfa): R
+    squared, fit indices, parameter estimates, modification indices, sample
+    covariance, (un)standardized model matrices, factor scores and path
+    diagrams, optionally written to <file>_diagram.pdf, <file>.log and
+    <file>.xlsx.
 
     Parameters:
-    model: An rpy2 fitted lavaan model object.
-    file (str, optional): Output filename (without extension). When
-        given, writes "<file>_diagram.pdf", "<file>.log", "<file>.xlsx".
+    model (SEMFit): A model fitted with cfa() or sem() (rwf: a lavaan object).
+    file (str, optional): Output filename without extension.
     w, h (float, optional): PDF page size in inches. Defaults to 10, 10.
 
     Returns:
-    dict: r_squared, fit_indices, parameters, modification_indices,
-    sample_covariance, unstandardized_estimates, standardized_estimates
-    (both dicts of per-matrix DataFrames), group, predict, call.
+    dict: r_squared, fit_indices (lavaan's fitMeasures), parameters
+    (parameterEstimates with standardized values and R squared),
+    modification_indices, sample_covariance, unstandardized_estimates and
+    standardized_estimates (dicts of model matrices), group (empty: one
+    group), predict (data and factor scores) and call, as in rwf.
 
     Examples:
-    >>> import rpy2.robjects as ro
-    >>> ro.r('''
-    ...     model <- "LATENT=~ITEM1+ITEM2+ITEM3+ITEM4+ITEM5"
-    ...     df <- lavaan::simulateData(model=model, model.type="cfa",
-    ...                                return.type="data.frame", sample.nobs=100)
-    ...     fit <- lavaan::cfa(model, data=df, missing="ML")
-    ... ''')
-    >>> fit = ro.r["fit"]
+    >>> fit = cfa("LATENT =~ ITEM1 + ITEM2 + ITEM3 + ITEM4 + ITEM5", df)
     >>> result = report_cfa(fit)
     >>> result = report_cfa(fit, file="cfa")
     """
-    r_squared = pd.DataFrame({"r_squared": np.asarray(_lavaan.lavInspect(model, "rsquare"))},
-                              index=list(_lavaan.lavInspect(model, "rsquare").names))
-    fit_r = _lavaan.lavInspect(model, "fit")
-    fit_indices = pd.DataFrame({"fit": np.asarray(fit_r)}, index=list(fit_r.names))
-
-    def _named_list_to_dict(r_list):
-        out = {}
-        for name in r_list.names:
-            element = r_list.rx2(name)
-            out[name] = _r_matrix_to_pandas(element) if hasattr(element, "dim") and not _is_r_null(element.dim) \
-                else pd.Series(np.asarray(element))
-        return out
-
-    unstandardized_estimates = _named_list_to_dict(_lavaan.lavInspect(model, "est"))
-    standardized_estimates = _named_list_to_dict(_lavaan.lavInspect(model, "std"))
-
-    ngroups = int(_r_slot(model, "@Model@ngroups")[0])
+    _check_model(model)
+    r_squared = pd.DataFrame({"r_squared": pd.Series(model.rsquare())})
+    fit_indices = pd.DataFrame({"fit": pd.Series(model.fit_measures())})
+    parameters = model.parameter_estimates()
+    modification_indices = model.modification_indices()
+    sample_covariance = pd.DataFrame(model.sample_cov, index=model.observed, columns=model.observed)
+    unstandardized_estimates = model.inspect("est")
+    standardized_estimates = model.inspect("std")
     group = pd.DataFrame()
-    if ngroups > 1:
-        group = pd.DataFrame({
-            "GROUP_COLUMN": list(_lavaan.lavInspect(model, "group")),
-            "GROUPS": list(_lavaan.lavInspect(model, "group.label")),
-        })
-        group["NGROUPS"] = ngroups
-        group["OBSERVATIONS"] = list(_lavaan.lavInspect(model, "nobs"))
-        group["ORIGINAL_OBSERVATIONS"] = list(_lavaan.lavInspect(model, "norig"))
-        group["TOTAL"] = int(_lavaan.lavInspect(model, "ntotal")[0])
-
-    pe_fn = ro.r["parameterEstimates"]
-    parameters = _r_df_to_pandas(pe_fn(
-        model, se=True, zstat=True, pvalue=True, ci=True, level=0.95, **{"boot.ci.type": "perc"},
-        standardized=True, fmi=False,
-        **{"remove.system.eq": True, "remove.eq": False, "remove.ineq": False, "remove.def": False},
-        rsquare=True, **{"add.attributes": True}))
-
-    mi_fn = ro.r["modificationIndices"]
-    modification_indices = _r_df_to_pandas(mi_fn(
-        model, standardized=True, **{"cov.std": True}, information="expected", power=True, delta=0.1, alpha=0.05,
-        **{"high.power": 0.75, "sort.": True, "minimum.value": 0, "free.remove": False, "na.remove": True},
-        op=ro.NULL))
-
-    cov_list = _r_slot(model, "@SampleStats@cov")
-    sample_covariance = _r_matrix_to_pandas(cov_list[0])
-
-    pred = _lavaan.predict(model)
-    x_list = _r_slot(model, "@Data@X")
-    if len(_base.dim(pred)) if not _is_r_null(_base.dim(pred)) else 0:
-        predict_df = pd.concat([pd.DataFrame(np.asarray(x_list[0])),
-                                 pd.DataFrame(np.asarray(pred))], axis=1)
-    else:
-        predict_df = pd.concat([pd.DataFrame(np.asarray(x_list[0])),
-                                 pd.DataFrame(np.asarray(pred[0]))], axis=1)
-
-    call_str = _r_call_string(model).replace(" ", "")
-    call = pd.DataFrame({"call": [call_str]})
-
+    predict = pd.concat([model.data.reset_index(drop=True), model.predict().reset_index(drop=True)], axis=1)
+    call_string = f"sem(model='{model.model_syntax}',std_lv={model.std_lv})".replace(" ", "")
+    call = pd.DataFrame({"call": [call_string]})
     result = {
         "r_squared": r_squared, "fit_indices": fit_indices, "parameters": parameters,
         "modification_indices": modification_indices, "sample_covariance": sample_covariance,
         "unstandardized_estimates": unstandardized_estimates, "standardized_estimates": standardized_estimates,
-        "group": group, "predict": predict_df, "call": call,
+        "group": group, "predict": predict, "call": call,
     }
 
     plots = plot_cfa(model)
-    report_pdf(plotlist=list(plots.values()), file=file, title="diagram", w=w, h=h, print_plot=(file is None))
-
-    summary_str = "".join(ro.r["capture.output"](ro.r["summary"](
-        model, standardized=True, **{"fit.measures": True, "rsquare": True})))
-    log_lines = []
-    for section, output, instruction in [
-        ("SUMMARY", summary_str, None), ("R_SQUARED", r_squared, None), ("FIT INDICES", fit_indices, None),
-        ("PARAMETERS", parameters, None),
-        ("UNSTANDARDIZED PARAMETERS", "\n".join(f"{k}:\n{v}" for k, v in unstandardized_estimates.items()), None),
-        ("STANDARDIZED PARAMETERS", "\n".join(f"{k}:\n{v}" for k, v in standardized_estimates.items()), None),
-        ("SAMPLE COVARIANCE", sample_covariance, None), ("CALL", call_str, None),
-    ]:
-        import io
-        import contextlib
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            output_separator(section, output=output, instruction=instruction)
-        log_lines.append(buf.getvalue())
-    write_txt("".join(log_lines), file=file)
+    report_pdf(plotlist=list(plots.values()), file=file, title="diagram", w=w, h=h, print_plot=False)
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        for section, output in [
+            ("SUMMARY", _summary_text(model, fit_indices)), ("R_SQUARED", r_squared),
+            ("FIT INDICES", fit_indices), ("PARAMETERS", parameters),
+            ("UNSTANDARDIZED PARAMETERS", "\n".join(f"{k}:\n{v}" for k, v in unstandardized_estimates.items())),
+            ("STANDARDIZED PARAMETERS", "\n".join(f"{k}:\n{v}" for k, v in standardized_estimates.items())),
+            ("SAMPLE COVARIANCE", sample_covariance), ("CALL", call_string),
+        ]:
+            output_separator(section, output=output)
+    write_txt(buffer.getvalue().rstrip("\n"), file=file)
 
     if file is not None:
-        try:
-            from .functions_excel import excel_critical_value, excel_matrix
-        except ImportError:
-            from functions_excel import excel_critical_value, excel_matrix
-        writer = pd.ExcelWriter(f"{file}.xlsx", engine="xlsxwriter")
-        excel_critical_value(r_squared.reset_index(names="variable"), writer, sheetname="R_Squared")
-        excel_critical_value(fit_indices.reset_index(names="index"), writer, sheetname="Fit_Indices")
-        excel_critical_value(parameters, writer, sheetname="Parameters")
-        excel_critical_value(modification_indices, writer, sheetname="Modification_Indices")
-        if len(group) > 0:
+        filename = f"{file}.xlsx"
+        if os.path.exists(filename):
+            os.remove(filename)
+        with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
+            excel_critical_value(r_squared.reset_index(names="variable"), writer, sheetname="R_Squared")
+            excel_critical_value(fit_indices.reset_index(names="index"), writer, sheetname="Fit_Indices")
+            excel_critical_value(parameters, writer, sheetname="Parameters")
+            excel_critical_value(modification_indices, writer, sheetname="Modification_Indices")
             excel_critical_value(group, writer, sheetname="Groups")
-        excel_matrix(sample_covariance, writer, sheetname="Sample_Covariance")
-        excel_matrix(predict_df, writer, sheetname="Scores")
-        excel_critical_value(call, writer, sheetname="Call")
-        writer._save()
-        writer.close()
-
+            excel_matrix(sample_covariance, writer, sheetname="Sample_Covariance")
+            excel_matrix(predict, writer, sheetname="Scores")
+            excel_critical_value(call, writer, sheetname="Call")
     return result
 ##########################################################################################
 # SIMULATE CFA FROM COEFFICIENTS
 ##########################################################################################
 def simulate_cfa_fit(model_sim=None, model=None, df=None, minnobs=50, maxnobs=1000, stepping=10,
-                      file=None, w=10, h=10):
+                     file=None, w=10, h=10):
     """
-    Fit a CFA repeatedly across a range of sample sizes and collect fit
-    indices for each — useful for power/sample-size planning in SEM. Two
-    mutually exclusive workflows: `model_sim` (lavaan model string with
-    fixed coefficients, used to simulate population data at each sample
-    size) or `df` (observed data, resampled from its correlation
-    structure at each sample size via simulate_correlation_from_sample).
+    Fit a CFA at a range of sample sizes and collect its fit indices, for
+    power and sample size planning (port of rwf::simulate_cfa_fit). Data
+    come either from model_sim (lavaan syntax with fixed values, simulated
+    with simulate_data) or from df (resampled from its correlations with
+    simulate_correlation_from_sample).
 
     Parameters:
-    model_sim (str, optional): lavaan model string with fixed
-        coefficients, e.g. "F =~ 1*x1 + 0.8*x2".
-    model (str): lavaan model string with free coefficients, fit at
-        every sample size.
+    model_sim (str, optional): Model with fixed values, e.g. "F =~ 1*x1 + 0.8*x2".
+    model (str): Model with free parameters, fitted at every sample size.
     df (pandas.DataFrame, optional): Observed data to resample from.
-    minnobs, maxnobs, stepping (int, optional): Sample-size sweep range.
-        Defaults to 50, 1000, 10.
-    file (str, optional): Output filename (without extension) for a PDF
-        and Excel export. Defaults to None.
+    minnobs, maxnobs, stepping (int, optional): Sample sizes from minnobs to
+        maxnobs in steps of stepping. Defaults to 50, 1000, 10.
+    file (str, optional): Output filename (without extension) for a PDF and
+        an Excel workbook.
     w, h (float, optional): PDF page size in inches. Defaults to 10, 10.
 
     Returns:
-    list: [sim_results (pandas.DataFrame, one row per sample size), plots
-    (dict of plotnine.ggplot, one per fit index vs. sample size)].
+    list: [sim_results (DataFrame, one row per sample size: observations and
+    every fit index), plots (dict of scatter plots, one per fit index
+    against sample size)].
 
     Examples:
-    >>> import rpy2.robjects as ro
     >>> model_sim = "LATENT =~ 1*X1 + 0.5*X2 + 1.5*X3 + 1.5*X4 + X5"
     >>> model = "LATENT =~ X1 + X2 + X3 + X4 + X5"
-    >>> result = simulate_cfa_fit(model_sim=model_sim, model=model,
-    ...                           minnobs=50, maxnobs=300, stepping=100)
+    >>> result = simulate_cfa_fit(model_sim=model_sim, model=model, minnobs=50, maxnobs=300, stepping=100)
     """
-    sequence = range(minnobs, maxnobs + 1, stepping)
     rows = []
-    for nobs in sequence:
+    for nobs in range(minnobs, maxnobs + 1, stepping):
         if model_sim is not None:
-            sim_r = _lavaan.simulateData(model_sim, **{"model.type": "cfa"}, **{"return.type": "data.frame"},
-                                          **{"sample.nobs": nobs}, orthogonal=True)
-            sim = _r_df_to_pandas(sim_r)
+            sim = simulate_data(model_sim, sample_nobs=nobs, orthogonal=True)
         else:
             sim = simulate_correlation_from_sample(df, nrows=nobs)
-
-        with localconverter(ro.default_converter + pandas2ri.converter):
-            sim_r_conv = ro.conversion.py2rpy(sim)
-        fit_r = _lavaan.cfa(model, data=sim_r_conv)
-        fit_indices = _lavaan.lavInspect(fit_r, "fit")
         row = {"observations": nobs}
-        row.update(dict(zip(list(fit_indices.names), np.asarray(fit_indices))))
+        row.update(cfa(model, sim).fit_measures())
         rows.append(row)
-
     sim_results = pd.DataFrame(rows)
     plot_data = remove_nc(sim_results, remove_rows=True, aggressive=False, remove_cols=True,
-                           remove_zero_variance=True)
+                          remove_zero_variance=True)
     combinations = pd.DataFrame({"x": ["observations"] * len(plot_data.columns), "y": list(plot_data.columns)})
     combinations = combinations[combinations["y"] != "observations"]
     plots = plot_scatterplot(df=plot_data, combinations=combinations)
 
     if file is not None:
-        try:
-            from .functions_excel import excel_generic_format
-        except ImportError:
-            from functions_excel import excel_generic_format
-        writer = pd.ExcelWriter(f"{file}.xlsx", engine="xlsxwriter")
-        excel_generic_format(sim_results, writer, sheetname="simulation")
-        writer._save()
-        writer.close()
-    # plot_scatterplot returns seaborn JointGrid objects (see glm_linear_regression.py's
-    # own documented deviation) -- report_pdf expects a plotnine ggplot or matplotlib
-    # Figure, so the underlying Figure is extracted here for the export step only.
-    figures = [p.figure for p in plots.values() if p is not None]
-    report_pdf(plotlist=figures, w=w, h=h, file=file, print_plot=(file is None))
-
+        filename = f"{file}.xlsx"
+        if os.path.exists(filename):
+            os.remove(filename)
+        with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
+            excel_generic_format(sim_results, writer, sheetname="simulation")
+        report_pdf(plotlist=[p for p in plots.values() if p is not None], w=w, h=h, file=file, print_plot=False)
     return [sim_results, plots]
 ##########################################################################################
 # EXAMPLES
@@ -573,49 +430,19 @@ def simulate_cfa_fit(model_sim=None, model=None, df=None, minnobs=50, maxnobs=10
 if __name__ == "__main__":
     import matplotlib
     matplotlib.use("Agg")
-    import os
 
     print("=" * 80, "\nplot_cfa_gg / plot_cfa\n", "=" * 80, sep="")
-    ro.r("""
-        set.seed(12345)
-        model <- "LATENT1=~X1+X2+X3\nLATENT2=~X4+X5+X6"
-        df <- lavaan::simulateData(model=model, model.type="cfa",
-                                    return.type="data.frame", sample.nobs=200)
-        fit_multi <- lavaan::cfa(model, data=df)
-    """)
-    fit_multi = ro.r["fit_multi"]
-
-    for lay in ["tree", "circle", "spring"]:
-        p = plot_cfa_gg(fit_multi, what="std", layout=lay)
-        p.save(f"plot_cfa_gg_{lay}.png", verbose=False, width=8, height=6)
-        print(f"saved plot_cfa_gg_{lay}.png")
-
-    all_plots = plot_cfa(fit_multi)
-    print("plot_cfa keys:", list(all_plots.keys()))
+    data = simulate_data("LATENT1 =~ 1*X1 + 0.8*X2 + 0.6*X3; LATENT2 =~ 1*X4 + 0.7*X5 + 0.9*X6",
+                         sample_nobs=200, seed=12345)
+    fit_multi = cfa("LATENT1 =~ X1 + X2 + X3; LATENT2 =~ X4 + X5 + X6", data)
+    print(list(plot_cfa(fit_multi)))
 
     print("\n" + "=" * 80, "\nreport_cfa\n", "=" * 80, sep="")
-    ro.r("""
-        set.seed(12345)
-        model2 <- "LATENT=~ITEM1+ITEM2+ITEM3+ITEM4+ITEM5"
-        df2 <- lavaan::simulateData(model=model2, model.type="cfa",
-                                     return.type="data.frame", sample.nobs=200)
-        fit <- lavaan::cfa(model2, data=df2, missing="ML")
-    """)
-    fit = ro.r["fit"]
-    result = report_cfa(fit, file="cfa_report")
-    print("r_squared:\n", result["r_squared"])
-    print("\nfit_indices head:\n", result["fit_indices"].head())
-    print("\nparameters:\n", result["parameters"])
-    print("\nmodification_indices head:\n", result["modification_indices"].head())
-    print("\nsample_covariance:\n", result["sample_covariance"])
-    print("\npredict head:\n", result["predict"].head())
-    print("\ncall:", result["call"]["call"].iloc[0])
-    print("\nExcel/log/pdf written:", os.path.exists("cfa_report.xlsx"), os.path.exists("cfa_report.log"),
-          os.path.exists("cfa_report_diagram.pdf"))
+    data2 = simulate_data("LATENT =~ 1*ITEM1 + 0.8*ITEM2 + 0.7*ITEM3 + 0.9*ITEM4 + 0.6*ITEM5", sample_nobs=200, seed=1)
+    result = report_cfa(cfa("LATENT =~ ITEM1 + ITEM2 + ITEM3 + ITEM4 + ITEM5", data2))
+    print(result["parameters"])
 
-    print("\n" + "=" * 80, "\nsimulate_cfa_fit (coefficient-based)\n", "=" * 80, sep="")
-    model_sim = "LATENT =~ 1*X1 + 0.5*X2 + 1.5*X3 + 1.5*X4 + X5"
-    model_free = "LATENT =~ X1 + X2 + X3 + X4 + X5"
-    sim_result = simulate_cfa_fit(model_sim=model_sim, model=model_free, minnobs=50, maxnobs=250, stepping=100)
-    print("sim_results:\n", sim_result[0])
-    print("plot keys:", list(sim_result[1].keys()))
+    print("\n" + "=" * 80, "\nsimulate_cfa_fit\n", "=" * 80, sep="")
+    sim_result = simulate_cfa_fit(model_sim="LATENT =~ 1*X1 + 0.5*X2 + 1.5*X3 + 1.5*X4 + X5",
+                                  model="LATENT =~ X1 + X2 + X3 + X4 + X5", minnobs=50, maxnobs=250, stepping=100)
+    print(sim_result[0][["observations", "chisq", "cfi", "rmsea"]])

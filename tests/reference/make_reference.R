@@ -367,3 +367,66 @@ for (case in c("cfa2", "sem")) {
   ref(paste0("lavaan_", case, "_modindices"), data.frame(mi))
   ref(paste0("lavaan_", case, "_predict"), data.frame(lavaan::lavPredict(fit)))
 }
+fit <- lavaan::sem(lavaan_cases$sem$model, data = df_ocean_500)
+for (what in c("est", "std")) {
+  matrices <- lavaan::inspect(fit, what)
+  for (name in c("lambda", "theta", "psi", "beta")) {
+    ref(paste0("lavaan_sem_inspect_", what, "_", name), data.frame(unclass(matrices[[name]]), check.names = FALSE))
+  }
+}
+# FIML: the same data with about 5% of the values removed at random
+set.seed(2024)
+df_ocean_missing <- df_ocean_500[1:300, c(paste0("E", 1:5), paste0("N", 1:5))]
+holes <- matrix(runif(prod(dim(df_ocean_missing))) < 0.05, nrow(df_ocean_missing))
+df_ocean_missing[holes] <- NA
+df_ocean_missing[7, ] <- NA  # a respondent without any answer
+ref("lavaan_fiml_data", df_ocean_missing)
+fit <- lavaan::cfa("E =~ E1 + E2 + E3 + E4 + E5; N =~ N1 + N2 + N3 + N4 + N5", data = df_ocean_missing,
+                   missing = "ML", meanstructure = TRUE)
+ref("lavaan_fiml_parameters", lavaan::parameterEstimates(fit, standardized = TRUE, rsquare = TRUE))
+fm <- lavaan::fitMeasures(fit)
+ref("lavaan_fiml_fit", data.frame(measure = names(fm), value = as.numeric(fm)))
+scores <- matrix(NA_real_, nrow(df_ocean_missing), 2)
+scores[lavaan::lavInspect(fit, "case.idx"), ] <- lavaan::lavPredict(fit)
+ref("lavaan_fiml_predict", data.frame(E = scores[, 1], N = scores[, 2]))
+ref("lavaan_fiml_info", data.frame(information = fit@Options$information[1], h1 = fit@Options$h1.information[1],
+                                   ntotal = lavaan::lavInspect(fit, "ntotal"), npar = lavaan::lavInspect(fit, "npar")))
+mi <- lavaan::modificationIndices(fit, standardized = TRUE, cov.std = TRUE, information = "expected", power = TRUE,
+                                  delta = 0.1, alpha = 0.05, high.power = 0.75, sort. = TRUE, minimum.value = 0,
+                                  free.remove = FALSE, na.remove = TRUE, op = NULL)
+ref("lavaan_fiml_modindices", data.frame(mi))
+##########################################################################################
+# PSYCH EFA ENGINE (pwf's Python EFA is checked against psych::fa itself)
+##########################################################################################
+efa_data <- list(complete = df_ocean_500[, c(paste0("E", 1:5), paste0("N", 1:5))], missing = df_ocean_missing)
+for (data_case in names(efa_data)) {
+  for (nfactors in 1:3) {
+    model <- psych::fa(efa_data[[data_case]], nfactors = nfactors, rotate = "oblimin", fm = "ml", residuals = TRUE)
+    prefix <- paste0("psych_fa_", data_case, "_", nfactors)
+    ref(paste0(prefix, "_loadings"), data.frame(variable = rownames(model$loadings), unclass(model$loadings), check.names = FALSE))
+    ref(paste0(prefix, "_structure"), data.frame(variable = rownames(model$Structure), unclass(model$Structure), check.names = FALSE))
+    if (!is.null(model$Phi)) ref(paste0(prefix, "_phi"), data.frame(unclass(model$Phi), check.names = FALSE))
+    ref(paste0(prefix, "_residual"), data.frame(unclass(model$residual), check.names = FALSE))
+    stats_out <- c(RMSEA = unname(model$RMSEA[1]), RMSEA.lower = unname(model$RMSEA[2]), RMSEA.upper = unname(model$RMSEA[3]),
+                   RMSEA.conf = unname(model$RMSEA[4]), rms = model$rms, CFI = if (is.null(model$CFI)) NA else model$CFI,
+                   TLI = model$TLI, STATISTIC = model$STATISTIC, dof = model$dof, objective = model$objective,
+                   null.chisq = model$null.chisq, null.dof = model$null.dof, n.obs = model$n.obs)
+    ref(paste0(prefix, "_stats"), data.frame(stat = names(stats_out), value = unname(stats_out)))
+    ref(paste0(prefix, "_model_loadings"), model_loadings(model, matrix_type = "pattern", cut = 0.001, sort = TRUE))
+  }
+}
+##########################################################################################
+# GLM_VALIDITY
+##########################################################################################
+efa_items <- c(paste0("E", 1:10), paste0("N", 1:10))
+efa_reverse <- c("E2", "E4", "E6", "E8", "E10", "N2", "N4")
+df_efa <- df_ocean[1:400, efa_items]
+df_efa[df_efa == 0] <- NA
+ref("efa_cfa_data", df_efa)
+efa_dimensions <- data.frame(dimension = substr(efa_items, 1, 1), subquestion_text = efa_items,
+                             key = ifelse(efa_items %in% efa_reverse, 1, -1))
+efa_result <- suppressMessages(suppressWarnings(compute_efa_cfa(dimensions = efa_dimensions, df_response = df_efa,
+                                                                filename = file.path(tempdir(), "efa_cfa.xlsx"))))
+ref("compute_efa_cfa_models", efa_result$efa_cfa_models)
+ref("compute_efa_cfa_scores", efa_result$cfa_scores)
+ref("compute_efa_cfa_coefficients", efa_result$cfa_coefficients)

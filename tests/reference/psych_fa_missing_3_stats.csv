@@ -1,0 +1,14 @@
+"stat","value"
+"RMSEA",0
+"RMSEA.lower",0
+"RMSEA.upper",0.0499411456090651
+"RMSEA.conf",0.9
+"rms",0.0226629453401083
+"CFI",1
+"TLI",1.00143492872712
+"STATISTIC",17.4627136573916
+"dof",18
+"objective",0.0596336266046382
+"null.chisq",987.786057737099
+"null.dof",45
+"n.obs",300
