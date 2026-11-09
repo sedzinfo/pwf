@@ -386,7 +386,7 @@ def get_script_directory():
 ##########################################################################################
 def _call_source(frame):
     """Source text of the call expression currently running in frame (Python 3.11+)."""
-    positions = inspect.getframeinfo(frame).positions
+    positions = getattr(inspect.getframeinfo(frame), "positions", None)  # Python 3.11+
     if positions is None or positions.lineno is None:
         return None
     lines = [linecache.getline(frame.f_code.co_filename, n, frame.f_globals)
