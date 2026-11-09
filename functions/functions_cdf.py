@@ -303,6 +303,7 @@ def _r_value_text(value, kind):
     return str(value)
 
 
+@np.errstate(invalid="ignore")  # mean/sd of Inf and -Inf is NaN, as in R
 def _cdff_column(s, digits, nuniques):
     kind = _r_column_kind(s)
     is_na = s.isna()

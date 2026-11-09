@@ -18,7 +18,10 @@ load_data <- function(name) {
   utils::read.csv(file.path(data_dir, paste0(name, ".csv")), stringsAsFactors = FALSE)
 }
 ref <- function(name, x) {
-  utils::write.csv(x, file.path(out_dir, paste0(name, ".csv")), row.names = FALSE)
+  # binary connection: on Windows a text connection turns newlines inside values into \r\n
+  con <- file(file.path(out_dir, paste0(name, ".csv")), open = "wb")
+  on.exit(close(con))
+  utils::write.csv(x, con, row.names = FALSE)
   cat("wrote", name, "\n")
 }
 
@@ -48,6 +51,21 @@ for (case in list(list(name = "cdff_types", args = list()),
   result <- do.call(cdff, c(list(df = data), case$args))
   ref(paste0(case$name, "_check"), result$check)
   ref(paste0(case$name, "_summary"), result$summary)
+}
+##########################################################################################
+# FUNCTIONS_TRAIN_TEST
+##########################################################################################
+confusion_cases <- list(
+  perfect = list(observed = c(0, 0, 0, 1, 1, 1, 1), predicted = c(0, 0, 0, 1, 1, 1, 1)),
+  positive_0 = list(observed = c(0, 0, 0, 1, 1, 1, 1), predicted = c(0, 0, 0, 1, 1, 1, 0), positive = 0),
+  positive_1 = list(observed = c(0, 0, 0, 1, 1, 1, 1), predicted = c(0, 0, 0, 1, 1, 1, 0), positive = 1),
+  majority = list(observed = c(rep("no", 40), rep("yes", 10)),
+                  predicted = c(rep("no", 35), rep("yes", 5), rep("no", 3), rep("yes", 7))),
+  no_positive_predictions = list(observed = c("a", "a", "b", "b"), predicted = c("a", "a", "a", "a"))
+)
+for (case in names(confusion_cases)) {
+  p <- do.call(plot_confusion_extended, confusion_cases[[case]])
+  ref(paste0("plot_confusion_extended_", case), p$data)
 }
 ##########################################################################################
 # GLM_ANOVA

@@ -32,6 +32,8 @@ from sklearn.metrics import roc_curve, auc, confusion_matrix, cohen_kappa_score
 from plotnine import (
     ggplot, aes, geom_line, geom_abline, geom_tile, geom_text, geom_density,
     scale_fill_gradient, labs, theme, theme_bw, element_text, element_blank,
+    scale_fill_identity, scale_color_identity, scale_x_continuous, scale_y_continuous,
+    coord_fixed, theme_minimal,
 )
 ##########################################################################################
 # PLOT ROC
@@ -319,8 +321,130 @@ def proportion_accurate(observed, predicted):
         'kappa_linear': [kappa_linear],
         'kappa_squared': [kappa_squared]
     })
-    
+
     return result
+##########################################################################################
+# PLOT CONFUSION EXTENDED
+##########################################################################################
+def _r_label(value):
+    """R's as.character() of a class label: 1.0 -> "1"."""
+    if isinstance(value, (float, np.floating)) and float(value).is_integer():
+        return str(int(value))
+    if isinstance(value, (bool, np.bool_)):
+        return "TRUE" if value else "FALSE"
+    return str(value)
+
+
+def _r_color_ramp(low, high, n):
+    """
+    grDevices::colorRampPalette(c(low, high))(n): linear RGB steps as upper-case
+    hex. R's rgb(..., maxColorValue = 255) truncates fractional channel values.
+    """
+    low = np.array([int(low[i:i + 2], 16) for i in (1, 3, 5)], dtype=float)
+    high = np.array([int(high[i:i + 2], 16) for i in (1, 3, 5)], dtype=float)
+    steps = np.linspace(0, 1, n)[:, None]
+    rgb = np.floor(low + (high - low) * steps + 1e-9).astype(int)
+    return ["#{:02X}{:02X}{:02X}".format(*row) for row in rgb]
+
+
+def plot_confusion_extended(observed, predicted, positive=None, base_size=10, title=""):
+    """
+    2x2 confusion matrix with its row, column and overall measures (port of
+    rwf::plot_confusion_extended): counts shaded blue by size, precision /
+    false discovery rate and NPV / false omission rate beside the predicted
+    rows, sensitivity / miss rate and specificity / fall-out under the
+    observed columns, and accuracy, prevalence and the proportion
+    incorrectly classified in the corner.
+
+    plotnine cannot put the x axis on top, so the "Observed" labels sit
+    below the grid (above it in rwf). The plot's data (p.data) holds the
+    same cells, labels and colours as rwf's.
+
+    Parameters:
+    observed (array-like): True class labels, 2 distinct values.
+    predicted (array-like): Predicted class labels, same 2 values.
+    positive (optional): Label of the positive class. Defaults to the second
+        sorted label, as in rwf::confusion().
+    base_size (float, optional): Base font size. Defaults to 10.
+    title (str, optional): Added after "Confusion Matrix" in the title.
+
+    Returns:
+    plotnine.ggplot: The plot.
+
+    Examples:
+    >>> plot_confusion_extended(observed=[0, 0, 0, 1, 1, 1, 1], predicted=[0, 0, 0, 1, 1, 1, 0])
+    >>> plot_confusion_extended(observed=[0, 0, 0, 1, 1, 1, 1], predicted=[0, 0, 0, 1, 1, 1, 0], positive=0)
+    """
+    observed = np.array([_r_label(v) for v in observed])
+    predicted = np.array([_r_label(v) for v in predicted])
+    lvls = sorted(set(observed) | set(predicted))
+    if len(lvls) != 2:
+        raise ValueError("plot_confusion_extended() only supports a binary (2-class) confusion matrix")
+    positive = lvls[1] if positive is None else _r_label(positive)
+    negative = next(level for level in lvls if level != positive)
+
+    TP = int(np.sum((predicted == positive) & (observed == positive)))
+    TN = int(np.sum((predicted == negative) & (observed == negative)))
+    FP = int(np.sum((predicted == positive) & (observed == negative)))
+    FN = int(np.sum((predicted == negative) & (observed == positive)))
+    total = TP + TN + FP + FN
+
+    def ratio(a, b):
+        return a / b if b else np.nan
+
+    accuracy, prevalence, picc = (TP + TN) / total, (TP + FN) / total, (FN + FP) / total
+    sensitivity, miss_rate = ratio(TP, TP + FN), ratio(FN, TP + FN)
+    specificity, fallout = ratio(TN, FP + TN), ratio(FP, FP + TN)
+    precision, fdr = ratio(TP, TP + FP), ratio(FP, TP + FP)
+    npv, for_rate = ratio(TN, FN + TN), ratio(FN, FN + TN)
+
+    def pct(x):
+        return "NaN%" if np.isnan(x) else f"{x * 100:.1f}%"
+
+    seq_ramp = _r_color_ramp("#cde2fb", "#0d366b", 100)
+
+    def fill_for(n):
+        return seq_ramp[int(max(1, min(100, round(n / total * 99) + 1))) - 1]
+
+    ink_primary, ink_secondary, margin_fill = "#0b0b0b", "#52514e", "#f0efec"
+    cells = pd.DataFrame({
+        "col": [1, 2, 3, 1, 2, 3, 1, 2, 3],
+        "row": [3, 3, 3, 2, 2, 2, 1, 1, 1],
+        "kind": ["main", "main", "margin", "main", "main", "margin", "margin", "margin", "corner"],
+        "n": [TP, FP, np.nan, FN, TN, np.nan, np.nan, np.nan, np.nan],
+        "label": [
+            f"TP\n{TP}\n({pct(TP / total)})",
+            f"FP\n{FP}\n({pct(FP / total)})",
+            f"Precision\n{pct(precision)}\nFDR {pct(fdr)}",
+            f"FN\n{FN}\n({pct(FN / total)})",
+            f"TN\n{TN}\n({pct(TN / total)})",
+            f"NPV\n{pct(npv)}\nFOR {pct(for_rate)}",
+            f"Sensitivity\n{pct(sensitivity)}\nMiss Rate {pct(miss_rate)}",
+            f"Specificity\n{pct(specificity)}\nFall-out {pct(fallout)}",
+            f"Accuracy {pct(accuracy)}\nPrevalence {pct(prevalence)}\nIncorrect {pct(picc)}",
+        ],
+    })
+    main = cells["kind"] == "main"
+    cells["fill"] = [fill_for(n) if is_main else margin_fill for n, is_main in zip(cells["n"], main)]
+    cells["text_color"] = np.where(main & cells["n"].notna() & (cells["n"] / total > 0.5), "#ffffff", ink_primary)
+
+    col_labels = [f"Observed: {positive}", f"Observed: {negative}", ""]
+    row_labels = ["", f"Predicted: {negative}", f"Predicted: {positive}"]
+    return (ggplot(cells, aes(x="col", y="row"))
+            + geom_tile(aes(fill="fill"), color="#fcfcfb", size=2, width=0.96, height=0.96)
+            + geom_text(aes(label="label", color="text_color"), size=base_size * 0.95, fontweight="bold")
+            + scale_fill_identity()
+            + scale_color_identity()
+            + scale_x_continuous(breaks=[1, 2, 3], labels=col_labels, expand=(0.02, 0.02))
+            + scale_y_continuous(breaks=[1, 2, 3], labels=row_labels, expand=(0.02, 0.02))
+            + coord_fixed()
+            + labs(title=f"Confusion Matrix {title}", x="", y="", caption=f"Observations: {total}")
+            + theme_minimal(base_size=base_size)
+            + theme(axis_text=element_text(color=ink_secondary, weight="bold"),
+                    axis_ticks=element_blank(),
+                    panel_grid=element_blank(),
+                    plot_title=element_text(color=ink_primary, weight="bold"),
+                    plot_caption=element_text(color=ink_secondary)))
 ##########################################################################################
 # EXAMPLES
 ##########################################################################################
