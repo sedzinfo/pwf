@@ -358,12 +358,25 @@ class SEMFit:
         mplus = mplus.copy()
         np.fill_diagonal(mplus, mplus_diag)
         out["srmr_mplus"] = out["srmr_mplus_nomean"] = np.sqrt(np.mean(mplus[lower] ** 2))
-        # lavaan 0.7's gfi is the population estimate n p / (n p + 2 chisq - 2 df); the classic
+        # lavaan 0.7's gfi is the population estimate n p / (n p + 2 x2 - 2 df) with Browne's
+        # reweighted least squares statistic x2 = N/2 tr((Sigma^-1 (S - Sigma))^2); the classic
         # (LISREL) GFI is gfi_lisrel
         np_ = n * p
-        out["gfi"] = min(np_ / (np_ + 2 * chisq - 2 * df), 1.0)
-        out["gfi.ci.lower"] = min(np_ / (np_ + 2 * ncp_at(0.05)), 1.0)
-        out["gfi.ci.upper"] = min(np_ / (np_ + 2 * ncp_at(0.95)), 1.0)
+        weighted = inv @ (s - sigma)
+        x2_rls = n / 2 * np.trace(weighted @ weighted)
+
+        def ncp_rls(probability):
+            f = lambda lam: stats.ncx2.cdf(x2_rls, df, lam) - probability if lam > 0 else stats.chi2.cdf(x2_rls, df) - probability
+            if f(0) < 0:
+                return 0.0
+            upper = max(1.0, x2_rls)
+            while f(upper) > 0:
+                upper *= 2
+            return optimize.brentq(f, 0, upper, xtol=1e-12)
+
+        out["gfi"] = min(np_ / (np_ + 2 * x2_rls - 2 * df), 1.0)
+        out["gfi.ci.lower"] = min(np_ / (np_ + 2 * ncp_rls(0.05)), 1.0)
+        out["gfi.ci.upper"] = min(np_ / (np_ + 2 * ncp_rls(0.95)), 1.0)
         out["gfi.ci.level"] = 0.90
         out["cn_05"] = stats.chi2.ppf(0.95, df) / (chisq / n) + 1 if chisq > 0 else np.nan
         out["cn_01"] = stats.chi2.ppf(0.99, df) / (chisq / n) + 1 if chisq > 0 else np.nan

@@ -358,3 +358,12 @@ for (case in names(lavaan_cases)) {
   fm <- lavaan::fitMeasures(fit)
   ref(paste0("lavaan_", case, "_fit"), data.frame(measure = names(fm), value = as.numeric(fm)))
 }
+for (case in c("cfa2", "sem")) {
+  k <- lavaan_cases[[case]]
+  fit <- lavaan::sem(k$model, data = df_ocean_500, std.lv = k$std.lv)
+  mi <- lavaan::modificationIndices(fit, standardized = TRUE, cov.std = TRUE, information = "expected", power = TRUE,
+                                    delta = 0.1, alpha = 0.05, high.power = 0.75, sort. = TRUE, minimum.value = 0,
+                                    free.remove = FALSE, na.remove = TRUE, op = NULL)
+  ref(paste0("lavaan_", case, "_modindices"), data.frame(mi))
+  ref(paste0("lavaan_", case, "_predict"), data.frame(lavaan::lavPredict(fit)))
+}

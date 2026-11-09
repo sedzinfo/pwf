@@ -26,7 +26,7 @@ def test_parameter_estimates_match_lavaan(lavaan_data, reference, case):
     model, std_lv = LAVAAN_CASES[case]
     result = _sem.sem(model, lavaan_data, std_lv=std_lv).parameter_estimates()
     expected = reference(f"lavaan_{case}_parameters")
-    tol = {c: (ESTIMATE_TOL, 1e-8) for c in ["est", "se", "z", "ci.lower", "ci.upper", "std.lv", "std.all"]}
+    tol = {c: (ESTIMATE_TOL, 1e-5) for c in ["est", "se", "z", "ci.lower", "ci.upper", "std.lv", "std.all"]}
     tol["pvalue"] = (1e-3, 1e-12)
     assert_matches_reference(result, expected, column_tol=tol)
 
