@@ -3,7 +3,7 @@ venv
 output
 functions/.Rhistory
 functions/.RData
-functions/__pycache__
+__pycache__/
 *.egg-info/
 build/
 dist/

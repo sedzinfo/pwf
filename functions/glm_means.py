@@ -13,6 +13,19 @@ import pingouin as pg
 import itertools
 from scipy.stats import levene, bartlett
 ##########################################################################################
+# HELPERS
+##########################################################################################
+def _normalize_pingouin_columns(df):
+    """
+    Give pingouin output the same column names on every pingouin version.
+
+    pingouin < 0.7 used hyphenated names ("p-val", "cohen-d", "U-val",
+    "W-val", "CI95%"); 0.7 switched to underscores ("p_val", "cohen_d",
+    "U_val", "W_val", "CI95"). This maps both spellings to the underscore
+    form documented by report_ttests/report_wtests.
+    """
+    return df.rename(columns=lambda c: c.replace("-", "_").replace("CI95%", "CI95"))
+##########################################################################################
 # T-TEST
 ##########################################################################################
 def report_ttests(df,dv,iv,paired=False,alternative="two-sided",correction=False):
@@ -93,12 +106,12 @@ def report_ttests(df,dv,iv,paired=False,alternative="two-sided",correction=False
                 # df_test=pd.concat(variable_1,variable_2,axis=0).dropna()
                 levene_result=levene(variable_1,variable_2)
                 bartlett_result=bartlett(variable_1,variable_2)
-                ttest=pd.DataFrame(pg.ttest(variable_1,
+                ttest=_normalize_pingouin_columns(pd.DataFrame(pg.ttest(variable_1,
                                             variable_2,
                                             paired=paired,
                                             alternative=alternative,
                                             correction=correction,
-                                            r=0.707))
+                                            r=0.707)))
                 descriptives=pd.DataFrame({"Paired":[paired],
                                            "DV":[dependent],
                                            "IV":[factor],
@@ -205,13 +218,13 @@ def report_wtests(df,dv,iv,paired=False,alternative="two-sided"):
                 levene_result=levene(variable_1,variable_2)
                 bartlett_result=bartlett(variable_1,variable_2)
                 if paired:
-                    wtest=pd.DataFrame(pg.wilcoxon(variable_1,
+                    wtest=_normalize_pingouin_columns(pd.DataFrame(pg.wilcoxon(variable_1,
                                               variable_2,
-                                              alternative=alternative))
+                                              alternative=alternative)))
                 else:
-                    wtest=pd.DataFrame(pg.mwu(variable_1,
+                    wtest=_normalize_pingouin_columns(pd.DataFrame(pg.mwu(variable_1,
                                               variable_2,
-                                              alternative=alternative))
+                                              alternative=alternative)))
                 descriptives=pd.DataFrame({"Paired":[paired],
                                            "alternative":[alternative],
                                            "DV":[dependent],
