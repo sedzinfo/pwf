@@ -42,6 +42,7 @@ ref("compute_descriptives_iv", compute_descriptives(df = df_insurance, dv = c(1,
 ref("compute_descriptives_na", compute_descriptives(df = df_blood_pressure_na, dv = 4:5, iv = 3))
 ref("compute_aggregate", compute_aggregate(df = df_insurance, iv = c(2, 5)))
 ref("compute_aggregate_na", compute_aggregate(df = df_blood_pressure_na[, -1], iv = 2))
+ref("compute_aggregate_numeric_iv", compute_aggregate(df = df_insurance[, c("age", "children", "charges")], iv = 2))
 ref("compute_frequencies", compute_frequencies(df = df_insurance[, c(2, 4, 5, 6)]))
 ref("compute_frequencies_na", compute_frequencies(df = df_blood_pressure_na[, c(2, 3)]))
 ref("response_frequency", response_frequency(df_ocean_N))
