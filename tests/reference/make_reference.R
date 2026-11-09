@@ -9,6 +9,7 @@
 #   make reference RSCRIPT="C:/Program Files/R/R-4.6.2/bin/Rscript.exe"
 ##########################################################################################
 suppressPackageStartupMessages(library(rwf))
+grDevices::pdf(NULL)  # rwf's plot_* functions print their plots; draw them nowhere, not into Rplots.pdf
 
 script_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
 out_dir <- dirname(normalizePath(sub("^--file=", "", script_arg)))
@@ -67,7 +68,6 @@ ref("plot_response_frequencies_N1", response_plots[["N1"]]$data)
 ref("plot_response_frequencies_titles", data.frame(name = names(response_plots),
   title = sapply(response_plots, function(p) p$labels$title),
   caption = sapply(response_plots, function(p) p$labels$caption)))
-grDevices::pdf(NULL)  # plot_* functions print their plots
 ##########################################################################################
 # EXPLORE_ASSUMPTIONS
 ##########################################################################################
@@ -189,6 +189,29 @@ result <- suppressMessages(suppressWarnings(report_factorial_anova(df = unbalanc
 ref("report_factorial_anova_unbalanced_omnibus", result$omnibus)
 ref("report_factorial_anova_unbalanced_effect_size", result$omnibus_effect_size)
 ref("report_factorial_anova_unbalanced_post_hoc", result$post_hoc)
+old_contrasts <- options(contrasts = c("contr.sum", "contr.poly"))
+manova_cases <- list(
+  bp = manova(cbind(bp_before, bp_after) ~ sex * agegrp, data = df_blood_pressure),
+  insurance = manova(cbind(age, bmi, charges) ~ smoker * region, data = df_insurance)
+)
+for (case in names(manova_cases)) {
+  invisible(capture.output(manova_result <- report_manova(model = manova_cases[[case]])))
+  ref(paste0("report_manova_", case, "_multivariate"), manova_result$multivariate)
+  type_three <- manova_result$type_three
+  pillai <- t(sapply(type_three$terms, function(term) {
+    eig <- Re(eigen(solve(type_three$SSPE) %*% type_three$SSP[[term]])$values)
+    stats:::Pillai(eig, type_three$df[term], type_three$error.df)
+  }))
+  colnames(pillai) <- c("test stat", "approx F", "num Df", "den Df")
+  ref(paste0("report_manova_", case, "_type_three"), data.frame(term = type_three$terms, Df = type_three$df, pillai,
+    "Pr(>F)" = stats::pf(pillai[, 2], pillai[, 3], pillai[, 4], lower.tail = FALSE), check.names = FALSE))
+}
+for (ss in c("I", "II", "III")) {
+  ref(paste0("compute_aov_es_oneway_", ss), compute_aov_es(aov(uptake ~ Treatment, data = df_co2), ss = ss))
+  ref(paste0("compute_aov_es_factorial_", ss), compute_aov_es(aov(uptake ~ Treatment * Type, data = df_co2), ss = ss))
+  ref(paste0("compute_aov_es_unbalanced_", ss), compute_aov_es(aov(charges ~ smoker * region, data = df_insurance), ss = ss))
+}
+options(old_contrasts)
 oneway <- report_oneway(df = df_blood_pressure_na, dv = 4:5, iv = 2:3)
 for (table in c("fisher", "welch", "kruskal_wallis", "games_howell", "tukey", "homogeneity")) {
   ref(paste0("report_oneway_", table), oneway[[table]])
@@ -221,3 +244,36 @@ ref("report_wtests_na", report_wtests(df = df_blood_pressure_na, dv = 4, iv = 3)
 ref("report_ttests_insurance", report_ttests(df = df_insurance, dv = 7, iv = c(2, 4)))
 ref("report_wtests_insurance", report_wtests(df = df_insurance, dv = 7, iv = c(2, 4)))
 ref("report_wtests_insurance_less", report_wtests(df = df_insurance, dv = 7, iv = 4, alternative = "less"))
+##########################################################################################
+# ML_NLP
+##########################################################################################
+nlp_texts <- c(
+  "word_one word_two word_three",
+  "word_three word_four word_six",
+  "All the Lorem Ipsum generators on the Internet tend to repeat predefined chunks as necessary, making this the first true generator on the Internet.",
+  "It uses a dictionary of over 200 Latin words, combined with a handful of model sentence structures, to generate Lorem Ipsum which looks reasonable.",
+  "The generated Lorem Ipsum is therefore always free from repetition, injected humour, or non-characteristic words etc.",
+  "I'm sure it's   2024 -- they don't know (yet) what a b c means; café & naïve — résumé!",
+  "There are many variations of passages of Lorem Ipsum available, but the majority have suffered alteration in some form, by injected humour, or randomised words which don't look even slightly believable."
+)
+ref("nlp_texts", data.frame(text = nlp_texts))
+ref("clear_text", data.frame(text = clear_text(nlp_texts)))
+ref("clear_stopwords", data.frame(text = clear_stopwords(nlp_texts)))
+nlp_words <- strsplit(nlp_texts, split = " ")
+similarity <- do.call(rbind, lapply(seq_along(nlp_words), function(j) {
+  data.frame(i = 1, j = j, compute_text_similarity(nlp_words[[1]], nlp_words[[j]]))
+}))
+similarity <- rbind(similarity, data.frame(i = 3, j = 4, compute_text_similarity(nlp_words[[3]], nlp_words[[4]])),
+                    data.frame(i = 5, j = 7, compute_text_similarity(nlp_words[[5]], nlp_words[[7]])))
+ref("compute_text_similarity", similarity)
+tversky_cases <- list(list(c("a", "b", "c", "d"), c("b", "c", "d", "e"), 0.5, 0.5),
+                      list(c("a", "b", "c", "d"), c("b", "c", "d", "e"), 1, 1),
+                      list(c("a", "b", "c", "d"), c("b", "c", "d", "e"), 0.9, 0.1),
+                      list(c("a", "a", "b"), c("b", "b", "c"), 0.5, 0.5),
+                      list(c(1, 2, 3), c("2", "3", "4"), 0.5, 0.5),
+                      list(c("a", "b"), c("c", "d"), 0.5, 0.5))
+ref("compute_tversky_index", data.frame(case = seq_along(tversky_cases), value = sapply(tversky_cases, function(k)
+  compute_tversky_index(k[[1]], k[[2]], alpha = k[[3]], beta = k[[4]]))))
+ref("stat_word_char", stat_word_char(nlp_texts))
+tagged <- tag_pos(nlp_texts[3:5])
+ref("tag_pos", data.frame(tag = tagged$POStags))

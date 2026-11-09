@@ -1,0 +1,3 @@
+"call","ss","comparisons","Df","Sum Sq","Mean Sq","F value","Pr(>F)","etasq","partial_etasq","omegasq","partial_omegasq","epsilonsq","cohens_f"
+"uptake ~ Treatment","I","Treatment",1,988.114404761903,988.114404761903,9.293115169557,0.00309573325254165,0.101794260742413,0.101794260742413,0.0898562710156791,0.0898562710156791,0.0908405322148811,0.336646213107285
+"uptake ~ Treatment","I","Residuals",82,8718.86119047619,106.327575493612,NA,NA,NA,NA,NA,NA,NA,NA

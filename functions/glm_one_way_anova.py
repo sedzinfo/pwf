@@ -2,7 +2,7 @@
 """
 Port of rwf GLM_ANOVA.R (compute_kruskal_wallis_test, compute_friedman_test,
 compute_one_way_test, compute_posthoc, report_oneway, report_factorial_anova,
-compute_aov_es) plus
+report_manova, compute_aov_es) plus
 the Python-only compute_games_howell. Original notes:
 
 One-way/factorial ANOVA utilities: Kruskal-Wallis with effect sizes, a
@@ -28,6 +28,7 @@ import scipy.stats as stats
 import statsmodels.formula.api as smf
 from statsmodels.stats.anova import anova_lm
 import os
+import re
 from itertools import combinations, product
 try:
     from ._rcompat import r_label, r_levels, r_round, resolve_columns
@@ -35,6 +36,7 @@ try:
     from .functions_excel import excel_critical_value
     from .functions_plot import report_pdf
     from .functions_statistical import compute_adjustment
+    from .functions_strings import output_separator
     from .glm_anova_plot import plot_oneway, plot_oneway_diagnostics
 except ImportError:
     from _rcompat import r_label, r_levels, r_round, resolve_columns
@@ -42,6 +44,7 @@ except ImportError:
     from functions_excel import excel_critical_value
     from functions_plot import report_pdf
     from functions_statistical import compute_adjustment
+    from functions_strings import output_separator
     from glm_anova_plot import plot_oneway, plot_oneway_diagnostics
 ##########################################################################################
 # KRUSKALL WALLIS TEST WITH EFFECT SIZE
@@ -237,105 +240,68 @@ def compute_games_howell(y, x, digits=4):
 ##########################################################################################
 # ETA PARTIAL ETA OMEGA PARTIAL OMEGA FOR AOV
 ##########################################################################################
+def _r_model_label(text):
+    """R spelling of a statsmodels/patsy term or formula: C(Treatment, Sum) -> Treatment."""
+    return re.sub(r"C\(\s*([^,\)]+?)\s*(,[^\)]*)?\)", r"\1", text)
+
+
 def compute_aov_es(model, ss="I"):
     """
-    Eta/partial-eta/omega/partial-omega-squared and Cohen's f effect
-    sizes for every effect term in a fitted OLS ANOVA model, from its
-    Type I, II, or III sums-of-squares table.
+    Eta, partial eta, omega, partial omega and epsilon squared and Cohen's f
+    for every term of an ANOVA model, from its Type I, II or III sums of
+    squares table (port of rwf::compute_aov_es). Type III needs sum-to-zero
+    contrasts, e.g. C(factor, Sum) in the formula.
 
     Parameters:
     model (statsmodels RegressionResultsWrapper): A fitted
-        statsmodels.formula.api.ols(...) model.
-    ss (str, optional): "I", "II", or "III" -- which ANOVA sum-of-squares
-        table (statsmodels.stats.anova.anova_lm) to compute effect sizes
-        from. Defaults to "I".
+        statsmodels.formula.api.ols(...) model (R: an aov fit).
+    ss (str, optional): "I" (default), "II" or "III".
 
     Returns:
-    pandas.DataFrame: One row per effect term (Residual/Intercept
-    excluded from the effect-size columns, but still present as rows
-    with the raw ANOVA table columns), with call, ss, comparisons,
-    etasq, partial_etasq, omegasq, partial_omegasq, epsilonsq, cohens_f,
-    plus the underlying Df/Sum Sq/Mean Sq/F value/Pr(>F) columns.
+    pandas.DataFrame: Columns call, ss, comparisons, Df, Sum Sq, Mean Sq,
+    F value, Pr(>F), etasq, partial_etasq, omegasq, partial_omegasq,
+    epsilonsq, cohens_f; one row per term, then (Intercept) (Type III) and
+    Residuals, whose effect sizes are missing. Term names drop the C(...)
+    wrapper, as R prints them.
 
     Examples:
-    >>> import pandas as pd
     >>> import statsmodels.formula.api as smf
-    >>> df_co2 = pd.read_csv("data/co2.csv")
-    >>> one_way_between = smf.ols("uptake~Treatment", data=df_co2).fit()
-    >>> compute_aov_es(model=one_way_between, ss="I")
-    >>> factorial_between = smf.ols("uptake~Treatment*Type", data=df_co2).fit()
-    >>> compute_aov_es(model=factorial_between, ss="III")
+    >>> compute_aov_es(smf.ols("uptake ~ Treatment", data=df_co2).fit(), ss="I")
+    >>> compute_aov_es(smf.ols("uptake ~ C(Treatment, Sum) * C(Type, Sum)", data=df_co2).fit(), ss="III")
     """
-    # Get the model dataframe
-    model_df = model.model.data.frame
-    n_total = model_df.shape[0]
-
-    # Select appropriate summary table
-    if ss == "I":
-        ss1 = anova_lm(model, typ=1)
-        ss1 = ss1.rename(columns={'df': 'Df', 'sum_sq': 'Sum Sq', 'mean_sq': 'Mean Sq', 'F': 'F value', 'PR(>F)': 'Pr(>F)'})
-        ss1 = ss1[['Df', 'Sum Sq', 'Mean Sq', 'F value', 'Pr(>F)']]
-        summary_aov = ss1.reset_index()
-    elif ss == "II":
-        ss2 = anova_lm(model, typ=2)
-        ss2['Mean Sq'] = ss2['sum_sq'] / ss2['df']
-        ss2 = ss2.rename(columns={'df': 'Df', 'sum_sq': 'Sum Sq', 'F': 'F value', 'PR(>F)': 'Pr(>F)'})
-        ss2 = ss2[['Df', 'Sum Sq', 'Mean Sq', 'F value', 'Pr(>F)']]
-        summary_aov = ss2.reset_index()
-    elif ss == "III":
-        ss3 = anova_lm(model, typ=3)
-        ss3['Mean Sq'] = ss3['sum_sq'] / ss3['df']
-        ss3 = ss3.rename(columns={'df': 'Df', 'sum_sq': 'Sum Sq', 'F': 'F value', 'PR(>F)': 'Pr(>F)'})
-        ss3 = ss3[['Df', 'Sum Sq', 'Mean Sq', 'F value', 'Pr(>F)']]
-        ss3 = ss3.reset_index()
-
-        # Put every effect term first (in their original order), then Residual, then
-        # Intercept last -- generalizes to any model instead of assuming a single
-        # factor literally named "Treatment" (the previous hardcoded order silently
-        # dropped every other effect term for factorial/multi-factor models).
-        effect_rows = ss3[~ss3['index'].isin(['Intercept', 'Residual'])]
-        residual_row_df = ss3[ss3['index'] == 'Residual']
-        intercept_row_df = ss3[ss3['index'] == 'Intercept']
-        summary_aov = pd.concat([effect_rows, residual_row_df, intercept_row_df], ignore_index=True)
-    else:
-        raise ValueError('ss must be one of "I", "II", "III"')
-
-    residual_row = summary_aov[summary_aov["index"].str.contains("Residual")].index[0]
-    ms_effect = summary_aov.loc[:residual_row - 1, 'Mean Sq'].values
-    ms_error = summary_aov.loc[residual_row, 'Mean Sq']
-    df_effect = summary_aov.loc[:residual_row - 1, 'Df'].values
-    df_error = summary_aov.loc[residual_row, 'Df']
-    ss_effect = summary_aov.loc[:residual_row - 1, 'Sum Sq'].values
-    ss_error = summary_aov.loc[residual_row, 'Sum Sq']
-    ss_total = np.full_like(ss_effect, np.sum(summary_aov.loc[:, 'Sum Sq']), dtype=np.float64)
-
-    omega = np.abs((ss_effect - df_effect * ms_error) / (ss_total + ms_error))
-    partial_omega = np.abs((df_effect * (ms_effect - ms_error)) / (ss_effect + (n_total - df_effect) * ms_error))
-    eta = ss_effect / ss_total
+    if ss not in ("I", "II", "III"):
+        raise ValueError('ss must be "I", "II" or "III"')
+    table = anova_lm(model, typ={"I": 1, "II": 2, "III": 3}[ss])
+    table = pd.DataFrame({
+        "Df": table["df"].to_numpy(dtype=float),
+        "Sum Sq": table["sum_sq"].to_numpy(dtype=float),
+        "Mean Sq": (table["sum_sq"] / table["df"]).to_numpy(dtype=float),
+        "F value": table["F"].to_numpy(dtype=float),
+        "Pr(>F)": table["PR(>F)"].to_numpy(dtype=float),
+    }, index=[{"Intercept": "(Intercept)", "Residual": "Residuals"}.get(t, _r_model_label(t)) for t in table.index])
+    if ss == "III":
+        intercept, table = table.iloc[:1], table.iloc[1:]
+    effects, residual = table.iloc[:-1], table.iloc[-1]
+    ss_total = table["Sum Sq"].sum()
+    n_total = int(model.nobs)
+    ms_error, ss_error = residual["Mean Sq"], residual["Sum Sq"]
+    df_effect, ss_effect, ms_effect = effects["Df"], effects["Sum Sq"], effects["Mean Sq"]
     partial_eta = ss_effect / (ss_effect + ss_error)
-    cohens_f = np.sqrt(partial_eta / (1 - partial_eta))
-    epsilon = (ss_effect - df_effect * ms_error) / ss_total
-
-    comparison_names = summary_aov.loc[:residual_row - 1, 'index'].str.strip()
-
-    result = pd.DataFrame({
-        'call': str(model.model.formula),
-        'ss': ss,
-        'comparisons': comparison_names,
-        'etasq': eta,
-        'partial_etasq': partial_eta,
-        'omegasq': omega,
-        'partial_omegasq': partial_omega,
-        'epsilonsq': epsilon,
-        'cohens_f': cohens_f
+    sizes = pd.DataFrame({
+        "etasq": ss_effect / ss_total,
+        "partial_etasq": partial_eta,
+        "omegasq": (ss_effect - df_effect * ms_error) / (ss_total + ms_error),
+        "partial_omegasq": (df_effect * (ms_effect - ms_error)) / (ss_effect + (n_total - df_effect) * ms_error),
+        "epsilonsq": (ss_effect - df_effect * ms_error) / ss_total,
+        "cohens_f": np.sqrt(partial_eta / (1 - partial_eta)),
     })
-
-    summary_aov = summary_aov.rename(columns={'index': 'comparisons'})
-    summary_aov['call'] = str(model.model.formula)
-    summary_aov['ss'] = ss
-
-    merged = pd.merge(summary_aov, result, how='outer', on=['call', 'ss', 'comparisons'])
-    return merged
+    ordered = pd.concat([effects, intercept, table.iloc[-1:]] if ss == "III" else [effects, table.iloc[-1:]])
+    result = ordered.join(sizes)
+    call = _r_model_label(model.model.formula)
+    result.insert(0, "comparisons", result.index)
+    result.insert(0, "ss", ss)
+    result.insert(0, "call", call)
+    return result.reset_index(drop=True)
 ##########################################################################################
 # FRIEDMAN TEST WITH EFFECT SIZE
 ##########################################################################################
@@ -1058,6 +1024,141 @@ def report_factorial_anova(df, dv, wid, within=None, within_full=None, between=N
                     f"between={between},type={type},white_adjust={white_adjust})")
             excel_critical_value(pd.DataFrame({"call": [call]}), writer, sheetname="call")
     return result
+##########################################################################################
+# MANOVA RESULT
+##########################################################################################
+def _manova_term_name(name):
+    """R's term label for a patsy term name: Intercept -> (Intercept), C(N, Sum):P -> N:P."""
+    if name == "Intercept":
+        return "(Intercept)"
+    parts = []
+    for part in name.split(":"):
+        match = re.match(r"^C\(\s*([^,\)]+)", part)
+        parts.append(match.group(1).strip() if match else part)
+    return ":".join(parts)
+
+
+def _multivariate_test(test, eigenvalues, p, q, df_res):
+    """Statistic and approximate F of stats:::summary.manova for one term."""
+    eig = np.asarray(eigenvalues)
+    if test == "Pillai":
+        statistic = np.sum(eig / (1 + eig))
+        s, n, m = min(p, q), 0.5 * (df_res - p - 1), 0.5 * (abs(p - q) - 1)
+        tmp1, tmp2 = 2 * m + s + 1, 2 * n + s + 1
+        return statistic, (tmp2 / tmp1 * statistic) / (s - statistic), s * tmp1, s * tmp2
+    if test == "Wilks":
+        statistic = np.prod(1 / (1 + eig))
+        tmp1 = df_res - 0.5 * (p - q + 1)
+        tmp2 = (p * q - 2) / 4
+        tmp3 = p ** 2 + q ** 2 - 5
+        tmp3 = np.sqrt(((p * q) ** 2 - 4) / tmp3) if tmp3 > 0 else 1
+        return (statistic, ((statistic ** (-1 / tmp3) - 1) * (tmp1 * tmp3 - 2 * tmp2)) / p / q,
+                p * q, tmp1 * tmp3 - 2 * tmp2)
+    if test == "Hotelling-Lawley":
+        statistic = np.sum(eig)
+        m, n, s = 0.5 * (abs(p - q) - 1), 0.5 * (df_res - p - 1), min(p, q)
+        tmp1, tmp2 = 2 * m + s + 1, 2 * (s * n + 1)
+        return statistic, (tmp2 * statistic) / s / s / tmp1, s * tmp1, tmp2
+    statistic = np.max(eig)
+    tmp1 = max(p, q)
+    tmp2 = df_res - tmp1 + q
+    return statistic, tmp2 * statistic / tmp1, tmp1, tmp2
+
+
+def _manova_eigenvalues(hypothesis, error):
+    """Eigenvalues of E^-1 H (real, non-negative)."""
+    values = np.linalg.eigvals(np.linalg.solve(error, hypothesis)).real
+    return np.sort(np.clip(values, 0, None))[::-1]
+
+
+def report_manova(model, file=None):
+    """
+    MANOVA report (port of rwf::report_manova): Pillai's trace, Wilks' lambda,
+    the Hotelling-Lawley trace and Roy's largest root with approximate F tests
+    for every term, sequentially as summary(manova) gives them (intercept
+    included), and the Type III MANOVA table (Pillai) of car::Anova. Both are
+    printed and can be written to an Excel workbook.
+
+    Type III tests need sum-to-zero contrasts, so fit the model with them,
+    e.g. MANOVA.from_formula("y1 + y2 ~ C(a, Sum) * C(b, Sum)", data).
+
+    Parameters:
+    model (statsmodels.multivariate.manova.MANOVA): A model made with
+        MANOVA.from_formula (R: a manova fit).
+    file (str, optional): Excel filename without extension (sheets
+        "critical" and "call").
+
+    Returns:
+    dict: multivariate (Group, Df, Statistic, approx F, num Df, den Df,
+    Pr(>F), type), type_three (Df, test stat, approx F, num Df, den Df,
+    Pr(>F), one row per term) and call, as in rwf.
+
+    Examples:
+    >>> from statsmodels.multivariate.manova import MANOVA
+    >>> model = MANOVA.from_formula("bp_before + bp_after ~ C(sex, Sum) * C(agegrp, Sum)", data=df_blood_pressure)
+    >>> report_manova(model)
+    """
+    x = np.asarray(model.exog, dtype=float)
+    y = np.asarray(model.endog, dtype=float)
+    slices = model.data.model_spec.term_name_slices
+    n, p = y.shape
+    rank = np.linalg.matrix_rank(x)
+    df_res = n - rank
+    xtx_inv = np.linalg.pinv(x.T @ x)
+    coef = xtx_inv @ x.T @ y
+    residuals = y - x @ coef
+    error = residuals.T @ residuals
+
+    # sequential (Type I) hypothesis matrices, in model order
+    sequential, basis = [], np.zeros((n, 0))
+    for name, columns in slices.items():
+        block = x[:, columns]
+        if basis.shape[1]:
+            block = block - basis @ (basis.T @ block)
+        u, singular, _ = np.linalg.svd(block, full_matrices=False)
+        new = u[:, singular > 1e-8 * max(1.0, singular.max(initial=0))]
+        effects = new.T @ y
+        sequential.append((_manova_term_name(name), new.shape[1], effects.T @ effects))
+        basis = np.column_stack([basis, new])
+
+    blocks = []
+    for test in ["Pillai", "Wilks", "Hotelling-Lawley", "Roy"]:
+        rows = []
+        for term, q, hypothesis in sequential:
+            statistic, f_value, df1, df2 = _multivariate_test(test, _manova_eigenvalues(hypothesis, error),
+                                                              p, q, df_res)
+            rows.append({"Group": term, "Df": q, "Statistic": statistic, "approx F": f_value, "num Df": df1,
+                         "den Df": df2, "Pr(>F)": stats.f.sf(f_value, df1, df2)})
+        rows.append({"Group": "Residuals", "Df": df_res, "Statistic": np.nan, "approx F": np.nan,
+                     "num Df": np.nan, "den Df": np.nan, "Pr(>F)": np.nan})
+        block = pd.DataFrame(rows)
+        block["type"] = test
+        blocks.append(block)
+    pwhr = pd.concat(blocks, ignore_index=True)
+
+    three = []
+    for name, columns in slices.items():
+        columns = list(range(columns.start, columns.stop))
+        estimate = coef[columns]
+        hypothesis = estimate.T @ np.linalg.solve(xtx_inv[np.ix_(columns, columns)], estimate)
+        statistic, f_value, df1, df2 = _multivariate_test("Pillai", _manova_eigenvalues(hypothesis, error),
+                                                          p, len(columns), df_res)
+        three.append({"term": _manova_term_name(name), "Df": len(columns), "test stat": statistic,
+                      "approx F": f_value, "num Df": df1, "den Df": df2, "Pr(>F)": stats.f.sf(f_value, df1, df2)})
+    type_three = pd.DataFrame(three).set_index("term")
+    type_three.index.name = None
+
+    output_separator("Pillai,Wilks,Hotelling-Lawley,Roy Statistics", output=pwhr)
+    output_separator("type Three", output=type_three)
+    call = pd.DataFrame({"call": [f"MANOVA.from_formula({getattr(model, 'formula', '')!r})"]})
+    if file is not None:
+        filename = f"{file}.xlsx"
+        if os.path.exists(filename):
+            os.remove(filename)
+        with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
+            excel_critical_value(pwhr, writer, sheetname="critical", critical={"Pr(>F)": "<0.05"})
+            excel_critical_value(call, writer, sheetname="call")
+    return {"multivariate": pwhr, "type_three": type_three, "call": call}
 ##########################################################################################
 # EXAMPLES
 ##########################################################################################

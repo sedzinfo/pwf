@@ -153,3 +153,43 @@ def test_report_factorial_anova_writes_excel(df_factorial, tmp_path):
 def test_report_factorial_anova_rejects_unported_options(df_factorial):
     with pytest.raises(NotImplementedError):
         anova.report_factorial_anova(df=df_factorial, wid="id", dv="DV1", within=["W1"], within_covariates=["DV2"])
+
+
+MANOVA_CASES = {
+    "bp": ("bp_before + bp_after ~ C(sex, Sum) * C(agegrp, Sum)", "blood_pressure"),
+    "insurance": ("age + bmi + charges ~ C(smoker, Sum) * C(region, Sum)", "insurance"),
+}
+
+
+@pytest.mark.parametrize("case", MANOVA_CASES)
+def test_report_manova(load_data, reference, case, capsys):
+    from statsmodels.multivariate.manova import MANOVA
+    formula, data = MANOVA_CASES[case]
+    result = anova.report_manova(MANOVA.from_formula(formula, data=load_data(data)))
+    assert_matches_reference(result["multivariate"], reference(f"report_manova_{case}_multivariate"))
+    type_three = result["type_three"].rename_axis("term").reset_index()
+    assert_matches_reference(type_three, reference(f"report_manova_{case}_type_three"))
+    assert "Pillai,Wilks,Hotelling-Lawley,Roy Statistics" in capsys.readouterr().out
+
+
+def test_report_manova_writes_excel(load_data, tmp_path):
+    from statsmodels.multivariate.manova import MANOVA
+    model = MANOVA.from_formula(MANOVA_CASES["bp"][0], data=load_data("blood_pressure"))
+    anova.report_manova(model, file=str(tmp_path / "manova"))
+    assert list(pd.read_excel(tmp_path / "manova.xlsx", sheet_name=None)) == ["critical", "call"]
+
+
+AOV_ES_MODELS = {
+    "oneway": ("uptake ~ C(Treatment, Sum)", "co2"),
+    "factorial": ("uptake ~ C(Treatment, Sum) * C(Type, Sum)", "co2"),
+    "unbalanced": ("charges ~ C(smoker, Sum) * C(region, Sum)", "insurance"),
+}
+
+
+@pytest.mark.parametrize("ss", ["I", "II", "III"])
+@pytest.mark.parametrize("case", AOV_ES_MODELS)
+def test_compute_aov_es(load_data, reference, case, ss):
+    import statsmodels.formula.api as smf
+    formula, data = AOV_ES_MODELS[case]
+    result = anova.compute_aov_es(smf.ols(formula, data=load_data(data)).fit(), ss=ss)
+    assert_matches_reference(result, reference(f"compute_aov_es_{case}_{ss}"))
