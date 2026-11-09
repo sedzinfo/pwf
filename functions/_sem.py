@@ -358,17 +358,20 @@ class SEMFit:
         mplus = mplus.copy()
         np.fill_diagonal(mplus, mplus_diag)
         out["srmr_mplus"] = out["srmr_mplus_nomean"] = np.sqrt(np.mean(mplus[lower] ** 2))
-        product = inv @ s
-        gfi = 1 - np.trace((product - np.eye(p)) @ (product - np.eye(p))) / np.trace(product @ product)
-        out["gfi"] = gfi
-        out["gfi.ci.lower"] = p / (p + 2 * ncp_at(0.95) / n) if True else np.nan
-        out["gfi.ci.upper"] = p / (p + 2 * ncp_at(0.05) / n)
+        # lavaan 0.7's gfi is the population estimate n p / (n p + 2 chisq - 2 df); the classic
+        # (LISREL) GFI is gfi_lisrel
+        np_ = n * p
+        out["gfi"] = min(np_ / (np_ + 2 * chisq - 2 * df), 1.0)
+        out["gfi.ci.lower"] = min(np_ / (np_ + 2 * ncp_at(0.05)), 1.0)
+        out["gfi.ci.upper"] = min(np_ / (np_ + 2 * ncp_at(0.95)), 1.0)
         out["gfi.ci.level"] = 0.90
-        out["cn_05"] = stats.chi2.ppf(0.95, df) / (chisq / (n - 1)) + 1 if chisq > 0 else np.nan
-        out["cn_01"] = stats.chi2.ppf(0.99, df) / (chisq / (n - 1)) + 1 if chisq > 0 else np.nan
-        out["gfi_lisrel"] = gfi
-        out["agfi_lisrel"] = 1 - (moments / df) * (1 - gfi)
-        out["pgfi"] = (df / moments) * gfi
+        out["cn_05"] = stats.chi2.ppf(0.95, df) / (chisq / n) + 1 if chisq > 0 else np.nan
+        out["cn_01"] = stats.chi2.ppf(0.99, df) / (chisq / n) + 1 if chisq > 0 else np.nan
+        product = inv @ s
+        gfi_lisrel = 1 - np.trace((product - np.eye(p)) @ (product - np.eye(p))) / np.trace(product @ product)
+        out["gfi_lisrel"] = gfi_lisrel
+        out["agfi_lisrel"] = 1 - (moments / df) * (1 - gfi_lisrel)
+        out["pgfi"] = (df / moments) * gfi_lisrel
         out["mfi"] = np.exp(-0.5 * (chisq - df) / n)
         out["ecvi"] = chisq / n + 2 * npar / n
         return out
