@@ -454,7 +454,7 @@ def _kolmogorov_smirnov(x):
     n = len(x)
     ties = len(np.unique(x)) < n
     exact = n < 100 and not ties
-    cdf = stats.norm.cdf(np.sort(x), np.mean(x), np.std(x, ddof=1)) - np.arange(n) / n
+    cdf = stats.norm.cdf(np.sort(x), loc=np.mean(x), scale=np.std(x, ddof=1)) - np.arange(n) / n
     statistic = max(np.max(cdf), np.max(1 / n - cdf))
     if statistic <= 0:
         p = 1.0
@@ -472,7 +472,7 @@ def _kolmogorov_smirnov(x):
 def _pearson_chi_square(x, n_classes):
     """nortest::pearson.test(x, n.classes, adjust = TRUE)."""
     n = len(x)
-    num = np.floor(1 + n_classes * stats.norm.cdf(x, np.mean(x), np.std(x, ddof=1))).astype(int)
+    num = np.floor(1 + n_classes * stats.norm.cdf(x, loc=np.mean(x), scale=np.std(x, ddof=1))).astype(int)
     count = np.bincount(num[(num >= 1) & (num <= n_classes)], minlength=n_classes + 1)[1:]
     expected = n / n_classes
     statistic = np.sum((count - expected) ** 2 / expected)
