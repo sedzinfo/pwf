@@ -1,305 +1,446 @@
 # -*- coding: utf-8 -*-
 """
-Pairwise group-comparison reports: t-tests, Mann-Whitney U/Wilcoxon, and
-standalone Levene/Bartlett homogeneity-of-variance tests, each run over
-every pairwise combination of factor levels.
+Pairwise group-comparison reports (port of rwf GLM_MEANS.R): t-tests and
+Wilcoxon rank-sum tests over every pairwise combination of factor levels,
+Cohen's d and the Wilcoxon effect size r, plus a Python-only standalone
+Levene/Bartlett report.
+
+rwf is the original: function names, arguments and output columns follow
+rwf, and results are checked against rwf in tests/test_glm_means.py.
+stats::t.test and stats::wilcox.test are re-implemented here
+(_t_test_two_sample, _wilcox_test_two_sample) so that statistics, p values,
+confidence intervals and method labels match R, including wilcox.test's
+continuity correction, tie correction, exact distribution and the
+root-finding behind its confidence interval.
 """
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
+import itertools
 import numpy as np
 import pandas as pd
-import pingouin as pg
-import itertools
+from scipy import optimize, stats
 from scipy.stats import levene, bartlett
+try:
+    from .functions_excel import report_dataframe
+    from .functions_statistical import compute_adjustment
+except ImportError:
+    from functions_excel import report_dataframe
+    from functions_statistical import compute_adjustment
 ##########################################################################################
 # HELPERS
 ##########################################################################################
-def _normalize_pingouin_columns(df):
-    """
-    Give pingouin output the same column names on every pingouin version.
+_COHENS_D_COMMENT = ("measure of effect size\n\ncohen's d\n\nVery small\t0.01\t\tSawilowsky (2009)\n"
+                     "Small\t\t0.20\t\tCohen (1988)\nMedium\t\t0.50\t\tCohen (1988)\n"
+                     "Large\t\t0.80\t\tCohen (1988)\nVery large\t1.20\t\tSawilowsky (2009)\n"
+                     "Huge\t\t12.0\t\tSawilowsky (2009)")
 
-    pingouin < 0.7 used hyphenated names ("p-val", "cohen-d", "U-val",
-    "W-val", "CI95%"); 0.7 switched to underscores ("p_val", "cohen_d",
-    "U_val", "W_val", "CI95"). This maps both spellings to the underscore
-    form documented by report_ttests/report_wtests.
-    """
-    return df.rename(columns=lambda c: c.replace("-", "_").replace("CI95%", "CI95"))
+
+def _resolve_columns(df, columns):
+    """Column names from names or 1-based positions (as rwf's names(df)[iv])."""
+    if isinstance(columns, (str, int, np.integer)):
+        columns = [columns]
+    return [df.columns[c - 1] if isinstance(c, (int, np.integer)) else c for c in columns]
+
+
+def _parse_formula(formula):
+    """Split "dv ~ group" into ("dv", "group")."""
+    dv, group = (part.strip() for part in formula.split("~"))
+    return dv, group
+
+
+def _factor_levels(values):
+    """Sorted unique non-missing values, like the levels of R's factor()."""
+    return sorted(pd.unique(values.dropna()))
+
+
+def _level_label(level):
+    """R's as.character() of a factor level."""
+    if isinstance(level, (float, np.floating)) and float(level).is_integer():
+        return str(int(level))
+    return str(level)
+
+
+def _t_test_two_sample(x, y, alternative="two.sided", mu=0, var_equal=False, conf_level=0.95):
+    """Two-sample stats::t.test(x, y, ...): statistic, df, p, conf_int, method."""
+    nx, ny = len(x), len(y)
+    mx, my = np.mean(x), np.mean(y)
+    vx, vy = np.var(x, ddof=1), np.var(y, ddof=1)
+    if var_equal:
+        df = nx + ny - 2
+        v = ((nx - 1) * vx + (ny - 1) * vy) / df
+        stderr = np.sqrt(v * (1 / nx + 1 / ny))
+    else:
+        stderrx, stderry = np.sqrt(vx / nx), np.sqrt(vy / ny)
+        stderr = np.sqrt(stderrx ** 2 + stderry ** 2)
+        df = stderr ** 4 / (stderrx ** 4 / (nx - 1) + stderry ** 4 / (ny - 1))
+    tstat = (mx - my - mu) / stderr
+    if alternative == "less":
+        p = stats.t.cdf(tstat, df)
+        cint = (-np.inf, tstat + stats.t.ppf(conf_level, df))
+    elif alternative == "greater":
+        p = stats.t.sf(tstat, df)
+        cint = (tstat - stats.t.ppf(conf_level, df), np.inf)
+    else:
+        p = 2 * stats.t.cdf(-abs(tstat), df)
+        q = stats.t.ppf(1 - (1 - conf_level) / 2, df)
+        cint = (tstat - q, tstat + q)
+    cint = tuple(mu + c * stderr for c in cint)
+    method = "Welch Two Sample t-test" if not var_equal else " Two Sample t-test"
+    return {"statistic": tstat, "parameter": df, "p_value": p, "conf_int": cint, "method": method}
+
+
+def _wilcox_counts(m, n):
+    """Number of arrangements giving each Mann-Whitney statistic 0..m*n (R's cwilcox)."""
+    total = m + n
+    max_rank_sum = m * total
+    dp = np.zeros((m + 1, max_rank_sum + 1))
+    dp[0, 0] = 1.0
+    for rank in range(1, total + 1):
+        new = dp.copy()
+        new[1:, rank:] += dp[:-1, :max_rank_sum + 1 - rank]
+        dp = new
+    offset = m * (m + 1) // 2
+    return dp[m, offset:offset + m * n + 1]
+
+
+def _pwilcox(q, m, n, lower_tail=True):
+    counts = _wilcox_counts(m, n)
+    probs = counts / counts.sum()
+    q = int(np.floor(q + 1e-7))
+    lower = probs[:max(0, min(q, m * n)) + 1].sum() if q >= 0 else 0.0
+    return lower if lower_tail else 1.0 - lower
+
+
+def _qwilcox(p, m, n):
+    cumulative = np.cumsum(_wilcox_counts(m, n))
+    cumulative /= cumulative[-1]
+    return int(np.searchsorted(cumulative, p * (1 - 64 * np.finfo(float).eps)))
+
+
+def _wilcox_test_two_sample(x, y, alternative="two.sided", mu=0, exact=None, correct=True,
+                            conf_int=False, conf_level=0.95):
+    """Two-sample stats::wilcox.test(x, y, ...): statistic W, p, conf_int, method."""
+    x, y = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+    n_x, n_y = len(x), len(y)
+    r = stats.rankdata(np.concatenate([x - mu, y]))
+    statistic = r[:n_x].sum() - n_x * (n_x + 1) / 2
+    if exact is None:
+        exact = n_x < 50 and n_y < 50
+    ties = len(np.unique(r)) != len(r)
+    cint = None
+    if exact and not ties:
+        method = "Wilcoxon rank sum exact test"
+        if alternative == "two.sided":
+            if statistic > n_x * n_y / 2:
+                p = _pwilcox(statistic - 1, n_x, n_y, lower_tail=False)
+            else:
+                p = _pwilcox(statistic, n_x, n_y)
+            p = min(2 * p, 1.0)
+        elif alternative == "greater":
+            p = _pwilcox(statistic - 1, n_x, n_y, lower_tail=False)
+        else:
+            p = _pwilcox(statistic, n_x, n_y)
+        if conf_int:
+            alpha = 1 - conf_level
+            diffs = np.sort(np.subtract.outer(x, y).ravel())
+            if alternative == "two.sided":
+                qu = _qwilcox(alpha / 2, n_x, n_y) or 1
+                ql = n_x * n_y - qu
+                cint = (diffs[qu - 1], diffs[ql])
+            elif alternative == "greater":
+                qu = _qwilcox(alpha, n_x, n_y) or 1
+                cint = (diffs[qu - 1], np.inf)
+            else:
+                qu = _qwilcox(alpha, n_x, n_y) or 1
+                ql = n_x * n_y - qu
+                cint = (-np.inf, diffs[ql])
+    else:
+        method = "Wilcoxon rank sum test"
+
+        def continuity(z):
+            if not correct:
+                return 0.0
+            return {"two.sided": np.sign(z) * 0.5, "greater": 0.5, "less": -0.5}[alternative]
+
+        def sigma(ranks):
+            _, nties = np.unique(ranks, return_counts=True)
+            return np.sqrt((n_x * n_y / 12) * ((n_x + n_y + 1)
+                           - np.sum(nties ** 3 - nties) / ((n_x + n_y) * (n_x + n_y - 1))))
+
+        z = statistic - n_x * n_y / 2
+        z = (z - continuity(z)) / sigma(r)
+        if alternative == "two.sided":
+            p = 2 * min(stats.norm.cdf(z), stats.norm.sf(z))
+        elif alternative == "greater":
+            p = stats.norm.sf(z)
+        else:
+            p = stats.norm.cdf(z)
+        if correct:
+            method += " with continuity correction"
+        if conf_int:
+            alpha = 1 - conf_level
+            mumin, mumax = x.min() - y.max(), x.max() - y.min()
+
+            def wdiff(d, zq):
+                dr = stats.rankdata(np.concatenate([x - d, y]))
+                dz = dr[:n_x].sum() - n_x * (n_x + 1) / 2 - n_x * n_y / 2
+                return (dz - continuity(dz)) / sigma(dr) - zq
+
+            def root(zq):
+                if wdiff(mumin, zq) <= 0:
+                    return mumin
+                if wdiff(mumax, zq) >= 0:
+                    return mumax
+                return optimize.brentq(wdiff, mumin, mumax, args=(zq,), xtol=1e-4)
+
+            if alternative == "two.sided":
+                cint = (root(stats.norm.isf(alpha / 2)), root(stats.norm.ppf(alpha / 2)))
+            elif alternative == "greater":
+                cint = (root(stats.norm.isf(alpha)), np.inf)
+            else:
+                cint = (-np.inf, root(stats.norm.ppf(alpha)))
+    return {"statistic": statistic, "p_value": p, "conf_int": cint, "method": method}
+
+
+def _group_values(df, dv, iv, levels):
+    values = df.loc[df[iv] == levels[0], dv].astype(float).to_numpy()
+    other = df.loc[df[iv] == levels[1], dv].astype(float).to_numpy()
+    return values, other
+
+
+def _pairwise_report(df, dv, iv, run_test, file, comment):
+    """Shared loop of report_ttests/report_wtests: one row per DV x IV x level pair."""
+    rows = []
+    for dependent in _resolve_columns(df, dv):
+        for independent in _resolve_columns(df, iv):
+            complete = df[df[[dependent, independent]].notna().all(axis=1)]
+            for f1, f2 in itertools.combinations(_factor_levels(complete[independent]), 2):
+                x, y = _group_values(complete, dependent, independent, (f1, f2))
+                n1, n2 = len(x), len(y)
+                mean1, mean2 = x.mean(), y.mean()
+                sd1, sd2 = x.std(ddof=1), y.std(ddof=1)
+                sd_pooled = np.sqrt((sd1 ** 2 + sd2 ** 2) / 2)
+                cohen_d = abs(mean2 - mean1) / sd_pooled
+                k_squared, p_bartlett = bartlett(x, y)
+                test_columns, r = run_test(x, y, cohen_d)
+                rows.append({"DV": dependent, "IV": independent,
+                             "level1": _level_label(f1), "level2": _level_label(f2),
+                             "n1": n1, "n2": n2, **test_columns,
+                             "mean1": mean1, "mean2": mean2, "sd1": sd1, "sd2": sd2,
+                             "sd_pooled": sd_pooled, "d": cohen_d, "r": r,
+                             "k_squared[bartlett]": k_squared, "df[bartlett]": 1.0,
+                             "p[bartlett]": p_bartlett})
+    result = pd.DataFrame(rows)
+    adjustment = compute_adjustment(0.05, len(result))
+    result["bonferroni_p"] = adjustment["bonferroni"]
+    result["significant"] = np.where(adjustment["bonferroni"] > result["p"], "TRUE", "FALSE")
+    report_dataframe(result, file=file, sheet="t test", comment=comment,
+                     critical={"p": "<0.05", "p[bartlett]": "<0.05"})
+    return result
 ##########################################################################################
-# T-TEST
+# COHENS D
 ##########################################################################################
-def report_ttests(df,dv,iv,paired=False,alternative="two-sided",correction=False):
+def compute_cohens_d(formula, data):
     """
-    Run pairwise independent t-tests across factor levels and return a
-    reporting table.
+    Cohen's d for a two-level grouping factor, using the pooled standard
+    deviation sqrt((sd1^2 + sd2^2) / 2) (port of rwf::compute_cohens_d).
 
-    For every dependent variable in ``dv`` and every independent variable in
-    ``iv``, this tests every pairwise combination of that factor's levels
-    (e.g. a 3-level factor yields 3 comparisons: 1v2, 1v3, 2v3). Each
-    comparison row combines descriptive statistics (means, variances,
-    standard deviations, pooled sd), homogeneity-of-variance checks (Levene,
-    Bartlett), and the t-test itself (via :py:func:`pingouin.ttest`).
+    Parameters:
+    formula (str): "dv ~ group"; group must have exactly 2 levels.
+    data (pandas.DataFrame): Data containing both variables. Rows with a
+        missing value in either are dropped.
 
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Input data. Must contain every column named in ``dv`` and ``iv``.
-    dv : str or list of str
-        Dependent variable column name(s). A single string is treated as a
-        one-element list. Each dv is tested against every iv independently.
-    iv : list of str
-        Independent (grouping) variable column name(s). For each factor, the
-        t-test is run on every pairwise combination of its unique levels.
-    paired : bool, default False
-        Whether the two levels being compared are related (repeated
-        measures) rather than independent groups. Forwarded to
-        :py:func:`pingouin.ttest`.
-    alternative : str, default "two-sided"
-        Alternative hypothesis / tail of the test: "two-sided", "greater",
-        or "less". Forwarded to :py:func:`pingouin.ttest`.
-    correction : bool or "auto", default False
-        Whether to apply Welch's correction for unequal variances. If
-        "auto", Welch's t-test is used automatically when group sizes are
-        unequal. Forwarded to :py:func:`pingouin.ttest`.
+    Returns:
+    float: Absolute Cohen's d.
 
-    Returns
-    -------
-    pandas.DataFrame
-        One row per pairwise level comparison, per (dv, iv) combination.
-        Columns:
+    Examples:
+    >>> compute_cohens_d("bp_before ~ sex", df_blood_pressure)
+    """
+    dv, group = _parse_formula(formula)
+    data = data[[dv, group]].dropna()
+    levels = _factor_levels(data[group])
+    if len(levels) != 2:
+        raise ValueError("grouping factor must have exactly 2 levels")
+    x, y = _group_values(data, dv, group, levels)
+    sd_pooled = np.sqrt((x.std(ddof=1) ** 2 + y.std(ddof=1) ** 2) / 2)
+    return float(abs(x.mean() - y.mean()) / sd_pooled)
+##########################################################################################
+# T TEST
+##########################################################################################
+def report_ttests(df, dv, iv, file=None, alternative="two.sided", mu=0, var_equal=False, conf_level=0.95):
+    """
+    Pairwise t-tests of every dv across every pair of levels of every iv,
+    with descriptives, Cohen's d, r, Bartlett's test and a Bonferroni
+    adjustment (port of rwf::report_ttests).
 
-        * ``Paired`` : the ``paired`` argument used for this comparison
-        * ``DV`` : dependent variable name for this row
-        * ``IV`` : independent variable (factor) name for this row
-        * ``L1``, ``L2`` : the two factor levels being compared
-        * ``Mean_L1``, ``Mean_L2`` : dv mean within each level
-        * ``Var_L1``, ``Var_L2`` : dv variance within each level
-        * ``sd_L1``, ``sd_L2`` : dv standard deviation within each level
-        * ``pooled_sd`` : sqrt((sd_L1**2 + sd_L2**2) / 2)
-        * ``Levene``, ``Levene_p`` : Levene's test statistic and p-value for
-          equal variances between L1 and L2
-        * ``Bartlett``, ``Bartlett_p`` : Bartlett's test statistic and
-          p-value for equal variances between L1 and L2
-        * ``T``, ``dof``, ``alternative``, ``p_val``, ``CI95``,
-          ``cohen_d``, ``power``, ``BF10`` : as returned by
-          :py:func:`pingouin.ttest`. Note ``alternative`` appears twice
-          (once from this function's own descriptives, once echoed by
-          pingouin) since pandas allows duplicate column names.
+    Parameters:
+    df (pandas.DataFrame): Input data.
+    dv (str, int or list): Dependent variable(s), as column names or
+        1-based column positions (as in rwf).
+    iv (str, int or list): Independent (grouping) variable(s), as names or
+        1-based positions. Levels are compared in sorted order.
+    file (str, optional): Excel output filename without extension.
+    alternative (str, optional): "two.sided" (default), "less" or "greater".
+    mu (float, optional): Hypothesised mean difference. Defaults to 0.
+    var_equal (bool, optional): Pooled-variance t-test if True; Welch's
+        test (default) if False. R's var.equal.
+    conf_level (float, optional): Confidence level of the interval. R's conf.level.
 
-    Examples
-    --------
+    Returns:
+    pandas.DataFrame: One row per comparison with DV, IV, level1, level2,
+    n1, n2, t, df, p, CI_l, CI_u, alternative, method, mean1, mean2, sd1,
+    sd2, sd_pooled, d, r, k_squared[bartlett], df[bartlett], p[bartlett],
+    bonferroni_p and significant ("TRUE"/"FALSE").
+
+    Examples:
     >>> report_ttests(df=df_blood_pressure, dv="bp_before", iv=["sex", "agegrp"])
-    >>> report_ttests(df=df_blood_pressure, dv=["bp_before", "bp_after"], iv=["sex", "agegrp"])
+    >>> report_ttests(df=df_blood_pressure, dv=4, iv=[2, 3], var_equal=True, file="ttest")
     """
-    
-    if isinstance(dv, str):
-        dv = [dv]
+    comment = {
+        "DV": "dependent variable", "IV": "independent variable",
+        "level1": "level 1", "level2": "level 2",
+        "n1": "sample size for level 1", "n2": "sample size for level 2",
+        "t": "t statistic", "df": "degrees of freedom for t statistic", "p": "p value",
+        "CI_l": "confidence interval lower bound", "CI_u": "confidence interval upper bound",
+        "alternative": "alternative hypothesis", "method": "",
+        "mean1": "mean for level 1", "mean2": "mean for level 2",
+        "sd1": "standard deviation for level 1", "sd2": "standard deviation for level 2",
+        "sd_pooled": "pooled standard deviation\n\ncombined standard deviation of both levels",
+        "d": _COHENS_D_COMMENT, "r": "measure of effect size\n\ncorrelation effect size",
+        "k_squared[bartlett]": "bartlett test for homogeneity of variances\n\n",
+        "df[bartlett]": "bartlett test for homogeneity of variances\n\n",
+        "p[bartlett]": "bartlett test for homogeneity of variances\n\nsignificant values indicate heteroscedasticity",
+        "bonferroni_p": "bonferroni adjusted critical value for a=0.05",
+        "significant": "if TRUE result is significant after bonferroni adjustment",
+    }
 
-    result_iterative=pd.DataFrame()
-    for dependent in dv:
-        for factor in iv:
-            levels=df[factor].value_counts().index.values
-            combinations=list(itertools.combinations(levels,2))
-            for levels in combinations:
-                variable_1=df[df[factor]==levels[0]][dependent].astype(float)
-                variable_2=df[df[factor]==levels[1]][dependent].astype(float)
-                # df_test=pd.concat(variable_1,variable_2,axis=0).dropna()
-                levene_result=levene(variable_1,variable_2)
-                bartlett_result=bartlett(variable_1,variable_2)
-                ttest=_normalize_pingouin_columns(pd.DataFrame(pg.ttest(variable_1,
-                                            variable_2,
-                                            paired=paired,
-                                            alternative=alternative,
-                                            correction=correction,
-                                            r=0.707)))
-                descriptives=pd.DataFrame({"Paired":[paired],
-                                           "DV":[dependent],
-                                           "IV":[factor],
-                                           "L1":[levels[0]],
-                                           "L2":[levels[1]],
-                                           "Mean_L1":[variable_1.mean()],
-                                           "Mean_L2":[variable_2.mean()],
-                                           "Var_L1":[variable_1.var()],
-                                           "Var_L2":[variable_2.var()],
-                                           "sd_L1":[variable_1.std()],
-                                           "sd_L2":[variable_2.std()],
-                                           "pooled_sd":[np.sqrt(((variable_1.std()**2)+(variable_2.std()**2))/2)],
-                                           "Levene":[levene_result[0]],
-                                           "Levene_p":[levene_result[1]],
-                                           "Bartlett":[bartlett_result[0]],
-                                           "Bartlett_p":[bartlett_result[1]]},
-                                            index=ttest.index)
-                result=pd.concat([descriptives,ttest],axis=1)
-                result_iterative=pd.concat([result_iterative,result],axis=0)
-    return result_iterative
+    def run_test(x, y, cohen_d):
+        ttest = _t_test_two_sample(x, y, alternative=alternative, mu=mu, var_equal=var_equal,
+                                   conf_level=conf_level)
+        n1, n2 = len(x), len(y)
+        r = cohen_d / np.sqrt(cohen_d ** 2 + (n1 + n2 - 2) * (1 / n1 + 1 / n2))
+        return {"t": ttest["statistic"], "df": ttest["parameter"], "p": ttest["p_value"],
+                "CI_l": ttest["conf_int"][0], "CI_u": ttest["conf_int"][1],
+                "alternative": alternative, "method": ttest["method"]}, r
+
+    return _pairwise_report(df, dv, iv, run_test, file, comment)
 ##########################################################################################
-# WILCOXON / MANN-WHITNEY
+# WILCOXON EFFECT SIZE
 ##########################################################################################
-def report_wtests(df,dv,iv,paired=False,alternative="two-sided"):
+def compute_wilcoxon_effect_size(formula, data, mu=0, exact=None, correct=True):
     """
-    Run pairwise Mann-Whitney U or Wilcoxon signed-rank tests across
-    factor levels and return a reporting table.
+    Wilcoxon rank-sum effect size r = |Z| / sqrt(N), with Z recovered from the
+    two-sided wilcox.test p value (port of rwf::compute_wilcoxon_effect_size).
 
-    Non-parametric analogue of :py:func:`report_ttests`: for every
-    dependent variable in ``dv`` and every independent variable in ``iv``,
-    this tests every pairwise combination of that factor's levels (e.g. a
-    3-level factor yields 3 comparisons: 1v2, 1v3, 2v3). Each comparison row
-    combines descriptive statistics (means, variances, standard deviations,
-    pooled sd), homogeneity-of-variance checks (Levene, Bartlett), and the
-    rank test itself: Mann-Whitney U (via :py:func:`pingouin.mwu`) when
-    ``paired=False`` for independent groups, or the Wilcoxon signed-rank
-    test (via :py:func:`pingouin.wilcoxon`) when ``paired=True`` for
-    repeated measures / matched pairs.
+    Parameters:
+    formula (str): "dv ~ group" with a two-level group.
+    data (pandas.DataFrame): Data containing both variables.
+    mu (float, optional): Location shift. Defaults to 0.
+    exact (bool, optional): Exact p value; None (default) uses it when both
+        groups have fewer than 50 values and there are no ties.
+    correct (bool, optional): Continuity correction. Defaults to True.
 
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Input data. Must contain every column named in ``dv`` and ``iv``.
-    dv : str or list of str
-        Dependent variable column name(s). A single string is treated as a
-        one-element list. Each dv is tested against every iv independently.
-    iv : list of str
-        Independent (grouping) variable column name(s). For each factor, the
-        test is run on every pairwise combination of its unique levels.
-    paired : bool, default False
-        If False (default), runs the independent-samples Mann-Whitney U
-        test — each level's rows are treated as separate, unrelated
-        subjects. If True, runs the Wilcoxon signed-rank test instead,
-        which requires the two level-slices to be the same length and
-        row-aligned (e.g. via a long-format reshape of repeated measures,
-        the same pattern used with ``report_ttests(..., paired=True)``).
-    alternative : str, default "two-sided"
-        Alternative hypothesis / tail of the test: "two-sided", "greater",
-        or "less". Forwarded to :py:func:`pingouin.mwu` /
-        :py:func:`pingouin.wilcoxon`.
+    Returns:
+    float: Effect size r.
 
-    Returns
-    -------
-    pandas.DataFrame
-        One row per pairwise level comparison, per (dv, iv) combination.
-        Columns:
+    Examples:
+    >>> compute_wilcoxon_effect_size("bp_before ~ agegrp",
+    ...     df_blood_pressure[df_blood_pressure["agegrp"].isin(["30-45", "46-59"])])
+    """
+    dv, group = _parse_formula(formula)
+    data = data[[dv, group]].dropna()
+    levels = _factor_levels(data[group])
+    if len(levels) != 2:
+        raise ValueError("grouping factor must have exactly 2 levels")
+    x, y = _group_values(data, dv, group, levels)
+    wtest = _wilcox_test_two_sample(x, y, alternative="two.sided", mu=mu, exact=exact, correct=correct)
+    z = stats.norm.isf(wtest["p_value"] / 2)
+    return float(abs(z) / np.sqrt(len(data)))
+##########################################################################################
+# WILCOXON TEST
+##########################################################################################
+def report_wtests(df, dv, iv, file=None, alternative="two.sided", mu=0, exact=None, correct=True,
+                  conf_level=0.95):
+    """
+    Pairwise Wilcoxon rank-sum tests of every dv across every pair of levels
+    of every iv, with Hodges-Lehmann confidence intervals, descriptives,
+    Cohen's d, the Wilcoxon effect size r, Bartlett's test and a Bonferroni
+    adjustment (port of rwf::report_wtests).
 
-        * ``DV`` : dependent variable name for this row
-        * ``IV`` : independent variable (factor) name for this row
-        * ``L1``, ``L2`` : the two factor levels being compared
-        * ``Mean_L1``, ``Mean_L2`` : dv mean within each level
-        * ``Var_L1``, ``Var_L2`` : dv variance within each level
-        * ``sd_L1``, ``sd_L2`` : dv standard deviation within each level
-        * ``pooled_sd`` : sqrt((sd_L1**2 + sd_L2**2) / 2)
-        * ``Levene``, ``L_p`` : Levene's test statistic and p-value for
-          equal variances between L1 and L2
-        * ``Bartlett``, ``B_p`` : Bartlett's test statistic and p-value for
-          equal variances between L1 and L2
-        * ``U_val`` (paired=False) or ``W_val`` (paired=True),
-          ``alternative``, ``p_val``, ``RBC``, ``CLES`` : as returned by
-          :py:func:`pingouin.mwu` / :py:func:`pingouin.wilcoxon`. Note
-          ``alternative`` appears twice (once from this function's own
-          descriptives, once echoed by pingouin) since pandas allows
-          duplicate column names.
+    Parameters:
+    df (pandas.DataFrame): Input data.
+    dv (str, int or list): Dependent variable(s), as names or 1-based positions.
+    iv (str, int or list): Independent (grouping) variable(s), as names or
+        1-based positions. Levels are compared in sorted order.
+    file (str, optional): Excel output filename without extension.
+    alternative (str, optional): "two.sided" (default), "less" or "greater".
+    mu (float, optional): Location shift. Defaults to 0.
+    exact (bool, optional): Exact test; None (default) uses it when both
+        groups have fewer than 50 values and there are no ties.
+    correct (bool, optional): Continuity correction. Defaults to True.
+    conf_level (float, optional): Confidence level. R's conf.level.
 
-    Examples
-    --------
+    Returns:
+    pandas.DataFrame: One row per comparison with DV, IV, level1, level2,
+    n1, n2, W, p, CI_l, CI_u, alternative, method, mean1, mean2, sd1, sd2,
+    sd_pooled, d, r, k_squared[bartlett], df[bartlett], p[bartlett],
+    bonferroni_p and significant ("TRUE"/"FALSE"). r is always based on the
+    two-sided p value, whatever the alternative.
+
+    Examples:
     >>> report_wtests(df=df_blood_pressure, dv="bp_before", iv=["sex", "agegrp"])
-    >>> report_wtests(df=df_long, dv="bp", iv=["time"], paired=True)
+    >>> report_wtests(df=df_blood_pressure, dv=4, iv=[2, 3], alternative="less")
     """
+    comment = {
+        "DV": "dependent variable", "IV": "independent variable",
+        "level1": "level 1", "level2": "level 2",
+        "n1": "sample size for level 1", "n2": "sample size for level 2",
+        "W": "wilcoxon statistic", "df": "degrees of freedom for t statistic", "p": "p value",
+        "CI_l": "confidence interval lower bound", "CI_u": "confidence interval upper bound",
+        "alternative": "alternative hypothesis", "method": "",
+        "mean1": "mean for level 1", "mean2": "mean for level 2",
+        "sd1": "standard deviation for level 1", "sd2": "standard deviation for level 2",
+        "sd_pooled": "pooled standard deviation\n\ncombined standard deviation of both levels",
+        "d": _COHENS_D_COMMENT, "r": "measure of effect size\n\ncorrelation effect size",
+        "k_squared[bartlett]": "bartlett test for homogeneity of variances\n\n",
+        "df[bartlett]": "bartlett test for homogeneity of variances\n\n",
+        "p[bartlett]": "bartlett test for homogeneity of variances\n\nsignificant values indicate heteroscedasticity",
+        "bonferroni_p": "bonferroni adjusted critical value for a=0.05",
+        "significant": "if TRUE result is significant after bonferroni adjustment",
+    }
 
+    def run_test(x, y, cohen_d):
+        wtest = _wilcox_test_two_sample(x, y, alternative=alternative, mu=mu, exact=exact,
+                                        correct=correct, conf_int=True, conf_level=conf_level)
+        two_sided = _wilcox_test_two_sample(x, y, alternative="two.sided", mu=mu, exact=exact,
+                                            correct=correct)
+        r = abs(stats.norm.isf(two_sided["p_value"] / 2)) / np.sqrt(len(x) + len(y))
+        return {"W": wtest["statistic"], "p": wtest["p_value"],
+                "CI_l": wtest["conf_int"][0], "CI_u": wtest["conf_int"][1],
+                "alternative": alternative, "method": wtest["method"]}, r
 
-    if isinstance(dv, str):
-        dv = [dv]
-
-    result_iterative=pd.DataFrame()
-    for dependent in dv:
-        for factor in iv:
-            levels=df[factor].value_counts().index.values
-            combinations=list(itertools.combinations(levels,2))
-            for levels in combinations:
-                variable_1=df[df[factor]==levels[0]][dependent].astype(float)
-                variable_2=df[df[factor]==levels[1]][dependent].astype(float)
-                levene_result=levene(variable_1,variable_2)
-                bartlett_result=bartlett(variable_1,variable_2)
-                if paired:
-                    wtest=_normalize_pingouin_columns(pd.DataFrame(pg.wilcoxon(variable_1,
-                                              variable_2,
-                                              alternative=alternative)))
-                else:
-                    wtest=_normalize_pingouin_columns(pd.DataFrame(pg.mwu(variable_1,
-                                              variable_2,
-                                              alternative=alternative)))
-                descriptives=pd.DataFrame({"Paired":[paired],
-                                           "alternative":[alternative],
-                                           "DV":[dependent],
-                                           "IV":[factor],
-                                           "L1":[levels[0]],
-                                           "L2":[levels[1]],
-                                           "Mean_L1":[variable_1.mean()],
-                                           "Mean_L2":[variable_2.mean()],
-                                           "Var_L1":[variable_1.var()],
-                                           "Var_L2":[variable_2.var()],
-                                           "sd_L1":[variable_1.std()],
-                                           "sd_L2":[variable_2.std()],
-                                           "pooled_sd":[np.sqrt(((variable_1.std()**2)+(variable_2.std()**2))/2)],
-                                           "Levene":[levene_result[0]],
-                                           "L_p":[levene_result[1]],
-                                           "Bartlett":[bartlett_result[0]],
-                                           "B_p":[bartlett_result[1]]},
-                                            index=wtest.index)
-                result=pd.concat([descriptives,wtest],axis=1)
-                result_iterative=pd.concat([result_iterative,result],axis=0)
-    return result_iterative
+    return _pairwise_report(df, dv, iv, run_test, file, comment)
 ##########################################################################################
 # LEVENE
 ##########################################################################################
 def report_levene_bartlett(df, dv, iv):
     """
     Run pairwise Levene and Bartlett homogeneity-of-variance tests across
-    factor levels and return a reporting table.
+    factor levels and return a reporting table. Python-only (no rwf
+    counterpart).
 
-    For every independent variable in ``iv``, this tests every pairwise
-    combination of that factor's levels (e.g. a 3-level factor yields 3
-    comparisons: 1v2, 1v3, 2v3), checking whether ``dv`` has equal variance
-    between the two levels via Levene's test and Bartlett's test.
+    Parameters:
+    df (pandas.DataFrame): Input data. Must contain dv and every column in iv.
+    dv (str): Dependent variable column name.
+    iv (list of str): Independent (grouping) variable column name(s). For
+        each factor, every pairwise combination of its levels is tested.
 
-    This is a standalone version of the same Levene/Bartlett columns that
-    :py:func:`report_ttests` and :py:func:`report_wtests` compute inline —
-    use it when you only need the variance-homogeneity check, without
-    running a t-test/Mann-Whitney U alongside it.
+    Returns:
+    pandas.DataFrame: One row per pairwise level comparison, per factor,
+    with IV, L1, L2, Levene, Levene_p, Bartlett, Bartlett_p.
 
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Input data. Must contain ``dv`` and every column named in ``iv``.
-    dv : str
-        Dependent variable column name. Unlike :py:func:`report_ttests` /
-        :py:func:`report_wtests`, only a single column name is supported
-        (not a list).
-    iv : list of str
-        Independent (grouping) variable column name(s). For each factor,
-        the tests are run on every pairwise combination of its unique
-        levels.
-
-    Returns
-    -------
-    pandas.DataFrame
-        One row per pairwise level comparison, per factor in ``iv``.
-        Columns:
-
-        * ``IV`` : independent variable (factor) name for this row
-        * ``L1``, ``L2`` : the two factor levels being compared
-        * ``Levene``, ``Levene_p`` : Levene's test statistic and p-value
-        * ``Bartlett``, ``Bartlett_p`` : Bartlett's test statistic and
-          p-value
-
-    Notes
-    -----
-    ``dv`` is passed to ``levene``/``bartlett`` as-is, without casting to
-    float. If ``dv`` is an integer-dtype column, this can trigger a known
-    bug in some scipy versions (``bartlett`` raising
-    ``ValueError: cannot convert float NaN to integer``) — see the
-    ``.astype(float)`` workaround applied in :py:func:`report_ttests` /
-    :py:func:`report_wtests` for the fix, which isn't applied here.
-
-    Examples
-    --------
+    Examples:
     >>> report_levene_bartlett(df=df_blood_pressure, dv="bp_before", iv=["sex", "agegrp"])
     """
     result_iterative = pd.DataFrame()
@@ -332,18 +473,20 @@ if __name__ == "__main__":
         else pd.read_csv("../data/blood_pressure.csv")
 
     with pd.option_context('display.max_columns', None, 'display.width', 200):
-        print("=" * 80, "\nreport_ttests\n", "=" * 80, sep="")
-        print(report_ttests(df=df_blood_pressure, dv="bp_before", iv=["sex", "agegrp"]).round(2))
-        print(report_ttests(df=df_blood_pressure, dv=["bp_before", "bp_after"], iv=["sex", "agegrp"]).round(2))
+        print("=" * 80, "\ncompute_cohens_d\n", "=" * 80, sep="")
+        print(compute_cohens_d("bp_before ~ sex", df_blood_pressure))
 
-        df_long = pd.melt(df_blood_pressure, id_vars=['patient', 'sex', 'agegrp'],
-                           value_vars=['bp_before', 'bp_after'], var_name='time', value_name='bp')
-        print(report_ttests(df=df_long, dv='bp', iv=['time'], paired=True).round(2))
+        print("\n" + "=" * 80, "\nreport_ttests\n", "=" * 80, sep="")
+        print(report_ttests(df=df_blood_pressure, dv="bp_before", iv=["sex", "agegrp"]).round(2))
+        print(report_ttests(df=df_blood_pressure, dv=4, iv=[2, 3], var_equal=True).round(2))
+
+        print("\n" + "=" * 80, "\ncompute_wilcoxon_effect_size\n", "=" * 80, sep="")
+        print(compute_wilcoxon_effect_size(
+            "bp_before ~ agegrp", df_blood_pressure[df_blood_pressure["agegrp"].isin(["30-45", "46-59"])]))
 
         print("\n" + "=" * 80, "\nreport_wtests\n", "=" * 80, sep="")
         print(report_wtests(df=df_blood_pressure, dv="bp_before", iv=["sex", "agegrp"]).round(2))
-        print(report_wtests(df=df_long, dv='bp', iv=['time'], paired=True).round(2))
+        print(report_wtests(df=df_blood_pressure, dv="bp_before", iv=["sex", "agegrp"], alternative="less").round(2))
 
         print("\n" + "=" * 80, "\nreport_levene_bartlett\n", "=" * 80, sep="")
         print(report_levene_bartlett(df=df_blood_pressure, dv="bp_before", iv=["sex", "agegrp"]))
-

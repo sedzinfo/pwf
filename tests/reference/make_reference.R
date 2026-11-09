@@ -23,8 +23,43 @@ ref <- function(name, x) {
 }
 
 df_blood_pressure <- load_data("blood_pressure")
+df_insurance <- load_data("insurance")
+# blood pressure with a few missing values, to check NA handling
+df_blood_pressure_na <- df_blood_pressure
+df_blood_pressure_na$bp_before[c(3, 50, 99)] <- NA
+df_blood_pressure_na$agegrp[c(10, 70)] <- NA
 ##########################################################################################
 # GLM_ANOVA
 ##########################################################################################
 ref("compute_kruskal_wallis_test",
     compute_kruskal_wallis_test(formula = bp_before ~ agegrp, df = df_blood_pressure))
+ref("compute_kruskal_wallis_test_na",
+    compute_kruskal_wallis_test(formula = bp_before ~ agegrp, df = df_blood_pressure_na))
+##########################################################################################
+# GLM_MEANS
+##########################################################################################
+ref("compute_cohens_d", data.frame(
+  formula = c("bp_before ~ sex", "bp_after ~ sex", "charges ~ smoker"),
+  d = c(compute_cohens_d(bp_before ~ sex, df_blood_pressure),
+        compute_cohens_d(bp_after ~ sex, df_blood_pressure),
+        compute_cohens_d(charges ~ smoker, df_insurance))))
+bp_two_groups <- df_blood_pressure[df_blood_pressure$agegrp %in% c("30-45", "46-59"), ]
+children_4_5 <- df_insurance[df_insurance$children %in% c(4, 5), ]
+ref("compute_wilcoxon_effect_size", data.frame(
+  case = c("bp_before_agegrp", "bp_before_agegrp_nocorrect", "charges_children_4_5"),
+  r = c(compute_wilcoxon_effect_size(bp_before ~ agegrp, bp_two_groups),
+        compute_wilcoxon_effect_size(bp_before ~ agegrp, bp_two_groups, correct = FALSE),
+        compute_wilcoxon_effect_size(charges ~ children, children_4_5))))
+for (alt in c("two.sided", "less", "greater")) {
+  ref(paste0("report_ttests_", alt),
+      report_ttests(df = df_blood_pressure, dv = 4:5, iv = 2:3, alternative = alt))
+  ref(paste0("report_wtests_", alt),
+      report_wtests(df = df_blood_pressure, dv = 4:5, iv = 2:3, alternative = alt))
+}
+ref("report_ttests_var_equal",
+    report_ttests(df = df_blood_pressure, dv = 4, iv = 2:3, var.equal = TRUE))
+ref("report_ttests_na", report_ttests(df = df_blood_pressure_na, dv = 4, iv = 3))
+ref("report_wtests_na", report_wtests(df = df_blood_pressure_na, dv = 4, iv = 3))
+ref("report_ttests_insurance", report_ttests(df = df_insurance, dv = 7, iv = c(2, 4)))
+ref("report_wtests_insurance", report_wtests(df = df_insurance, dv = 7, iv = c(2, 4)))
+ref("report_wtests_insurance_less", report_wtests(df = df_insurance, dv = 7, iv = 4, alternative = "less"))

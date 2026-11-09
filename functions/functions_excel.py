@@ -7,6 +7,7 @@ critical-value tables, and confusion-matrix sheets.
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
+import os
 import numpy as np
 import pandas as pd
 import xlsxwriter
@@ -290,6 +291,66 @@ def excel_confusion_matrix(df,writer,sheetname="Confusion Matrix",title="Rows: E
         if fmt is not None:
             for i in range(nrow):
                 sheet.write(i+1,j+1,df.iat[i,j],fmt)
+##########################################################################################
+# REPORT DATAFRAME
+##########################################################################################
+def report_dataframe(df, file=None, type="critical_value", sheet="output", comment=None, critical=None, **kwargs):
+    """
+    Write a data frame to a formatted Excel workbook, or return it unchanged
+    (port of rwf::report_dataframe).
+
+    Parameters:
+    df (pandas.DataFrame): Data to report.
+    file (str, optional): Output filename without extension; ".xlsx" is
+        appended and an existing file is replaced. If None (default),
+        nothing is written and df is returned.
+    type (str, optional): "critical_value" (default) writes the sheet via
+        excel_critical_value; "matrix" writes it via excel_matrix.
+    sheet (str, optional): Worksheet name. Defaults to "output".
+    comment (dict, optional): Column name -> header comment text.
+    critical (dict, optional): Column name -> threshold expression(s),
+        e.g. {"p": "<0.05"}; only used when type="critical_value".
+    **kwargs: Passed on to excel_matrix (e.g. decimals) when type="matrix".
+
+    Returns:
+    pandas.DataFrame or None: df when file is None, otherwise None (as in R).
+
+    Examples:
+    >>> report_dataframe(df_blood_pressure)
+    >>> report_dataframe(df_blood_pressure, file="blood_pressure", sheet="data", critical={"bp_before": ">170"})
+    """
+    if file is None:
+        return df
+    filename = f"{file}.xlsx"
+    if os.path.exists(filename):
+        os.remove(filename)
+    with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
+        if type == "critical_value":
+            excel_critical_value(df, writer, sheetname=sheet, comments=comment, critical=critical)
+        if type == "matrix":
+            excel_matrix(df, writer, sheetname=sheet, comments=comment, **kwargs)
+    return None
+##########################################################################################
+# DATA FRAME INDEX
+##########################################################################################
+def data_frame_index(nrow, ncol):
+    """
+    Row/column index pairs for every cell of an nrow x ncol table, column by
+    column, 1-based (port of rwf::data_frame_index).
+
+    Parameters:
+    nrow (int): Number of rows.
+    ncol (int): Number of columns.
+
+    Returns:
+    numpy.ndarray: nrow*ncol x 2 integer array with columns ri (row) and ci (column).
+
+    Examples:
+    >>> data_frame_index(3, 2)
+    """
+    ri = np.tile(np.arange(1, nrow + 1), ncol)
+    ci = np.repeat(np.arange(1, ncol + 1), nrow)
+    return np.column_stack([ri, ci])
 ##########################################################################################
 # EXAMPLES
 ##########################################################################################
