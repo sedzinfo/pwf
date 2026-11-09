@@ -277,3 +277,65 @@ ref("compute_tversky_index", data.frame(case = seq_along(tversky_cases), value =
 ref("stat_word_char", stat_word_char(nlp_texts))
 tagged <- tag_pos(nlp_texts[3:5])
 ref("tag_pos", data.frame(tag = tagged$POStags))
+##########################################################################################
+# ML_XGBOOST
+##########################################################################################
+multi_trees_tables <- function(model, features_keep) {
+  `:=` <- data.table::`:=`
+  tree.matrix <- xgboost::xgb.model.dt.tree(model = model)
+  data.table::setDT(tree.matrix)
+  root.nodes <- tree.matrix[tree.matrix$Node == 0, ]$ID
+  tree.matrix$abs.node.position <- NA_character_
+  tree.matrix$abs.node.position[tree.matrix$ID %in% root.nodes] <- tree.matrix$ID[tree.matrix$ID %in% root.nodes]
+  precedent.nodes <- root.nodes
+  while (sum(is.na(tree.matrix$abs.node.position)) > 0) {
+    yes.rows <- tree.matrix[tree.matrix$abs.node.position %in% precedent.nodes & !is.na(tree.matrix$Yes), ]
+    no.rows <- tree.matrix[tree.matrix$abs.node.position %in% precedent.nodes & !is.na(tree.matrix$No), ]
+    yes.pos <- paste0(yes.rows$abs.node.position, "_0")
+    no.pos <- paste0(no.rows$abs.node.position, "_1")
+    tree.matrix$abs.node.position[match(yes.rows$Yes, tree.matrix$ID)] <- yes.pos
+    tree.matrix$abs.node.position[match(no.rows$No, tree.matrix$ID)] <- no.pos
+    precedent.nodes <- c(yes.pos, no.pos)
+  }
+  tree.matrix$Yes[!is.na(tree.matrix$Yes)] <- paste0(tree.matrix$abs.node.position[!is.na(tree.matrix$Yes)], "_0")
+  tree.matrix$No[!is.na(tree.matrix$No)] <- paste0(tree.matrix$abs.node.position[!is.na(tree.matrix$No)], "_1")
+  for (nm in c("abs.node.position", "Yes", "No")) tree.matrix[[nm]] <- sub("^[0-9]+-", "", tree.matrix[[nm]])
+  gains <- tree.matrix[, list(Gain = sum(Gain)), by = list(abs.node.position, Feature)]
+  nodes <- gains[, list(Text = paste0(paste0(Feature[seq_len(min(length(Feature), features_keep))], " (",
+    format(Gain[seq_len(min(length(Gain), features_keep))], digits = 5), ")"), collapse = "\n")),
+    by = abs.node.position]
+  splits <- tree.matrix[tree.matrix$Feature != "Leaf", ]
+  edges <- unique(rbind(data.frame(From = splits$abs.node.position, To = splits$Yes),
+                        data.frame(From = splits$abs.node.position, To = splits$No)))
+  list(nodes = as.data.frame(nodes), edges = edges)
+}
+# models trained here and saved as xgboost JSON, so pwf analyses the very same trees
+df_admission <- load_data("admission")
+xgb_cases <- list(
+  classification = list(data = df_admission, label = "admit", features = c("gre", "gpa", "rank"),
+                        params = list(objective = "binary:logistic", nthread = 1, max_depth = 3, eta = 0.3)),
+  regression = list(data = df_insurance, label = "charges", features = c("age", "bmi", "children"),
+                    params = list(objective = "reg:squarederror", nthread = 1, max_depth = 3, eta = 0.3))
+)
+for (case in names(xgb_cases)) {
+  k <- xgb_cases[[case]]
+  train <- k$data[1:300, ]
+  test <- k$data[301:400, ]
+  dtrain <- xgboost::xgb.DMatrix(as.matrix(train[, k$features]), label = train[[k$label]])
+  dtest <- xgboost::xgb.DMatrix(as.matrix(test[, k$features]), label = test[[k$label]])
+  set.seed(1)
+  model <- xgboost::xgb.train(params = k$params, data = dtrain, nrounds = 15,
+                              evals = list(train = dtrain, eval = dtest), verbose = 0)
+  xgboost::xgb.save(model, file.path(out_dir, paste0("xgb_", case, ".json")))
+  report <- report_xgboost(model = model, validation_data = test, label = k$label, file = NULL)
+  ref(paste0("report_xgboost_", case, "_importance"), report$result$importance)
+  ref(paste0("report_xgboost_", case, "_model_summary"), report$result$model_summary)
+  ref(paste0("report_xgboost_", case, "_validation_metrics"), report$result$validation_metrics)
+  ref(paste0("report_xgboost_", case, "_evaluation_log"), report$result$evaluation_log)
+  ref(paste0("report_xgboost_", case, "_predicted"), data.frame(observed = report$observed, predicted = report$predicted))
+  ref(paste0("report_xgboost_", case, "_depth"), as.data.frame(report$plots$depth$data))
+  # xgb.plot.multi.trees needs DiagrammeR only to draw; this is its own code up to that point
+  multi <- multi_trees_tables(model, features_keep = 10)
+  ref(paste0("plot_trees_xgboost_", case, "_nodes"), multi$nodes)
+  ref(paste0("plot_trees_xgboost_", case, "_edges"), multi$edges)
+}

@@ -1,0 +1,5 @@
+"Metric","value"
+"N",100
+"AUC",0.592087912087912
+"Log loss",0.674861978392327
+"Accuracy (cut-off 0.5)",0.62
