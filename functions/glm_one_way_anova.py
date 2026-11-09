@@ -774,7 +774,9 @@ class _Strata:
         cache = self.__dict__.setdefault("_codes", {})
         key = tuple(keys)
         if key not in cache:
-            codes = pd.MultiIndex.from_arrays([self.long[k].to_numpy() for k in keys]).factorize()[0]                 if len(keys) > 1 else pd.factorize(self.long[keys[0]].to_numpy())[0]
+            arrays = [self.long[k].to_numpy() for k in keys]
+            codes = (pd.MultiIndex.from_arrays(arrays).factorize()[0] if len(keys) > 1
+                     else pd.factorize(arrays[0])[0])
             cache[key] = (codes, np.bincount(codes))
         codes, counts = cache[key]
         return (np.bincount(codes, weights=v) / counts)[codes]
@@ -864,34 +866,25 @@ def _pairwise_means(strata, aov_ms, factors_subset, family_factors):
     """emmeans pairwise comparisons (Tukey adjusted) of the cells of factors_subset."""
     long = strata.long
     model_factors = strata.between + strata.within
-    full_cells = long.groupby(model_factors, sort=False)[strata.dv].agg(["mean", "size"])
+    full_levels = [strata.levels[f] for f in model_factors]
+    full_cells = [tuple(reversed(c)) for c in product(*reversed(full_levels))]
+    full_index = {c: i for i, c in enumerate(full_cells)}
+    obs_cell = np.array([full_index[c] for c in zip(*[long[f].to_numpy() for f in model_factors])])
+    counts = np.bincount(obs_cell, minlength=len(full_cells)).astype(float)
+    cell_means = np.bincount(obs_cell, weights=strata.y, minlength=len(full_cells)) / counts
+    positions = [model_factors.index(f) for f in factors_subset]
     level_lists = [strata.levels[f] for f in factors_subset]
     cells = [tuple(reversed(c)) for c in product(*reversed(level_lists))]  # first factor fastest
     labels = [" ".join(r_label(v) for v in c) for c in cells]
-    full_index = {k if isinstance(k, tuple) else (k,): (m, s) for k, (m, s) in full_cells.iterrows()}
-    other = [f for f in model_factors if f not in factors_subset]
-    other_cells = list(product(*[strata.levels[f] for f in other]))
-
-    def weights(cell):
-        w = {}
-        for o in other_cells:
-            key = dict(zip(factors_subset, cell))
-            key.update(dict(zip(other, o)))
-            w[tuple(key[f] for f in model_factors)] = 1 / len(other_cells)
-        return w
-
-    cell_weights = [weights(c) for c in cells]
-    means = [sum(wt * full_index[k][0] for k, wt in w.items()) for w in cell_weights]
-    obs_keys = list(zip(*[long[f].to_numpy() for f in model_factors]))
+    membership = np.array([[tuple(fc[p] for p in positions) == c for fc in full_cells] for c in cells], dtype=float)
+    weights = membership / membership.sum(axis=1, keepdims=True)  # equal weights over the other factors
+    means = weights @ cell_means
+    strata_used = [(s, ms, df_s) for s, (ms, df_s) in enumerate(aov_ms) if df_s > 0]
     rows = []
     for i, j in combinations(range(len(cells)), 2):
-        coef = {k: cell_weights[i].get(k, 0) - cell_weights[j].get(k, 0)
-                for k in set(cell_weights[i]) | set(cell_weights[j])}
-        a = np.array([coef.get(k, 0) / full_index[k][1] for k in obs_keys])
+        a = ((weights[i] - weights[j]) / counts)[obs_cell]
         parts = []
-        for s, (ms, df_s) in enumerate(aov_ms):
-            if df_s <= 0:
-                continue
+        for s, ms, df_s in strata_used:
             projected = strata.project(a, s)
             parts.append((ms * float(projected @ projected), df_s))
         variance = sum(v for v, _ in parts)
