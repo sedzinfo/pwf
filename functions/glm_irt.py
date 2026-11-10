@@ -350,16 +350,16 @@ def report_irt(model, m2=True, file=None):
             from functions_excel import excel_critical_value, excel_matrix
         writer = pd.ExcelWriter(f"{file}.xlsx", engine="xlsxwriter")
         excel_critical_value(model_coefficients.reset_index(names="item"), writer,
-                              sheetname="Coefficients", comments=comment)
+                              sheet="Coefficients", comment=comment)
         excel_critical_value(model_coefficients_oblimin.reset_index(names="item"), writer,
-                              sheetname="Coefficients Oblimin", comments=comment)
-        excel_critical_value(item_fit, writer, sheetname="item fit", comments=comment)
-        excel_critical_value(g2_fit, writer, sheetname="G2", comments=comment)
+                              sheet="Coefficients Oblimin", comment=comment)
+        excel_critical_value(item_fit, writer, sheet="item fit", comment=comment)
+        excel_critical_value(g2_fit, writer, sheet="G2", comment=comment)
         if isinstance(m2_fit, pd.DataFrame):
-            excel_critical_value(m2_fit, writer, sheetname="M2", comments=comment)
-        excel_matrix(q3_matrix, writer, sheetname="Q3")
-        excel_critical_value(exp_residuals, writer, sheetname="Residuals")
-        excel_critical_value(model_options.reset_index(names="option"), writer, sheetname="Model Options")
+            excel_critical_value(m2_fit, writer, sheet="M2", comment=comment)
+        excel_matrix(q3_matrix, writer, sheet="Q3")
+        excel_critical_value(exp_residuals, writer, sheet="Residuals")
+        excel_critical_value(model_options.reset_index(names="option"), writer, sheet="Model Options")
         writer._save()
         writer.close()
 

@@ -2,19 +2,23 @@
 """
 Python port of R rwf::EXPLORE_TIME_SERIES.R.
 
-Notes on the port:
-  - R's `ts` object (value + start/frequency) has no direct Python
-    equivalent, so every function here accepts a plain array-like /
-    pandas Series and uses a numeric 0..n-1 time index, matching what
-    R's own `time(df)` reduces to conceptually.
-  - `plot_acf`'s confidence bands replicate R's `Rmisc::CI()` exactly:
-    a t-distribution CI of the *mean* of the ACF/covariance/PACF values
-    themselves — not the usual +-1.96/sqrt(n) significance bands. This
-    is what the R source actually computes, kept as-is for parity.
-  - `ts_smoothing`'s "friedman" (R's `supsmu`) and "splines" (R's
-    `smooth.spline`) have no exact Python equivalent; both are
-    approximated (lowess and a smoothing spline respectively) — see
-    each branch's comment.
+plot_ts, plot_acf and compute_moving_average match rwf
+(tests/test_explore_time_series.py):
+  - A series without its own time index is indexed 1..n, as R's time()
+    of a plain vector; a pandas Series keeps a non-default index.
+  - plot_acf's data are R's acf (correlation and covariance with lag 0)
+    and pacf (Durbin-Levinson from the biased autocovariances), and its
+    dashed lines are Rmisc::CI of each function's own values (the
+    t-interval of their mean, as rwf computes, not significance bands).
+  - compute_moving_average averages the rows within w of each row,
+    including the last row.
+
+ts_smoothing draws, as rwf, one curve per smoothing value from start to
+stop (inclusive, R's seq): "default" is R's two-sided filter (missing at
+the ends), "kernel" R's ksmooth with the normal kernel, "lowess"
+Cleveland's lowess as R's. R's supsmu ("friedman") and smooth.spline
+("splines") have no Python equivalents; they are approximated by lowess
+and scipy's smoothing spline.
 """
 ##########################################################################################
 # LOAD SYSTEM
@@ -23,7 +27,7 @@ import numpy as np
 import pandas as pd
 import scipy.stats
 import matplotlib.pyplot as plt
-from statsmodels.tsa.stattools import acf, pacf, acovf
+from statsmodels.tsa.stattools import acf, acovf
 from statsmodels.nonparametric.smoothers_lowess import lowess as sm_lowess
 from scipy.interpolate import UnivariateSpline
 from plotnine import (
@@ -31,270 +35,245 @@ from plotnine import (
     labs, theme_bw, theme,
 )
 ##########################################################################################
+# TIME INDEX
+##########################################################################################
+def _time(df):
+    """R's time(): the Series' own index when it has one, else 1..n."""
+    if isinstance(df, pd.Series) and not isinstance(df.index, pd.RangeIndex):
+        return df.index.to_numpy()
+    return np.arange(1, len(df) + 1)
+
+
+def _r_seq(start, stop, step):
+    """R's seq(start, stop, by = step)."""
+    n = int(np.floor((stop - start) / step + 1e-10))
+    return start + np.arange(n + 1) * step
+##########################################################################################
 # PLOTS
 ##########################################################################################
 def plot_ts(df, base_size=10, ylab="Count", title=""):
     """
-    Line plot for a time series: a line + semi-transparent points, with
-    an overlaid linear trend line (via geom_smooth(method="lm")). The
-    returned plot can be extended with additional layers.
+    Time series plot, as rwf::plot_ts: the values against time as a line
+    and faint points, with a linear trend and its confidence band.
 
     Parameters:
-    df (array-like or pandas.Series): The time series to plot. Values are
-        plotted against a plain 0..n-1 time index.
-    base_size (int, optional): Base font size for theme_bw(). Defaults to 10.
+    df (array-like or pandas.Series): The series; plotted against its index when it is a Series with one,
+        else against 1..n (R's time() of a plain vector).
+    base_size (int, optional): Base font size. Defaults to 10.
     ylab (str, optional): Y-axis label. Defaults to "Count".
     title (str, optional): Plot title. Defaults to "".
 
     Returns:
-    plotnine.ggplot: line + point plot with an lm trend line, captioned
-    with the number of observations.
+    plotnine.ggplot: The plot; its data has rwf's columns date and value.
 
     Examples:
-    >>> import numpy as np
-    >>> ts_data = np.random.normal(100, 10, 120) + np.linspace(0, 20, 120)
-    >>> p = plot_ts(ts_data, title="Example series")
+    >>> plot_ts(np.random.normal(100, 10, 120) + np.linspace(0, 20, 120), title="Example series")
     """
-    series = pd.Series(df).reset_index(drop=True)
-    data = pd.DataFrame({'date': np.arange(len(series)), 'value': series.values})
-    p = (ggplot(data, aes(x='date', y='value'))
-         + geom_line(alpha=.5)
-         + geom_point(alpha=.1, size=1)
-         + theme_bw(base_size=base_size)
-         + labs(title=title, x="Time index", y=ylab, caption=f"Observations {len(data)}")
-         + geom_smooth(method='lm'))
-    return p
+    data = pd.DataFrame({"date": _time(df), "value": np.asarray(df, dtype=float)})
+    return (ggplot(data, aes(x="date", y="value"))
+            + geom_line(alpha=.5)
+            + geom_point(alpha=.1, size=1)
+            + theme_bw(base_size=base_size)
+            + labs(title=title, x="Time index", y=ylab, caption=f"Observations {len(data)}")
+            + geom_smooth(method="lm"))
 ##########################################################################################
 # PLOT ACF
 ##########################################################################################
-def _ci_of_mean(values, ci=0.95):
-    """95% CI of the mean of `values`, via t-distribution (R's Rmisc::CI())."""
+_ACF_TYPES = ["Correlation", "Covariance", "Partial.Correlation"]
+
+
+def _durbin_levinson(r):
+    """Partial autocorrelations at lags 1..len(r)-1 from autocorrelations r (lag 0 first), as R's pacf."""
+    lags = len(r) - 1
+    partial = np.zeros(lags)
+    phi = np.zeros(lags)
+    for k in range(1, lags + 1):
+        previous = phi[:k - 1].copy()
+        numerator = r[k] - np.sum(previous * r[k - 1:0:-1]) if k > 1 else r[1]
+        denominator = 1 - np.sum(previous * r[1:k]) if k > 1 else 1.0
+        phi_kk = numerator / denominator
+        phi[:k - 1] = previous - phi_kk * previous[::-1]
+        phi[k - 1] = phi_kk
+        partial[k - 1] = phi_kk
+    return partial
+
+
+def _acf_values(series, lag_max):
+    """R's acf(type = "correlation"), acf(type = "covariance") and acf(type = "partial")."""
+    lag_max = min(lag_max, len(series) - 1)
+    correlation = acf(series, nlags=lag_max, fft=False)
+    return {"Correlation": correlation, "Covariance": acovf(series, nlag=lag_max),
+            "Partial.Correlation": _durbin_levinson(correlation)}
+
+
+def _ci(values, ci=0.95):
+    """Rmisc::CI: upper, mean and lower of the t-interval of the mean."""
     x = np.asarray(values, dtype=float)
-    n = len(x)
     mean = x.mean()
-    se = x.std(ddof=1) / np.sqrt(n)
-    t_val = scipy.stats.t.ppf((1 + ci) / 2, df=n - 1)
-    return mean - t_val * se, mean, mean + t_val * se  # lower, mean, upper
+    error = scipy.stats.t.ppf((1 + ci) / 2, df=len(x) - 1) * x.std(ddof=1) / np.sqrt(len(x))
+    return mean + error, mean, mean - error
+
+
+def _acf_ci(series, lag_max):
+    """rwf's dashed lines of plot_acf: Rmisc::CI of each function's values."""
+    series = pd.Series(series).dropna().to_numpy(dtype=float)
+    rows = [dict(zip(["upper", "mean", "lower"], _ci(values)), type=name)
+            for name, values in _acf_values(series, lag_max).items()]
+    return pd.DataFrame(rows)[["type", "upper", "mean", "lower"]]
 
 
 def plot_acf(df, lag_max=None, base_size=10, title=""):
     """
-    Faceted autocorrelation (ACF), autocovariance, and partial
-    autocorrelation (PACF) plot, with dashed 95% CI lines computed from
-    the distribution of each function's own values (matching R's
-    Rmisc::CI-based bands, not the usual significance bands). NaNs are
-    dropped before computing.
-
-    Note: to match R's `stats::acf(type="correlation"/"covariance")`,
-    which include the lag-0 term, and `type="partial"`, which does not,
-    the Correlation/Covariance facets start at lag 0 while the Partial
-    Correlation facet starts at lag 1 — the same index-vs-lag offset
-    already present in the R source.
+    Autocorrelation, autocovariance and partial autocorrelation of a
+    series in three free-scale facets, as rwf::plot_acf, each with dashed
+    lines at the mean (black) and the 95% t-interval of the mean (blue)
+    of the function's own values (Rmisc::CI). The series index runs from
+    1 in every facet, so the correlation and covariance (which include
+    lag 0) start at index 1 for lag 0, while the partial correlation
+    starts at index 1 for lag 1, as in rwf.
 
     Parameters:
-    df (array-like): The time series to analyse.
-    lag_max (int, optional): Maximum number of lags. Defaults to len(df) - 1.
-    base_size (int, optional): Base font size for theme_bw(). Defaults to 10.
+    df (array-like): The series (missing values are dropped).
+    lag_max (int, optional): Largest lag. Defaults to the series length (R caps it at n - 1).
+    base_size (int, optional): Base font size. Defaults to 10.
     title (str, optional): Plot title. Defaults to "".
 
     Returns:
-    plotnine.ggplot: 3 free-scale facets (Correlation, Covariance,
-    Partial.Correlation), each with 2 dashed blue CI bound lines and a
-    dashed black mean line.
+    plotnine.ggplot: The plot; its data has rwf's columns index, type and value.
 
     Examples:
-    >>> import numpy as np
-    >>> ts_data = np.sin(np.linspace(0, 20, 200)) + np.random.normal(0, 0.1, 200)
-    >>> p = plot_acf(ts_data, base_size=12)
+    >>> plot_acf(np.sin(np.linspace(0, 20, 200)) + np.random.normal(0, 0.1, 200))
     """
-    series = pd.Series(df).dropna().to_numpy()
-    if lag_max is None:
-        lag_max = len(series) - 1
-    lag_max = min(lag_max, len(series) - 1)
-
-    correlation = acf(series, nlags=lag_max, fft=False)
-    covariance = acovf(series, nlag=lag_max)
-    # statsmodels prepends an artificial 1.0 "lag 0" pacf isn't defined for; drop it to match R's pacf.
-    partial = pacf(series, nlags=lag_max)[1:]
-
-    frames = []
-    for name, values in [('Correlation', correlation), ('Covariance', covariance),
-                          ('Partial.Correlation', partial)]:
-        frames.append(pd.DataFrame({'index': np.arange(1, len(values) + 1), 'type': name, 'value': values}))
+    series = pd.Series(df).dropna().to_numpy(dtype=float)
+    lag_max = len(series) if lag_max is None else lag_max
+    frames = [pd.DataFrame({"index": np.arange(1, len(values) + 1), "type": name, "value": values})
+              for name, values in _acf_values(series, lag_max).items()]
     autocorrelation = pd.concat(frames, ignore_index=True)
-    type_order = ['Correlation', 'Covariance', 'Partial.Correlation']
-    autocorrelation['type'] = pd.Categorical(autocorrelation['type'], categories=type_order)
-
-    ci_rows = []
-    for name, values in [('Correlation', correlation), ('Covariance', covariance),
-                          ('Partial.Correlation', partial)]:
-        lower, mean, upper = _ci_of_mean(values)
-        ci_rows += [
-            {'type': name, 'line': 'upper', 'ci': upper},
-            {'type': name, 'line': 'lower', 'ci': lower},
-            {'type': name, 'line': 'mean', 'ci': mean},
-        ]
-    ci_df = pd.DataFrame(ci_rows)
-    ci_df['type'] = pd.Categorical(ci_df['type'], categories=type_order)
-
-    p = (ggplot(autocorrelation, aes(x='index', y='value', color='type'))
-         + geom_line()
-         + geom_point(alpha=.1)
-         + geom_hline(ci_df[ci_df['line'] == 'upper'], aes(yintercept='ci'),
-                       alpha=.5, colour='blue', linetype='dashed')
-         + geom_hline(ci_df[ci_df['line'] == 'lower'], aes(yintercept='ci'),
-                       alpha=.5, colour='blue', linetype='dashed')
-         + geom_hline(ci_df[ci_df['line'] == 'mean'], aes(yintercept='ci'),
-                       alpha=.5, colour='black', linetype='dashed')
-         + labs(title=title, x="Lag", y="")
-         + facet_grid('type ~ .', scales='free')
-         + theme_bw(base_size=base_size)
-         + theme(legend_position='none'))
-    return p
+    autocorrelation["type"] = pd.Categorical(autocorrelation["type"], categories=_ACF_TYPES)
+    lines = _acf_ci(series, lag_max)
+    lines["type"] = pd.Categorical(["Correlation", "Covariance", "Partial.Correlation"], categories=_ACF_TYPES)
+    return (ggplot(autocorrelation, aes(x="index", y="value", color="type", fill="type"))
+            + geom_line()
+            + geom_hline(lines, aes(yintercept="upper"), alpha=.5, colour="blue", linetype="dashed")
+            + geom_hline(lines, aes(yintercept="mean"), alpha=.5, colour="black", linetype="dashed")
+            + geom_hline(lines, aes(yintercept="lower"), alpha=.5, colour="blue", linetype="dashed")
+            + geom_point(alpha=.1)
+            + labs(title=title, x="Lag", y="")
+            + facet_grid("type ~ .", scales="free")
+            + theme_bw(base_size=base_size)
+            + theme(legend_position="none"))
 ##########################################################################################
 # SMOOTHING
 ##########################################################################################
+def _r_filter(x, k):
+    """R's filter(x, rep(1 / k, k)) with sides = 2: centred running mean, missing where incomplete."""
+    n = len(x)
+    offset = k // 2
+    result = np.full(n, np.nan)
+    for i in range(n):
+        start = i + offset - k + 1
+        if start >= 0 and i + offset < n:
+            result[i] = x[start:i + offset + 1].mean()
+    return result
+
+
+def _ksmooth(t, y, bandwidth):
+    """R's ksmooth(t, y, "normal", bandwidth): Gaussian weights with quartiles at +-bandwidth / 4."""
+    points = np.linspace(t.min(), t.max(), max(100, len(t)))
+    sd = 0.3706506 * bandwidth
+    values = np.full(len(points), np.nan)
+    for k, x0 in enumerate(points):
+        near = np.abs(t - x0) < 4 * sd
+        if near.any():
+            weights = np.exp(-0.5 * ((t[near] - x0) / sd) ** 2)
+            values[k] = np.sum(weights * y[near]) / np.sum(weights)
+    return points, values
+
+
 def ts_smoothing(df, start=.01, stop=2, step=.001, title="", type="kernel", frequency=1):
     """
-    Plot a time series with an overlaid family of smoothed curves swept
-    across a bandwidth/span range, drawn in matplotlib (a side-effect
-    plot, like R's base-graphics original — this function returns None).
-
-    For bandwidth-based methods ("kernel", "lowess", "friedman",
-    "splines", "default"), a sequence of values from `start` to `stop`
-    is swept and each curve drawn in a different rainbow color, useful
-    for visually picking a smoothing level. "polynomial" and "linear"
-    ignore the sweep and fit regression-based trend lines instead.
+    A series with a family of smoothed curves, one per smoothing value
+    from start to stop, as rwf::ts_smoothing (matplotlib, drawn as a side
+    effect; returns None). "polynomial" and "linear" draw trend fits
+    instead.
 
     Parameters:
-    df (array-like): The time series to smooth.
-    start (float, optional): Start of the bandwidth/span sequence. Defaults to 0.01.
-    stop (float, optional): End of the bandwidth/span sequence. Defaults to 2.
-    step (float, optional): Increment between values. Defaults to 0.001.
-    title (str, optional): Appended to the plot title. Defaults to "".
-    type (str, optional): One of:
-        - "kernel": Gaussian-weighted moving average, bandwidth = std of
-          the Gaussian weights (approximates R's ksmooth(..., "normal")).
-        - "lowess": LOWESS via statsmodels, bandwidth = span fraction
-          (must be in (0, 1]).
-        - "friedman": approximated with LOWESS (span in (0, 1)) — Python
-          has no equivalent to R's supsmu() Friedman super-smoother.
-        - "splines": smoothing spline via scipy.interpolate.UnivariateSpline;
-          bandwidth maps loosely to R's `spar` penalty, not numerically
-          equivalent.
-        - "default": centered running-mean filter, window = round(bandwidth).
-        - "polynomial": fits a centred cubic trend with and without
-          seasonal cos/sin terms (period = `frequency`).
-        - "linear": fits and draws a simple linear trend.
-    frequency (int, optional): Seasonal period used by "polynomial" (R's
-        ts frequency attribute has no Python equivalent, so it's passed
-        explicitly). Defaults to 1 (no seasonality).
+    df (array-like): The series.
+    start, stop, step (float, optional): Smoothing values, R's seq(start, stop, step). Defaults to .01, 2, .001.
+    title (str, optional): Added to the plot title. Defaults to "".
+    type (str, optional): "kernel" (R's ksmooth, normal kernel, default), "default" (running mean of
+        round(value) points, R's filter), "lowess" (span value), "friedman" (span in (0, 1), lowess
+        standing in for R's supsmu), "splines" (scipy smoothing spline standing in for smooth.spline),
+        "polynomial" (cubic trend with and without a cos/sin cycle) or "linear" (linear trend).
+    frequency (int, optional): Cycle length used by "polynomial" (R takes it from the ts). Defaults to 1.
 
     Returns:
-    None. Produces a matplotlib plot as a side effect.
+    None
 
     Examples:
-    >>> import numpy as np
-    >>> ts_data = np.sin(np.linspace(0, 20, 200)) + np.random.normal(0, 0.1, 200)
-    >>> ts_smoothing(ts_data, start=.01, stop=2, step=.01, type="lowess")
+    >>> ts_smoothing(np.sin(np.linspace(0, 20, 200)), start=.05, stop=.5, step=.05, type="lowess")
     """
     series = np.asarray(df, dtype=float)
     if len(series) == 0 or np.isnan(series[0]):
         return None
-
-    t = np.arange(len(series), dtype=float)
+    t = np.asarray(_time(df), dtype=float)
     fig, ax = plt.subplots()
-    ax.plot(t, series, '-', color='black', linewidth=1)
+    ax.plot(t, series, "-", color="black", linewidth=1)
     ax.set_xlabel("Time index")
     ax.set_title(f"{type.capitalize()} Smoothing {title}")
-
     if type in ("default", "kernel", "lowess", "friedman", "splines"):
-        sweep = np.arange(start, stop, step)
+        sweep = _r_seq(start, stop, step)
         n = len(sweep)
-        colors = plt.cm.rainbow(np.linspace(0, max(1, n - 1) / n, n))
-        for i, bandwidth in enumerate(sweep):
-            try:
-                if type == "default":
-                    window = max(1, round(bandwidth))
-                    smoothed = pd.Series(series).rolling(window=window, center=True, min_periods=1).mean().to_numpy()
-                    ax.plot(t, smoothed, color=colors[i], linewidth=1)
-                elif type == "kernel":
-                    if bandwidth <= 0:
-                        continue
-                    weights = np.exp(-0.5 * ((t[:, None] - t[None, :]) / bandwidth) ** 2)
-                    smoothed = (weights @ series) / weights.sum(axis=1)
-                    ax.plot(t, smoothed, color=colors[i], linewidth=1)
-                elif type == "lowess":
-                    if not (0 < bandwidth <= 1):
-                        continue
-                    smoothed = sm_lowess(series, t, frac=bandwidth, return_sorted=False)
-                    ax.plot(t, smoothed, color=colors[i], linewidth=1)
-                elif type == "friedman":
-                    if not (0 < bandwidth < 1):
-                        continue
-                    smoothed = sm_lowess(series, t, frac=bandwidth, return_sorted=False)
-                    ax.plot(t, smoothed, color=colors[i], linewidth=1)
-                elif type == "splines":
-                    if bandwidth <= 0:
-                        continue
-                    spline = UnivariateSpline(t, series, s=bandwidth * len(series))
-                    ax.plot(t, spline(t), color=colors[i], linewidth=1)
-            except Exception:
-                continue
-
+        colors = plt.cm.hsv(np.linspace(0, max(1, n - 1) / n, n + 1))
+        for i, value in enumerate(sweep):
+            color = colors[i + 1]
+            if type == "default" and round(value) >= 1:
+                ax.plot(t, _r_filter(series, int(round(value))), color=color, linewidth=1)
+            elif type == "kernel" and value > 0:
+                ax.plot(*_ksmooth(t, series, value), color=color, linewidth=1)
+            elif type == "lowess" and 0 < value:
+                fitted = sm_lowess(series, t, frac=min(value, 1), it=3, delta=0.01 * np.ptp(t), return_sorted=False)
+                ax.plot(t, fitted, color=color, linewidth=1)
+            elif type == "friedman" and 0 < value < 1:
+                ax.plot(t, sm_lowess(series, t, frac=value, return_sorted=False), color=color, linewidth=1)
+            elif type == "splines" and value > 0:
+                ax.plot(t, UnivariateSpline(t, series, s=value * len(series))(t), color=color, linewidth=1)
     if type == "polynomial":
         wk = t / frequency - (t / frequency).mean()
-        wk2, wk3 = wk ** 2, wk ** 3
         cs, sn = np.cos(2 * np.pi * wk), np.sin(2 * np.pi * wk)
-        X1 = np.column_stack([np.ones_like(wk), wk, wk2, wk3])
-        X2 = np.column_stack([np.ones_like(wk), wk, wk2, wk3, cs, sn])
-        fit1 = X1 @ np.linalg.lstsq(X1, series, rcond=None)[0]
-        fit2 = X2 @ np.linalg.lstsq(X2, series, rcond=None)[0]
-        ax.plot(t, fit1, linewidth=1)
-        ax.plot(t, fit2, linewidth=1)
-
+        X1 = np.column_stack([np.ones_like(wk), wk, wk ** 2, wk ** 3])
+        X2 = np.column_stack([X1, cs, sn])
+        ax.plot(t, X1 @ np.linalg.lstsq(X1, series, rcond=None)[0], linewidth=1)
+        ax.plot(t, X2 @ np.linalg.lstsq(X2, series, rcond=None)[0], linewidth=1)
     if type == "linear":
         slope, intercept = np.polyfit(t, series, 1)
-        ax.plot(t, intercept + slope * t, linewidth=1, color='#400c0c')
-
+        ax.plot(t, intercept + slope * t, linewidth=1, color="#400c0c")
     return None
 ##########################################################################################
 # MOVING AVERAGE
 ##########################################################################################
 def compute_moving_average(df, w):
     """
-    Centred moving average: replaces every value in every numeric column
-    with the mean of a symmetric window of 2w+1 rows (w rows before, the
-    row itself, w rows after). Windows are clipped near the edges.
-
-    Note: faithfully replicates an off-by-one quirk in the R source —
-    the very last row of the series is never included in *any* row's
-    average window, even for rows far from the boundary, because the
-    window-clipping filter uses a strict `< max_row` bound instead of
-    `<= max_row`. This is preserved as-is rather than "fixed", to match
-    R's actual output.
+    Centred moving average of every column, as
+    rwf::compute_moving_average: each row becomes the mean of the rows
+    from w before to w after it (fewer near the ends).
 
     Parameters:
-    df (pandas.DataFrame): Data frame whose numeric columns are smoothed.
-    w (int): Half-window size (total window width = 2w + 1).
+    df (pandas.DataFrame): Numeric columns.
+    w (int): Rows on each side.
 
     Returns:
-    pandas.DataFrame: Same shape and columns as `df`, values replaced by
-    their centred moving average.
+    pandas.DataFrame: The averages, same shape as df.
 
     Examples:
-    >>> import pandas as pd
-    >>> compute_moving_average(df=pd.DataFrame({'x': range(20)}), w=2)
+    >>> compute_moving_average(df=pd.DataFrame({"x": range(20)}), w=2)
     """
     df = pd.DataFrame(df)
     result = df.astype(float)
     max_row = len(df)
-    for col in df.columns:
-        values = df[col].to_numpy()
-        for row_index in range(max_row):
-            idx = np.arange(row_index - w, row_index + w + 1)
-            idx = idx[(idx >= 0) & (idx < max_row - 1)]
-            result.iloc[row_index, result.columns.get_loc(col)] = values[idx].mean()
+    for column in df.columns:
+        values = df[column].to_numpy(dtype=float)
+        result[column] = [values[max(0, i - w):min(max_row, i + w + 1)].mean() for i in range(max_row)]
     return result
 ##########################################################################################
 # EXAMPLES
@@ -304,29 +283,11 @@ if __name__ == "__main__":
     matplotlib.use("Agg")
 
     np.random.seed(42)
-    n = 200
-    t = np.arange(n)
-    ts_data = 50 + 0.1 * t + 10 * np.sin(2 * np.pi * t / 12) + np.random.normal(0, 3, n)
-
-    print("=" * 80, "\nplot_ts\n", "=" * 80, sep="")
-    p_ts = plot_ts(ts_data, title="Example series")
-    p_ts.save("plot_ts.png", verbose=False)
-    print("saved plot_ts.png")
-
-    print("\n" + "=" * 80, "\nplot_acf\n", "=" * 80, sep="")
-    p_acf = plot_acf(ts_data, lag_max=40, title="Example ACF")
-    p_acf.save("plot_acf.png", verbose=False)
-    print("saved plot_acf.png")
-
-    print("\n" + "=" * 80, "\nts_smoothing\n", "=" * 80, sep="")
+    t = np.arange(200)
+    ts_data = 50 + 0.1 * t + 10 * np.sin(2 * np.pi * t / 12) + np.random.normal(0, 3, 200)
+    print(plot_ts(ts_data, title="Example series").data.head())
+    print(plot_acf(ts_data, lag_max=40).data.head())
     for smoothing_type in ["default", "kernel", "lowess", "friedman", "splines", "polynomial", "linear"]:
+        ts_smoothing(ts_data, start=.05, stop=2, step=.25, title="Example", type=smoothing_type, frequency=12)
         plt.close("all")
-        ts_smoothing(ts_data, start=.01, stop=2, step=.05, title="Example",
-                     type=smoothing_type, frequency=12)
-        fname = f"ts_smoothing_{smoothing_type}.png"
-        plt.savefig(fname)
-        print(f"saved {fname}")
-
-    print("\n" + "=" * 80, "\ncompute_moving_average\n", "=" * 80, sep="")
-    df_small = pd.DataFrame({"x": range(10)})
-    print(compute_moving_average(df_small, w=2))
+    print(compute_moving_average(pd.DataFrame({"x": range(10)}), w=2))

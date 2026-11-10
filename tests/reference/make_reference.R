@@ -473,3 +473,301 @@ for (data_case in names(efa_data)) {
     ref(paste0("report_efa_", data_case, "_", part), report[[part]])
   }
 }
+##########################################################################################
+# TETRACHORIC POLYCHORIC POLYSERIAL BISERIAL (psych, through rwf::report_choric_serial)
+##########################################################################################
+choric_items <- c(paste0("E", 1:5), paste0("N", 1:5))
+choric_data <- list(
+  complete = df_ocean_500[, choric_items],
+  missing = df_ocean_missing,
+  small = df_ocean_500[1:40, choric_items],
+  unequal = within(df_ocean_500[, choric_items], N5 <- pmin(N5, 3))
+)
+for (case in names(choric_data)) {
+  items <- choric_data[[case]]
+  tet <- report_choric_serial((items > 3) * 1, type = "tetrachoric")
+  ref(paste0("tetrachoric_", case, "_rho"), data.frame(tet$rho, check.names = FALSE))
+  ref(paste0("tetrachoric_", case, "_tau"), data.frame(item = names(tet$tau), tau = as.numeric(tet$tau)))
+  pol <- suppressWarnings(report_choric_serial(items, type = "polychoric"))
+  ref(paste0("polychoric_", case, "_rho"), data.frame(pol$rho, check.names = FALSE))
+  ref(paste0("polychoric_", case, "_tau"), data.frame(pol$tau, check.names = FALSE))
+}
+serial_x <- data.frame(E = rowSums(df_ocean_500[, paste0("E", 1:5)]), A = rowSums(df_ocean_500[, paste0("A", 1:3)]))
+ref("polyserial_data", cbind(serial_x, df_ocean_500[, paste0("N", 1:3)]))
+ref("polyserial", report_choric_serial(serial_x, df_ocean_500[, paste0("N", 1:3)], type = "polyserial"))
+ref("biserial", report_choric_serial(serial_x, (df_ocean_500[, paste0("N", 1:3)] > 3) * 1, type = "biserial"))
+##########################################################################################
+# REPORT CORRELATION (psych::corr.test through rwf)
+##########################################################################################
+correlation_cases <- list(
+  complete = list(x = df_insurance[, c("age", "bmi", "children", "charges")], y = NULL, use = "pairwise",
+                  method = "pearson", adjust = "holm"),
+  missing = list(x = df_ocean_missing[, 1:5], y = NULL, use = "pairwise", method = "pearson", adjust = "holm"),
+  spearman = list(x = df_ocean_missing[, 1:5], y = NULL, use = "pairwise", method = "spearman", adjust = "BH"),
+  kendall = list(x = df_ocean_missing[, 1:5], y = NULL, use = "complete", method = "kendall", adjust = "none"),
+  xy = list(x = df_ocean_missing[, 1:3], y = df_ocean_missing[, 6:8], use = "pairwise", method = "pearson",
+            adjust = "hommel")
+)
+for (case in names(correlation_cases)) {
+  k <- correlation_cases[[case]]
+  result <- report_correlation(k$x, k$y, use = k$use, method = k$method, adjust = k$adjust, scatterplot = FALSE)
+  for (part in setdiff(names(result), "ci")) ref(paste0("report_correlation_", case, "_", part), result[[part]])
+  ref(paste0("report_correlation_", case, "_ci"), data.frame(pair = rownames(result$ci), result$ci))
+}
+##########################################################################################
+# REPORT REGRESSION
+##########################################################################################
+regression_cases <- list(simple = charges ~ age, mixed = charges ~ age * bmi + smoker + region,
+                         additive = charges ~ age + bmi + children)
+for (case in names(regression_cases)) {
+  model <- eval(bquote(lm(.(regression_cases[[case]]), data = df_insurance)))
+  set.seed(1)
+  result <- report_regression(model, plot_diagnostics = FALSE)
+  for (part in c("r", "coeficients", "deviance", "durbin_watson", "vif", "call")) {
+    ref(paste0("report_regression_", case, "_", part), result[[part]])
+  }
+  ref(paste0("report_regression_", case, "_anova"), data.frame(term = rownames(result$anova), result$anova,
+                                                                 check.names = FALSE))
+  ref(paste0("report_regression_", case, "_variance_covariance"), result$variance_covariance)
+  ref(paste0("report_regression_", case, "_outlier_test"), data.frame(observation = rownames(result$outlier_test),
+                                                                        result$outlier_test))
+  ref(paste0("report_regression_", case, "_diagnostics"), result$diagnostics)
+}
+##########################################################################################
+# REPORT LOGISTIC (rwf::report_logistic returns NULL: its body is rerun returning its result)
+##########################################################################################
+infert_data <- datasets::infert[, c("education", "age", "parity", "induced", "case", "spontaneous")]
+infert_data$education <- as.character(infert_data$education)
+ref("infert", infert_data)
+infert_data <- utils::read.csv(file.path(out_dir, "infert.csv"), stringsAsFactors = FALSE)
+report_logistic_result <- rwf::report_logistic
+body(report_logistic_result) <- as.call(c(as.list(body(report_logistic_result)), quote(
+  return(list(result = result, cmatrix = cmatrix, confusion_performance = confusion_performance)))))
+environment(report_logistic_result) <- asNamespace("rwf")
+logistic_cases <- list(
+  education = list(formula = case ~ education, family = "binomial", validation = FALSE),
+  numeric = list(formula = case ~ age + parity + spontaneous, family = "binomial", validation = FALSE),
+  mixed = list(formula = case ~ education + age, family = "binomial", validation = FALSE),
+  validation = list(formula = case ~ age + parity + spontaneous, family = "binomial", validation = TRUE),
+  poisson = list(formula = spontaneous ~ age + parity, family = "poisson", validation = FALSE),
+  gaussian = list(formula = age ~ parity + induced, family = "gaussian", validation = FALSE)
+)
+for (case in names(logistic_cases)) {
+  k <- logistic_cases[[case]]
+  model <- eval(bquote(glm(.(k$formula), family = .(as.name(k$family)), data = infert_data)))
+  out <- report_logistic_result(model, validation_data = if (k$validation) infert_data else NULL)
+  result <- out$result
+  for (part in c("result_R2_logistic", "result_X2_logistic", "logistic_output", "scores", "model_call")) {
+    ref(paste0("report_logistic_", case, "_", part), result[[part]])
+  }
+  ref(paste0("report_logistic_", case, "_coefficients"), data.frame(term = rownames(result$coefficients),
+                                                                    result$coefficients, check.names = FALSE))
+  ref(paste0("report_logistic_", case, "_VIF"), data.frame(term = rownames(result$VIF), result$VIF,
+                                                           check.names = FALSE))
+  ref(paste0("report_logistic_", case, "_score_descriptives"), result$score_descriptives)
+  ref(paste0("report_logistic_", case, "_cmatrix"), data.frame(out$cmatrix, check.names = FALSE))
+  ref(paste0("report_logistic_", case, "_cut_performance"), out$confusion_performance$cut_performance)
+  ref(paste0("report_logistic_", case, "_cut"), data.frame(out$confusion_performance$cut))
+}
+##########################################################################################
+# TRAIN TEST (confusion tables, cut search, kappas, dummy coding, ROC)
+##########################################################################################
+train_test_cases <- list(
+  numbers = list(observed = c(1, 2, 3, 4, 5, 10), predicted = c(1, 2, 3, 4, 5, 11)),
+  ordinal = list(observed = c(1, 2, 2, 2, 2, 3, 3, 1, 2), predicted = c(1, 1, 2, 2, 2, 3, 2, 2, 3)),
+  labels = list(observed = c("no", "no", "yes", "yes", "no"), predicted = c("no", "yes", "yes", "no", "no"))
+)
+for (case in names(train_test_cases)) {
+  k <- train_test_cases[[case]]
+  ref(paste0("confusion_matrix_percent_", case), data.frame(row = rownames(confusion_matrix_percent(k$observed, k$predicted)),
+                                                            confusion_matrix_percent(k$observed, k$predicted),
+                                                            check.names = FALSE))
+  ref(paste0("proportion_accurate_", case), proportion_accurate(k$observed, k$predicted))
+}
+set.seed(11)
+cut_observed <- rbinom(150, 1, 0.4)
+cut_predicted <- round(pmin(1, cut_observed * 0.3 + runif(150, 0, 0.7)), 6)
+ref("confusion_performance_data", data.frame(observed = cut_observed, predicted = cut_predicted))
+for (step in c(0.1, 0.05)) {
+  cp <- result_confusion_performance(cut_observed, cut_predicted, step = step)
+  ref(paste0("confusion_performance_", step * 100, "_cut_performance"), cp$cut_performance)
+  ref(paste0("confusion_performance_", step * 100, "_cut"), data.frame(cut = cp$cut))
+}
+roc_rows <- list()
+for (levels in list(c(1, 0), c(0, 1))) {
+  roc <- pROC::roc(cut_observed, cut_predicted, levels = levels, quiet = TRUE)
+  roc_rows[[length(roc_rows) + 1]] <- data.frame(control = levels[1], auc = as.numeric(roc$auc), direction = roc$direction)
+}
+roc_rows[[length(roc_rows) + 1]] <- with(list(roc = pROC::roc(cut_observed, 1 - cut_predicted, levels = c(0, 1), quiet = TRUE)),
+                                         data.frame(control = -1, auc = as.numeric(roc$auc), direction = roc$direction))
+ref("plot_roc_auc", do.call(rbind, roc_rows))
+dummy_data <- data.frame(numeric_var = c(1, 2, 3, 4, 5), n2 = c(5, 3, 3, 9, 1),
+                         factor_var = c("B", "A", "A", "B", "C"), other = c("x", "y", "x", "x", "x"))
+ref("recode_scale_dummy_data", dummy_data)
+ref("recode_scale_dummy_two", recode_scale_dummy(dummy_data))
+ref("recode_scale_dummy_one", recode_scale_dummy(dummy_data[, 1:3]))
+##########################################################################################
+# REPORT HLR
+##########################################################################################
+sleepstudy <- data.frame(lme4::sleepstudy)
+sleepstudy$Subject <- as.character(sleepstudy$Subject)
+sleepstudy$Fatigue <- round(sleepstudy$Reaction / 50 + sin(seq_len(nrow(sleepstudy))), 4)
+ref("sleepstudy", sleepstudy)
+ref("report_hlr_sleepstudy", report_hlr(df = sleepstudy, corlist = c(1, 4), factorlist = 3, predictor = "Days",
+                                        random_effect = "Subject"))
+##########################################################################################
+# REPORT LDA (MASS::lda)
+##########################################################################################
+ref("iris", datasets::iris)
+iris_data <- utils::read.csv(file.path(out_dir, "iris.csv"), stringsAsFactors = FALSE)
+infert_data <- utils::read.csv(file.path(out_dir, "infert.csv"), stringsAsFactors = FALSE)
+lda_models <- list(infert = MASS::lda(case ~ ., data = infert_data),
+                   iris = MASS::lda(Species ~ ., data = iris_data),
+                   iris_two = MASS::lda(Species ~ Sepal.Length + Petal.Width, data = iris_data))
+for (case in names(lda_models)) {
+  result <- report_lda(lda_models[[case]])
+  ref(paste0("report_lda_", case, "_prior_counts"), data.frame(class = rownames(result$prior_counts),
+                                                               result$prior_counts, check.names = FALSE))
+  ref(paste0("report_lda_", case, "_coeficients"), data.frame(variable = rownames(result$coeficients),
+                                                              result$coeficients, check.names = FALSE))
+  ref(paste0("report_lda_", case, "_model_description"), result$model_description)
+  ref(paste0("report_lda_", case, "_cmatrix"), data.frame(row = rownames(result$cmatrix), result$cmatrix,
+                                                          check.names = FALSE))
+  ref(paste0("report_lda_", case, "_call"), result$call)
+  ref(paste0("report_lda_", case, "_posterior"), data.frame(predict(lda_models[[case]])$posterior, check.names = FALSE))
+}
+##########################################################################################
+# TIME SERIES
+##########################################################################################
+lh_values <- as.numeric(datasets::lh)
+ref("lh", data.frame(value = lh_values))
+ref("plot_ts_lh", plot_ts(lh_values)$data)
+acf_plot <- plot_acf(lh_values)
+ref("plot_acf_lh", acf_plot$data)
+ref("plot_acf_lh_ci", do.call(rbind, lapply(c("correlation", "covariance", "partial"), function(type) {
+  values <- stats::acf(lh_values, lag.max = length(lh_values), plot = FALSE, type = type)$acf
+  ci <- Rmisc::CI(values, ci = 0.95)
+  data.frame(type = type, upper = ci[[1]], mean = ci[[2]], lower = ci[[3]])
+})))
+ref("plot_acf_lh_10", plot_acf(lh_values, lag.max = 10)$data)
+moving <- data.frame(a = lh_values, b = lh_values^2)
+ref("compute_moving_average_lh", compute_moving_average(moving, 2))
+##########################################################################################
+# STATISTICAL HELPERS
+##########################################################################################
+standard_vector <- c(3, 7, 1, 7, NA, 12, 5, 9, 2, 7, 15, 4)
+ref("compute_standard_all", compute_standard(standard_vector, type = "all"))
+ref("compute_standard_types", data.frame(sapply(c("z", "uz", "sten", "t", "stanine", "center", "center_reversed",
+                                                  "percent", "percentile", "scale_zero_one", "normal_density",
+                                                  "cumulative_density"),
+                                                function(type) compute_standard(standard_vector, mean = 2, sd = 3,
+                                                                                type = type))))
+set.seed(3)
+noise <- data.frame(v1 = rnorm(50), e1 = rnorm(50, sd = 0.5), v2 = rnorm(50), e2 = rnorm(50, sd = 0.3))
+noise$v2 <- noise$v2 + noise$v1
+ref("dissatenuation_data", noise)
+ref("statistical_helpers", data.frame(
+  dissatenuation = compute_dissatenuation(noise$v1, noise$e1, noise$v2, noise$e2),
+  skewness = compute_skewness(standard_vector), kurtosis = compute_kurtosis(standard_vector),
+  standard_error = compute_standard_error(standard_vector),
+  confidence_interval = compute_confidence_inteval(standard_vector),
+  sidak = compute_adjustment(0.05, 7)$sidak, bonferroni = compute_adjustment(0.05, 7)$bonferroni))
+##########################################################################################
+# STRING HELPERS
+##########################################################################################
+words <- c("_hello world_", "TES.T", "a  b\tc", "mixed-Case_text", "x", "Long sentence that needs wrapping at twelve")
+ref("strings_vectorised", data.frame(
+  input = words, proper = str_proper(words), aes = str_aes(words), aes_plain = str_aes(words, proper = FALSE),
+  right = str_sub(words, 3, "right"), left = str_sub(words, 3, "left"), squish = str_squish(words),
+  wrap = str_wrap(words, 12), pad_left = str_pad(words, 8, "left", "*"), pad_both = str_pad(words, 9, "both", "-"),
+  count_e = str_count(words, "e"), count_fixed = str_count(words, fixed(".")),
+  replace = str_replace(words, "[aeiou]", "#"), replace_all = str_replace_all(words, "[aeiou]", "#"),
+  replace_fixed = str_replace_all(words, fixed("."), "!"),
+  mgsub = str_mgsub(words, c("[.]", "_", "-"), "+")))
+ref("str_split", str_split(c("a/b/c", "d/e/f"), include_original = TRUE))
+ref("str_split_fixed", data.frame(str_split_fixed(c("a-b-c-d", "e-f", "g"), "-", 3)))
+##########################################################################################
+# CDF (the original, slower check of rwf)
+##########################################################################################
+df_titanic <- load_data("titanic")
+df_types <- df_titanic[, c("survived", "pclass", "name", "sex", "age", "fare", "cabin", "body")]
+df_types$sex <- factor(df_types$sex)
+df_types$class <- factor(c("first", "second", "third")[df_types$pclass],
+                         levels = c("first", "second", "third"), ordered = TRUE)
+df_types$alive <- df_types$survived == 1
+df_types$alive[c(5, 9)] <- NA
+df_types$date <- as.Date("2020-01-01") + seq_len(nrow(df_types)) - 1
+df_types$fare[1:2] <- c(Inf, -Inf)
+df_types$empty <- NA_real_
+for (case in list(list(name = "cdf_types", args = list()),
+                  list(name = "cdf_types_nuniques", args = list(nuniques = 3)),
+                  list(name = "cdf_head_nuniques", args = list(nuniques = 25, name_length = 5), rows = 20))) {
+  data <- if (is.null(case$rows)) df_types else df_types[seq_len(case$rows), ]
+  result <- suppressWarnings(do.call(cdf, c(list(df = data), case$args)))
+  ref(paste0(case$name, "_check"), result$check)
+  ref(paste0(case$name, "_summary"), result$summary)
+}
+##########################################################################################
+# ANOVA PLOTS (data behind the plots)
+##########################################################################################
+oneway <- plot_oneway(df = df_insurance, dv = c(3, 7), iv = c(2, 5, 6))
+ref("plot_oneway_plot_data_df", oneway$plot_data_df)
+ref("plot_oneway_keys", data.frame(key = names(oneway$plot_data)))
+interaction <- plot_interaction(df = df_insurance, dv = 7, iv = c(2, 5, 6))
+ref("plot_interaction_plot_data_df", interaction$plot_data_df)
+ref("plot_interaction_keys", data.frame(key = names(interaction$plot_data)))
+##########################################################################################
+# LAVAAN WLSMV (ordered indicators)
+##########################################################################################
+wlsmv_items <- c(paste0("E", 1:5), paste0("N", 1:5))
+wlsmv_data <- list(ordinal = df_ocean_500[, wlsmv_items],
+                   binary = data.frame(lapply(df_ocean_500[, wlsmv_items], function(x) as.integer(x > 3))))
+ref("wlsmv_binary_data", wlsmv_data$binary)
+wlsmv_model <- "E =~ E1 + E2 + E3 + E4 + E5; N =~ N1 + N2 + N3 + N4 + N5"
+for (case in names(wlsmv_data)) {
+  for (parameterization in c("delta", "theta")) {
+    fit <- lavaan::cfa(wlsmv_model, data = wlsmv_data[[case]], ordered = wlsmv_items, estimator = "WLSMV",
+                       parameterization = parameterization)
+    prefix <- paste0("wlsmv_", case, "_", parameterization)
+    ref(paste0(prefix, "_parameters"), lavaan::parameterEstimates(fit, standardized = TRUE))
+    fm <- lavaan::fitMeasures(fit)
+    ref(paste0(prefix, "_fit"), data.frame(measure = names(fm), value = as.numeric(fm)))
+    if (parameterization == "delta") {
+      sampstat <- lavaan::lavInspect(fit, "sampstat")
+      ref(paste0("wlsmv_", case, "_th"), data.frame(th = as.numeric(sampstat$th), name = names(sampstat$th)))
+      ref(paste0("wlsmv_", case, "_cor"), data.frame(unclass(sampstat$cov), check.names = FALSE))
+      ref(paste0("wlsmv_", case, "_gamma"), data.frame(unclass(lavaan::lavInspect(fit, "gamma")), check.names = FALSE))
+      ref(paste0("wlsmv_", case, "_wls_v"), data.frame(w = diag(lavaan::lavInspect(fit, "wls.v"))))
+    }
+  }
+}
+##########################################################################################
+# THURSTONIAN IRT (thurstonianIRT::fit_TIRT_lavaan on its triplets data, rwf's examples)
+##########################################################################################
+suppressPackageStartupMessages(library(thurstonianIRT))
+tirt_env <- new.env()
+utils::data("triplets", package = "thurstonianIRT", envir = tirt_env)
+triplets <- tirt_env$triplets
+ref("tirt_triplets", triplets)
+tirt_blocks <- set_block(c("i1", "i2", "i3"), traits = c("t1", "t2", "t3"), signs = c(1, 1, 1)) +
+  set_block(c("i4", "i5", "i6"), traits = c("t1", "t2", "t3"), signs = c(-1, 1, 1)) +
+  set_block(c("i7", "i8", "i9"), traits = c("t1", "t2", "t3"), signs = c(1, 1, -1)) +
+  set_block(c("i10", "i11", "i12"), traits = c("t1", "t2", "t3"), signs = c(1, -1, 1))
+triplets_long <- make_TIRT_data(data = triplets, blocks = tirt_blocks, direction = "larger", format = "pairwise",
+                                family = "bernoulli", range = c(0, 1))
+writeLines(thurstonianIRT:::make_lavaan_code(triplets_long), file.path(out_dir, "tirt_lavaan_model.txt"))
+for (estimator in c("ULSMV", "WLSMV")) {
+  tirt_fit <- fit_TIRT_lavaan(triplets_long, estimator = estimator)
+  prefix <- paste0("tirt_", tolower(estimator))
+  ref(paste0(prefix, "_parameters"), lavaan::parameterEstimates(tirt_fit$fit))
+  fm <- lavaan::fitMeasures(tirt_fit$fit)
+  ref(paste0(prefix, "_fit"), data.frame(measure = names(fm), value = as.numeric(fm)))
+  pars <- extract_tirt_params(tirt_fit)
+  ref(paste0(prefix, "_lambda"), data.frame(indicator = rownames(pars$lambda), unclass(pars$lambda), check.names = FALSE))
+  ref(paste0(prefix, "_vectors"), data.frame(indicator = names(pars$theta_diag), theta_diag = as.numeric(pars$theta_diag),
+                                             tau = as.numeric(pars$tau), nu = as.numeric(pars$nu)))
+  ref(paste0(prefix, "_psi"), data.frame(unclass(pars$Psi), check.names = FALSE))
+  heywood <- check_heywood(tirt_fit$fit, verbose = FALSE)
+  ref(paste0(prefix, "_heywood"), data.frame(item = names(heywood), value = vapply(heywood, function(x)
+    if (is.data.frame(x)) nrow(x) else if (is.logical(x)) as.numeric(x) else NA_real_, numeric(1))))
+}

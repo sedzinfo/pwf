@@ -1,0 +1,2 @@
+"call"
+"glm(formula=case~age+parity+spontaneous,family=binomial,,data=infert_data)"

@@ -62,7 +62,7 @@ def plot_histogram(df, base_size=10, title="Histogram", bins=10):
           + geom_histogram(bins=bins, na_rm=True, colour="#FFFFFF")
           + labs(title=title, y="Frequency", x="")
           + theme_bw(base_size=base_size)
-          + theme(subplots_adjust={'hspace': 0.1, 'wspace': 0.1})
+          + theme(panel_spacing=0.025)
           + facet_wrap('~variable', scales='free'))
     return gp
 ##########################################################################################
@@ -89,7 +89,7 @@ def plot_qq(df, base_size=10, title="QQ"):
           + geom_qq_line(aes(sample="value"))
           + labs(title=title)
           + theme_bw(base_size=base_size)
-          + theme(subplots_adjust={'hspace': 0.1, 'wspace': 0.1})
+          + theme(panel_spacing=0.025)
           + facet_wrap('~variable', scales='free'))
     return gp
 ##########################################################################################
@@ -117,7 +117,7 @@ def plot_boxplot(df, base_size=10, title="Boxplot"):
           + labs(title=title, x="", y="")
           + coord_flip()
           + theme_bw(base_size=base_size)
-          + theme(subplots_adjust={'hspace': 0.1, 'wspace': 0.1}))
+          + theme(panel_spacing=0.025))
     return gp
 ##########################################################################################
 # PLOT NORMALITY DIAGNOSTICS
@@ -559,7 +559,7 @@ def report_normality_tests(df, file=None):
         if os.path.exists(filename):
             os.remove(filename)
         with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
-            excel_critical_value(result, writer, sheetname="Normality Tests", critical={"p": "<=0.05"})
+            excel_critical_value(result, writer, sheet="Normality Tests", critical={"p": "<=0.05"})
     return result
 ##########################################################################################
 # EXAMPLES

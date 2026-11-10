@@ -1,0 +1,2 @@
+"call"
+"glm(formula=age~parity+induced,family=gaussian,data=infert_data)"

@@ -1,0 +1,6 @@
+"function_arguments","function_values"
+"Use","pairwise"
+"Method","spearman"
+"Adjustment for Probability values","BH"
+"Alpha","0.05"
+"Confidence Interval","TRUE"

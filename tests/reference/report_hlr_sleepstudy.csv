@@ -1,0 +1,8 @@
+"dv","model","fixed","random","call","Model","df","AIC","BIC","logLik","Test","L.Ratio","p.value"
+"Reaction","base","Reaction ~ 1",NA,"nlme::gls(model = formula(fbaseline), data = temp, method = ""ML"")",1,2,1965.04895170189,1971.43486540368,-980.524475850947,"",NA,NA
+"Reaction","random_intercept","Reaction ~ 1","~1 | Subject","lme.formula(fixed = formula(fbaseline), data = temp, random = frandom_intercept,     method = ""ML"")",2,3,1916.54105807306,1926.11992862573,-955.270529036529,"1 vs 2",50.507893628836,1.18686459448791e-12
+"Reaction","random_intercept_predictor","Reaction ~ Days","~1 | Subject","lme.formula(fixed = fpredictor, data = temp, random = frandom_intercept,     method = ""ML"")",3,4,1802.07864300523,1814.85047040879,-897.039321502613,"2 vs 3",116.462415067833,3.76446147654478e-27
+"Reaction","random_intercept_slope","Reaction ~ Days","~Days | Subject","lme.formula(fixed = fpredictor, data = temp, random = frandom_slope,     method = ""ML"")",4,6,1763.93934446559,1783.09708557093,-875.969672232793,"3 vs 4",42.1392985396387,7.07241255563788e-10
+"Fatigue","base","Fatigue ~ 1",NA,"nlme::gls(model = formula(fbaseline), data = temp, method = ""ML"")",1,2,607.51347168949,613.899385391271,-301.756735844745,"",NA,NA
+"Fatigue","random_intercept","Fatigue ~ 1","~1 | Subject","lme.formula(fixed = formula(fbaseline), data = temp, random = frandom_intercept,     method = ""ML"")",2,3,583.420165299216,592.999035851887,-288.710082649608,"1 vs 2",26.0933063902737,3.25309818564316e-07
+"Fatigue","random_intercept_predictor","Fatigue ~ Days","~1 | Subject","lme.formula(fixed = fpredictor, data = temp, random = frandom_intercept,     method = ""ML"")",3,4,524.29062088205,537.062448285611,-258.145310441025,"2 vs 3",61.129544417166,5.34401381528057e-15

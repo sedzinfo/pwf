@@ -1,0 +1,4 @@
+"Test","Statistic","Notes"
+"Hosmer and Lemeshow R^2",7.24105839711164e-06,""
+"Cox and Snell R^2",9.23146334497194e-06,"Cox and Snell R^2 never reaches maximum of 1"
+"Nagelkerke R^2",1.28119305677943e-05,""

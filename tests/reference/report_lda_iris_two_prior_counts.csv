@@ -1,0 +1,4 @@
+"class","prior","counts","mean.Sepal.Length","mean.Petal.Width"
+"setosa",0.333333333333333,50,5.006,0.246
+"versicolor",0.333333333333333,50,5.936,1.326
+"virginica",0.333333333333333,50,6.588,2.026

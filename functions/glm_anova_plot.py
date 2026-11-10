@@ -37,8 +37,10 @@ from plotnine import (
 )
 
 try:
+    from ._rcompat import r_levels, resolve_columns
     from .functions_strings import str_aes
 except ImportError:
+    from _rcompat import r_levels, resolve_columns
     from functions_strings import str_aes
 
 _ERROR_BAR_LABELS = {'se': 'standard errors', 'ci': 'confidence intervals', 'sd': 'standard deviations'}
@@ -60,7 +62,25 @@ def _summary_se(df, measurevar, groupvars):
 
 
 def _resolve_columns(df, cols):
-    return [df.columns[c] for c in cols] if all(isinstance(c, (int, np.integer)) for c in cols) else list(cols)
+    """Column names from names or 1-based positions, as rwf's names(df)[index]."""
+    return resolve_columns(df, cols)
+
+
+def _as_r_factor(series):
+    """R's factor(): categories in R's level order (numbers by value, text in R's collation)."""
+    return pd.Categorical(series, categories=r_levels(series))
+
+
+def _combine(plot_data, columns):
+    """rwf's plot_data_df: plyr::rbind.fill of the summaries, columns in rwf's order."""
+    valid = [v for v in plot_data.values() if v is not None]
+    if not valid:
+        return pd.DataFrame()
+    combined = pd.concat(valid, ignore_index=True)
+    for frame_column in combined.columns:
+        if isinstance(combined[frame_column].dtype, pd.CategoricalDtype):
+            combined[frame_column] = combined[frame_column].astype(object)
+    return combined[[c for c in columns if c in combined.columns]]
 ##########################################################################################
 # PLOT ONE WAY ANOVA
 ##########################################################################################
@@ -99,9 +119,9 @@ def plot_oneway(df, dv, iv, base_size=20, type="se", order_factor=True, title=""
     Parameters:
     df (pandas.DataFrame): Data containing the independent and
         dependent variables.
-    dv (list of int or str): Column indices/names of continuous
+    dv (list of int or str): Column 1-based positions/names of continuous
         dependent variables.
-    iv (list of int or str): Column indices/names of categorical
+    iv (list of int or str): Column 1-based positions/names of categorical
         independent variables. Coerced to category dtype automatically.
     base_size (int, optional): Base font size for theme_bw(). Defaults to 20.
     type (str, optional): Error bar type: "se", "ci", "sd", or "" (none).
@@ -123,14 +143,14 @@ def plot_oneway(df, dv, iv, base_size=20, type="se", order_factor=True, title=""
     incomplete rows) get None in both plot_data and plots.
 
     Examples:
-    >>> plot_oneway(df=df_insurance, dv=[2, 6], iv=[1, 4, 5])
-    >>> plot_oneway(df=df_insurance, dv=[6], iv=[4], type="ci")
+    >>> plot_oneway(df=df_insurance, dv=[3, 7], iv=[2, 5, 6])
+    >>> plot_oneway(df=df_insurance, dv=[7], iv=[5], type="ci")
     """
     df = df.copy()
     iv_cols = _resolve_columns(df, iv)
     dv_cols = _resolve_columns(df, dv)
     for c in iv_cols:
-        df[c] = df[c].astype('category')
+        df[c] = _as_r_factor(df[c])
 
     plot_data, plots = {}, {}
     for dv_col in dv_cols:
@@ -144,8 +164,7 @@ def plot_oneway(df, dv, iv, base_size=20, type="se", order_factor=True, title=""
             plot_data[key] = summary
             plots[key] = _plot_oneway_panel(summary, iv_col, dv_col, base_size, type, order_factor, title, note, width)
 
-    valid = [v for v in plot_data.values() if v is not None]
-    plot_data_df = pd.concat(valid, ignore_index=True) if valid else pd.DataFrame()
+    plot_data_df = _combine(plot_data, iv_cols + dv_cols + ["N", "sd", "se", "ci"])
     return {'plot_data': plot_data, 'plot_data_df': plot_data_df, 'plots': plots}
 ##########################################################################################
 # PLOT TWO WAY INTERACTION
@@ -193,8 +212,8 @@ def plot_interaction(df, dv, iv, base_size=20, type="se", order_factor=True, tit
 
     Parameters:
     df (pandas.DataFrame)
-    dv (list of int or str): Dependent variable column indices/names.
-    iv (list of int or str): Independent variable column indices/names.
+    dv (list of int or str): Dependent variable column 1-based positions/names.
+    iv (list of int or str): Independent variable column 1-based positions/names.
         Coerced to category dtype automatically.
     base_size (int, optional): Base font size. Defaults to 20.
     type (str, optional): Error bar type: "se", "ci", "sd", or "" (none).
@@ -209,15 +228,16 @@ def plot_interaction(df, dv, iv, base_size=20, type="se", order_factor=True, tit
     keyed "iv1_iv2_dv".
 
     Examples:
-    >>> plot_interaction(df=df_insurance, dv=[6], iv=[1, 4])
+    >>> plot_interaction(df=df_insurance, dv=[7], iv=[2, 5])
     """
     df = df.copy()
     iv_cols = _resolve_columns(df, iv)
     dv_cols = _resolve_columns(df, dv)
     for c in iv_cols:
-        df[c] = df[c].astype('category')
+        df[c] = _as_r_factor(df[c])
 
-    combos = [(iv1, iv2, dv_col) for dv_col in dv_cols for iv1 in iv_cols for iv2 in iv_cols if iv1 != iv2]
+    # R's expand.grid(iv, iv, dv): the first factor varies fastest
+    combos = [(iv1, iv2, dv_col) for dv_col in dv_cols for iv2 in iv_cols for iv1 in iv_cols if iv1 != iv2]
 
     plot_data, plots = {}, {}
     for iv1, iv2, dv_col in combos:
@@ -230,8 +250,7 @@ def plot_interaction(df, dv, iv, base_size=20, type="se", order_factor=True, tit
         plot_data[key] = summary
         plots[key] = _plot_interaction_panel(summary, iv1, iv2, dv_col, base_size, type, order_factor, title, note)
 
-    valid = [v for v in plot_data.values() if v is not None]
-    plot_data_df = pd.concat(valid, ignore_index=True) if valid else pd.DataFrame()
+    plot_data_df = _combine(plot_data, iv_cols + dv_cols + ["N", "sd", "se", "ci"])
     return {'plot_data': plot_data, 'plot_data_df': plot_data_df, 'plots': plots}
 ##########################################################################################
 # PLOT ANOVA DIAGNOSTICS

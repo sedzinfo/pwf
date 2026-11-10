@@ -1,0 +1,12 @@
+"input","proper","aes","aes_plain","right","left","squish","wrap","pad_left","pad_both","count_e","count_fixed","replace","replace_all","replace_fixed","mgsub"
+"_hello world_","_hello world_","hello world","hello world","ld_","_he","_hello world_","_hello
+world_","_hello world_","_hello world_",1,0,"_h#llo world_","_h#ll# w#rld_","_hello world_","+hello world+"
+"TES.T","Tes.t","Tes t","TES T","S.T","TES","TES.T","TES.T","***TES.T","--TES.T--",0,1,"TES.T","TES.T","TES!T","TES+T"
+"a  b	c","A  b	c","A b c","a b c","b	c","a  ","a b c","a b c","**a  b	c","-a  b	c--",0,0,"#  b	c","#  b	c","a  b	c","a  b	c"
+"mixed-Case_text","Mixed-case_text","Mixed case text","mixed Case text","ext","mix","mixed-Case_text","mixed-Case_text","mixed-Case_text","mixed-Case_text",3,0,"m#xed-Case_text","m#x#d-C#s#_t#xt","mixed-Case_text","mixed+Case+text"
+"x","X","X","x","x","x","x","x","*******x","----x----",0,0,"x","x","x","x"
+"Long sentence that needs wrapping at twelve","Long sentence that needs wrapping at twelve","Long sentence that needs wrapping at twelve","Long sentence that needs wrapping at twelve","lve","Lon","Long sentence that needs wrapping at twelve","Long
+sentence
+that needs
+wrapping at
+twelve","Long sentence that needs wrapping at twelve","Long sentence that needs wrapping at twelve",7,0,"L#ng sentence that needs wrapping at twelve","L#ng s#nt#nc# th#t n##ds wr#pp#ng #t tw#lv#","Long sentence that needs wrapping at twelve","Long sentence that needs wrapping at twelve"

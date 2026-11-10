@@ -18,10 +18,10 @@ from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 import numpy as np
 try:
-    from ._rcompat import r_number as _r_number
+    from ._rcompat import r_mixedsort_key as _r_mixedsort_key, r_number as _r_number
     from .functions_excel import excel_critical_value
 except ImportError:
-    from _rcompat import r_number as _r_number
+    from _rcompat import r_mixedsort_key as _r_mixedsort_key, r_number as _r_number
     from functions_excel import excel_critical_value
 ##########################################################################################
 # OBSERVED
@@ -121,116 +121,6 @@ def short_check(df):
                          'NULLS':[nulls],
                          'NOT_NULLS':[not_nulls]})
     return result
-##########################################################################################
-# CHECK DATAFRAME
-##########################################################################################
-def cdf(df,width=10000,filename=""):
-    """
-    Performs a thorough check of the given DataFrame (`df`) and provides various statistics such as NULL, NAN, 
-    EMPTY_STRINGS, INFINITE, NOT_NULL, UNIQUE, MIN, MAX, MEAN, MEDIAN, RANGE, and SD for each column. Optionally,
-    the results can be saved to an Excel file. Additionally, the function temporarily adjusts pandas display settings 
-    to show the full content of the DataFrame.
-
-    Parameters:
-    ----------
-    df : pandas.DataFrame
-        The DataFrame to analyze.
-        
-    width : int, optional, default=10000
-        The width setting to be used for pandas display. This determines the column width when displaying the DataFrame.
-        
-    filename : str, optional, default=""
-        If provided, the function saves the results to an Excel file with two sheets: "SUMMARY" and "CHECK". If not provided, 
-        the results are not saved to a file.
-
-    Returns:
-    -------
-    check : pandas.DataFrame
-        A DataFrame containing statistical information for each column in `df` including NULLs, NANs, 
-        unique values, MIN, MAX, etc.
-        
-    short_check_result : pandas.DataFrame
-        A DataFrame returned by the `short_check` function, which provides additional insights into the DataFrame's structure.
-        
-    Notes:
-    ------
-    - The function temporarily modifies pandas display settings to allow for full viewing of the DataFrame columns and rows.
-    - The original display settings are restored after execution.
-    - This function uses helper functions `is_nan` and `is_inf` to check for NaN and infinite values in the DataFrame.
-    - If `filename` is provided, results are written to an Excel file using `xlsxwriter`.
-    """
-    
-    # Save the original display options
-    original_display_options = {
-        'max_columns': pd.get_option('display.max_columns'),
-        'max_rows': pd.get_option('display.max_rows'),
-        'max_colwidth': pd.get_option('display.max_colwidth'),
-        'width': pd.get_option('display.width'),
-        'max_seq_item': pd.get_option('display.max_seq_item')
-    }
-    pd.set_option('display.max_columns', None)
-    pd.set_option('display.max_rows', None)
-    pd.set_option('display.max_colwidth', None)
-    # pd.set_option('display.width', width)
-    pd.set_option('display.max_seq_item', None)
-    def is_nan(x):
-        return x != x
-    def is_inf(x):
-        if isinstance(x,(int, float)):
-            return np.isinf(x)
-        else:
-            return False
-    short_check_result=short_check(df)
-    sdf=pd.DataFrame({"NULL":df.isnull().sum(),
-                      "NAN":df.map(is_nan).sum(),
-                      "EMPTY_STRINGS":(df=="").sum(),
-                      "INFINITE":df.map(is_inf).sum(),
-                      "NOT_NULL":df.count(),
-                      "UNIQUE":df.nunique(),
-                      "MIN":df.min(axis=0,skipna=True,numeric_only=True),
-                      "MAX":df.max(axis=0,skipna=True,numeric_only=True),
-                      "MEAN":df.mean(axis=0,skipna=True,numeric_only=True),
-                      "MEDIAN":df.median(axis=0,skipna=True,numeric_only=True),
-                      "RANGE":df.max(axis=0,skipna=True,numeric_only=True)-df.min(axis=0,skipna=True,numeric_only=True),
-                      "SD":df.std(axis=0,skipna=True,ddof=1,numeric_only=True),
-                      "TYPE":df.dtypes
-                      })
-    check=sdf.reset_index()
-    if filename !="":
-        writer=pd.ExcelWriter(filename,engine='xlsxwriter')
-        short_check_result.to_excel(writer,sheet_name="SUMMARY",index=False)
-        check.to_excel(writer,sheet_name="CHECK",index=False)
-        writer.close()
-    print(short_check_result)
-    print(check)
-    pd.set_option('display.max_columns', original_display_options['max_columns'])
-    pd.set_option('display.max_rows', original_display_options['max_rows'])
-    pd.set_option('display.max_colwidth', original_display_options['max_colwidth'])
-    pd.set_option('display.width', original_display_options['width'])
-    pd.set_option('display.max_seq_item', original_display_options['max_seq_item'])
-    return check, short_check_result
-##########################################################################################
-# CHECK DATAFRAME ROWS
-##########################################################################################
-def check_rows(df,filename=""):
-    """
-    Same statistics as cdf(), but computed per row instead of per column
-    (via transposing df first).
-
-    Parameters:
-    df (pandas.DataFrame): Data to analyze.
-    filename (str, optional): If given, writes an Excel report. Defaults to "".
-
-    Returns:
-    tuple: Same as cdf() -- (check, short_check_result).
-
-    Examples:
-    >>> import pandas as pd
-    >>> titanic = pd.read_csv("data/titanic.csv")
-    >>> check_rows(titanic.iloc[:5, :5])
-    """
-    dataframes=cdf(df.transpose(),filename=filename)
-    return dataframes
 ##########################################################################################
 # CHECK DATAFRAME (OPTIMISED)
 ##########################################################################################
@@ -395,15 +285,20 @@ def cdff(df, name_length=None, digits=2, nuniques=0, parralel=False, file=None):
     >>> cdff(df_titanic)
     >>> cdff(df_titanic, nuniques=3)
     """
+    return _check_dataframe(df, _cdff_column, name_length, digits, nuniques, parralel, file)
+
+
+def _check_dataframe(df, column_fn, name_length, digits, nuniques, parralel, file):
+    """The common body of cdf and cdff: one row per column from column_fn, the summary row and the file."""
     if name_length is None:
         name_length = pd.get_option("display.width") / 3
     name_length = int(name_length)
     columns = [df.iloc[:, i] for i in range(df.shape[1])]
     if parralel:
         with ThreadPoolExecutor() as pool:
-            rows = list(pool.map(lambda s: _cdff_column(s, digits, nuniques), columns))
+            rows = list(pool.map(lambda s: column_fn(s, digits, nuniques), columns))
     else:
-        rows = [_cdff_column(s, digits, nuniques) for s in columns]
+        rows = [column_fn(s, digits, nuniques) for s in columns]
     check = pd.DataFrame(rows)
     check.insert(0, "NAMES", [str(c) for c in df.columns])
     if nuniques > 0 and len(check) and (check["LEVELS"] == "").all():
@@ -427,34 +322,111 @@ def cdff(df, name_length=None, digits=2, nuniques=0, parralel=False, file=None):
         if os.path.exists(filename):
             os.remove(filename)
         with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
-            excel_critical_value(check, writer, sheetname="variables")
-            excel_critical_value(summary, writer, sheetname="summary")
+            excel_critical_value(check, writer, sheet="variables")
+            excel_critical_value(summary, writer, sheet="summary")
 
     for col in ["NAMES", "MIN", "MAX"]:
         if len(check):
             check[col] = check[col].map(lambda v: v[:name_length] if isinstance(v, str) else np.nan)
     return {"summary": summary, "check": check}
 ##########################################################################################
+# CHECK DATAFRAME (the original rwf::cdf)
+##########################################################################################
+_R_EPOCH = datetime.date(1970, 1, 1)
+
+
+def _cdf_column(s, digits, nuniques):
+    """
+    rwf::cdf for one column: cdff's statistics except MIN and MAX, which are the smallest and
+    largest value of a double column (Inf and -Inf when it has none, R's min/max of nothing; a
+    Date or date-time as R's number of days or seconds) and otherwise the first and last of the
+    distinct values' text labels in gtools::mixedsort order.
+    """
+    result = _cdff_column(s, digits, nuniques)
+    kind = _r_column_kind(s)
+    observed_values = s.dropna()
+    if kind == "double":
+        result["MIN"] = _r_number(observed_values.min()) if len(observed_values) else "Inf"
+        result["MAX"] = _r_number(observed_values.max()) if len(observed_values) else "-Inf"
+    elif kind in ("Date", "POSIXct"):
+        if kind == "Date":
+            numbers = [(v - _R_EPOCH).days for v in observed_values]
+        else:
+            numbers = [pd.Timestamp(v).timestamp() for v in observed_values]
+        result["MIN"] = _r_number(min(numbers)) if numbers else "Inf"
+        result["MAX"] = _r_number(max(numbers)) if numbers else "-Inf"
+    else:
+        if kind in ("factor", "ordered", "character"):
+            labels = [str(v) for v in observed_values.unique()]
+        else:
+            labels = [_r_value_text(v, kind) for v in observed_values.unique()]
+        labels = sorted(set(labels), key=_r_mixedsort_key)
+        result["MIN"] = labels[0] if labels else np.nan
+        result["MAX"] = labels[-1] if labels else np.nan
+    return result
+
+
+def cdf(df, name_length=None, digits=2, nuniques=0, parralel=False, file=None):
+    """
+    Column-by-column diagnostic summary of a data frame, as rwf::cdf (the
+    original version of cdff): missing, empty, NaN, infinite and finite
+    counts, number of distinct values, mean, median, sd, min, max and R
+    type of every column, and a summary row.
+
+    It differs from cdff in MIN and MAX: a double column gives its
+    smallest and largest number (Inf and -Inf when it has no values, as
+    R's min and max of nothing), a Date or date-time R's underlying
+    number, and every other column (integer, text, factor, logical) the
+    first and last of its distinct values as text in gtools::mixedsort
+    order.
+
+    Parameters:
+    df (pandas.DataFrame): Data to inspect.
+    name_length (int, optional): Maximum characters kept of NAMES, MIN and MAX. Defaults to a third of
+        pandas' display width (R: a third of getOption("width")).
+    digits (int, optional): Decimals for MEAN, MEDIAN and SD. Defaults to 2.
+    nuniques (int, optional): If > 0, adds UNIQUES and, when any column is a factor, LEVELS. Defaults to 0.
+    parralel (bool, optional): Summarise columns in parallel threads. Defaults to False. (Spelling as in rwf.)
+    file (str, optional): Excel filename without extension; writes sheets "variables" and "summary".
+        Defaults to None.
+
+    Returns:
+    dict: {"summary": one-row DataFrame, "check": one row per column}, as cdff.
+
+    Examples:
+    >>> cdf(df_titanic)
+    >>> cdf(df_titanic, nuniques=3)
+    """
+    return _check_dataframe(df, _cdf_column, name_length, digits, nuniques, parralel, file)
+##########################################################################################
+# CHECK DATAFRAME ROWS
+##########################################################################################
+def check_rows(df, filename=None):
+    """
+    cdf() of the rows instead of the columns (cdf of the transposed data).
+    Python-only helper.
+
+    Parameters:
+    df (pandas.DataFrame): Data to analyze.
+    filename (str, optional): Excel filename without extension. Defaults to None.
+
+    Returns:
+    dict: As cdf().
+
+    Examples:
+    >>> check_rows(df_titanic.iloc[:5, :5])
+    """
+    return cdf(df.transpose(), file=filename)
+##########################################################################################
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
-    import os
-
-    print("=" * 80, "\nobserved / is_int / check_integer\n", "=" * 80, sep="")
     print(observed(np.array([1, 2, np.nan, 4])))
     print(is_int(5), is_int(5.0))
     print(check_integer([1, 2, 3]), check_integer([1, 2.5, 3]))
-
     titanic = pd.read_csv("data/titanic.csv") if os.path.exists("data/titanic.csv") \
         else pd.read_csv("../data/titanic.csv")
-
-    print("\n" + "=" * 80, "\nshort_check\n", "=" * 80, sep="")
     print(short_check(df=titanic))
-
-    print("\n" + "=" * 80, "\ncdf\n", "=" * 80, sep="")
-    check, short_check_result = cdf(df=titanic.iloc[:, :6])
-
-    print("\n" + "=" * 80, "\ncheck_rows\n", "=" * 80, sep="")
-    check_r, short_r = check_rows(titanic.iloc[:5, :5])
-    print(check_r)
-
+    print(cdf(df=titanic)["check"])
+    print(cdff(df=titanic, nuniques=3)["check"])
+    print(check_rows(titanic.iloc[:5, :5])["check"])

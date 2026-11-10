@@ -35,14 +35,14 @@ try:
     from .functions_excel import excel_confusion_matrix, excel_critical_value
     from .functions_plot import report_pdf
     from .functions_strings import str_aes
-    from .functions_train_test_full import result_confusion_performance
+    from .functions_train_test import result_confusion_performance
     from .glm_linear_regression import plot_scatterplot
 except ImportError:
     from _rcompat import r_number
     from functions_excel import excel_confusion_matrix, excel_critical_value
     from functions_plot import report_pdf
     from functions_strings import str_aes
-    from functions_train_test_full import result_confusion_performance
+    from functions_train_test import result_confusion_performance
     from glm_linear_regression import plot_scatterplot
 ##########################################################################################
 # HELPERS
@@ -390,14 +390,14 @@ def report_xgboost(model, validation_data=None, label=None, file="xgboost", w=10
             performance = plots.get("performance")
             if isinstance(performance, dict) and performance.get("confusion_matrix") is not None:
                 excel_confusion_matrix(performance["confusion_matrix"], writer)
-            excel_critical_value(result["model_summary"], writer, sheetname="Model Summary")
+            excel_critical_value(result["model_summary"], writer, sheet="Model Summary")
             if "validation_metrics" in result:
-                excel_critical_value(result["validation_metrics"], writer, sheetname="Validation Metrics")
+                excel_critical_value(result["validation_metrics"], writer, sheet="Validation Metrics")
             if len(importance):
-                excel_critical_value(importance, writer, sheetname="Feature Importance")
+                excel_critical_value(importance, writer, sheet="Feature Importance")
             if len(result["parameters"]):
-                excel_critical_value(result["parameters"], writer, sheetname="Hyperparameters")
+                excel_critical_value(result["parameters"], writer, sheet="Hyperparameters")
             if not fast and len(evaluation_log):
-                excel_critical_value(evaluation_log, writer, sheetname="Evaluation Log")
+                excel_critical_value(evaluation_log, writer, sheet="Evaluation Log")
     return {"plots": plots, "result": result, "observed": observed, "predicted": predicted,
             "feature_names": feature_names}

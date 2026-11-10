@@ -1,0 +1,2 @@
+"call"
+"glm(formula=spontaneous~age+parity,family=poisson,data=infert_data)"

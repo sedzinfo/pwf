@@ -1,0 +1,2 @@
+"call"
+"lda(formula=Species~.,data=iris_data)"

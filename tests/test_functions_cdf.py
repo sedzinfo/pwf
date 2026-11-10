@@ -60,3 +60,16 @@ def test_r_number_formats_like_r():
              2.5: "2.5", 1e-5: "1e-05", 0.0001: "1e-04", 1234567.1: "1234567.1", 100.0: "100", 1e15: "1e+15",
              -0.5: "-0.5", 7: "7"}
     assert {k: functions_cdf._r_number(k) for k in cases} == cases
+
+
+@pytest.mark.parametrize("name, kwargs, rows", [
+    ("cdf_types", {}, None),
+    ("cdf_types_nuniques", {"nuniques": 3}, None),
+    ("cdf_head_nuniques", {"nuniques": 25, "name_length": 5}, 20),
+])
+def test_cdf(df_types, reference, name, kwargs, rows):
+    data = df_types.assign(empty=np.nan)
+    data = data if rows is None else data.head(rows)
+    result = functions_cdf.cdf(data, **kwargs)
+    assert_matches_reference(result["check"], _reference_check(reference, f"{name}_check"))
+    assert_matches_reference(result["summary"], reference(f"{name}_summary"))

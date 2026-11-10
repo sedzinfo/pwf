@@ -489,12 +489,12 @@ def report_alpha(df, key=None, questions=None, reverse=None, mini=None, maxi=Non
         except ImportError:
             from functions_excel import excel_critical_value
         writer = pd.ExcelWriter(f"{file}.xlsx", engine="xlsxwriter")
-        excel_critical_value(result_total, writer, sheetname="total statistics", critical={"raw_alpha": ">0.60"})
+        excel_critical_value(result_total, writer, sheet="total statistics", critical={"raw_alpha": ">0.60"})
         if not result_boot.empty:
-            excel_critical_value(result_boot, writer, sheetname="bootstrap", critical={"raw_alpha": ">0.60"})
-        excel_critical_value(result_item_statistics, writer, sheetname="item statistics",
+            excel_critical_value(result_boot, writer, sheet="bootstrap", critical={"raw_alpha": ">0.60"})
+        excel_critical_value(result_item_statistics, writer, sheet="item statistics",
                               critical={"raw_alpha": ">0.60"})
-        excel_critical_value(result_dropped, writer, sheetname="if dropped",
+        excel_critical_value(result_dropped, writer, sheet="if dropped",
                               critical={"scale_alpha": ">0.60", "raw_alpha": ">0.60"})
         writer._save()
         writer.close()

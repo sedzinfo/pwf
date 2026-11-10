@@ -312,16 +312,16 @@ def compute_efa_cfa(dimensions, df_response, filename="efa_cfa_models.xlsx", min
     with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
         critical = {c: [">0.32", "<-0.32"] for c in ["F1", "S2F1", "S2F2", "P2F1", "P2F2", "S3F1", "S3F2", "S3F3",
                                                      "P3F1", "P3F2", "P3F3", "standardized", "standardized_RI"]}
-        excel_critical_value(models_table, writer, sheetname="critical", comments=_COMMENT, critical=critical)
+        excel_critical_value(models_table, writer, sheet="critical", comment=_COMMENT, critical=critical)
         for frame, sheet in [(modification_df, "CFA_Modification_Indexes"), (residuals_df, "EFA1F_Residuals"),
                              (coefficients_df, "CFA_Coefficients"), (coefficients_ri_df, "CFA_RI_Coefficients")]:
             if len(frame):
-                excel_critical_value(frame, writer, sheetname=sheet)
-        excel_matrix(cor_used_items, writer, sheetname="used_items")
+                excel_critical_value(frame, writer, sheet=sheet)
+        excel_matrix(cor_used_items, writer, sheet="used_items")
         if len(long):
-            excel_matrix(long, writer, sheetname="used_items_item_correlation")
-        excel_matrix(mean_score_correlation, writer, sheetname="used_items_mean_score")
+            excel_matrix(long, writer, sheet="used_items_item_correlation")
+        excel_matrix(mean_score_correlation, writer, sheet="used_items_mean_score")
         if cfa_scores.shape[1] > 0:
-            excel_matrix(_matrix_triangle(cfa_scores.corr()), writer, sheetname="used_items_cfa_score")
+            excel_matrix(_matrix_triangle(cfa_scores.corr()), writer, sheet="used_items_cfa_score")
     return {"efa_cfa_models": models_table, "cfa_scores": cfa_scores, "plots_scree": {},
             "cfa_coefficients": coefficients_df}

@@ -1,0 +1,2 @@
+"call"
+"lm(charges ~ age * bmi + smoker + region,data=df_insurance)"

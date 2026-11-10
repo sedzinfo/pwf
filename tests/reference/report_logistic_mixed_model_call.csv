@@ -1,0 +1,2 @@
+"call"
+"glm(formula=case~education+age,family=binomial,data=infert_data)"

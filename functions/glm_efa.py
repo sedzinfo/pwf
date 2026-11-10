@@ -1,42 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Python port of R rwf::GLM_EFA.R.
+Python port of R rwf::GLM_EFA.R: scree plots, loading tables and plots,
+residual statistics and the EFA report (report_efa).
 
-Scope, per explicit choices made during this port (factor_analyzer
-doesn't expose most of psych::fa()'s rich model object):
-  - A lightweight EFA model wrapper (_fit_efa) is built around
-    factor_analyzer.FactorAnalyzer, exposing the R-psych::fa-style
-    attributes needed by model_loadings/plot_loadings/report_efa:
-    loadings (pattern), Structure, Phi, r, model (reproduced
-    correlations), residual, communality/communalities, uniquenesses,
-    complexity (Hoffman's index), eigenvalues, RMSEA (point estimate
-    only), rms/crms.
-  - TLI, CFI, BIC/SABIC/EBIC/ESABIC, and RMSEA confidence bounds are
-    NOT computed — these need a null/baseline-model chi-square
-    comparison (TLI/CFI/*IC family) or inverting a noncentral
-    chi-square CDF (RMSEA CI), both easy to get subtly wrong without a
-    reference implementation to verify against. They're present as
-    fields (set to NaN) for structural parity but not populated.
-  - RMSEA/chi-square use the classical residual-based approximation
-    chi_sq ~= (n - 1 - (2p+5)/6 - 2*factors/3) * sum(squared
-    off-diagonal residuals), the standard formula usable for any
-    extraction method (Harman 1976), not just ML.
-  - Attribute names with dots in R (e.g. model$e.values) become
-    underscored Python attributes (e_values) since Python identifiers
-    can't contain dots.
-
-Environment note: factor_analyzer 0.5.1 (latest on PyPI) calls
-sklearn's check_array(force_all_finite=...), a parameter renamed to
-ensure_all_finite in scikit-learn >=1.6 and removed by 1.9 (installed
-here) — factor_analyzer.fit() is completely broken without a shim.
-This module monkey-patches check_array inside factor_analyzer's own
-module at import time to translate the old kwarg, so FactorAnalyzer
-actually works in this environment.
-
-This file replaces the previous glm_efa.py (a simpler, self-contained
-report_efa that fit its own model from raw data with a different
-signature). Confirmed nothing else in this codebase called that
-version before replacing it.
+Models come from fa() (also as _fit_efa), pwf's port of psych::fa with
+fm = "minres" (psych's default) or "ml" and oblimin rotation, which
+reproduces psych's loadings, communalities, eigenvalues, fit statistics
+and regression factor scores. Bartlett's test and KMO follow
+psych::cortest.bartlett and psych::KMO. Attribute names with dots in R
+(model$e.values, model$fit.off) use underscores (e_values, fit_off).
 """
 ##########################################################################################
 # LOAD SYSTEM
@@ -44,6 +16,7 @@ version before replacing it.
 from types import SimpleNamespace
 import numpy as np
 import pandas as pd
+from scipy import stats
 from plotnine import (
     ggplot, aes, geom_hline, geom_line, geom_point, geom_tile, geom_text, geom_bar,
     theme_bw, theme, scale_x_continuous, scale_fill_gradient2, labs, annotate,
@@ -51,93 +24,37 @@ from plotnine import (
 )
 
 try:
+    from ._efa import fa, model_loadings as _model_loadings
     from .functions_plot import plot_multiplot, report_pdf
     from .functions_strings import str_proper, call_to_string
     from .explore_assumptions import plot_histogram
 except ImportError:
+    from _efa import fa, model_loadings as _model_loadings
     from functions_plot import plot_multiplot, report_pdf
     from functions_strings import str_proper, call_to_string
     from explore_assumptions import plot_histogram
-
-import sklearn.utils as _sku
-_orig_check_array = _sku.check_array
-
-
-def _patched_check_array(*args, **kwargs):
-    """Compat shim: factor_analyzer 0.5.1 still passes sklearn's renamed force_all_finite kwarg."""
-    if 'force_all_finite' in kwargs:
-        kwargs['ensure_all_finite'] = kwargs.pop('force_all_finite')
-    return _orig_check_array(*args, **kwargs)
-
-
-import factor_analyzer.factor_analyzer as _fa_mod
-_fa_mod.check_array = _patched_check_array
-from factor_analyzer import FactorAnalyzer, calculate_bartlett_sphericity, calculate_kmo
 ##########################################################################################
 # FIT EFA (internal helper, R psych::fa-like model wrapper)
 ##########################################################################################
 def _fit_efa(df, n_factors, rotation="oblimin", method="minres", **kwargs):
     """
-    Fit a FactorAnalyzer model and wrap it into a SimpleNamespace with
-    R psych::fa-style attributes, for use by model_loadings/
-    plot_loadings/compute_residual_stats/report_efa.
+    Fit an exploratory factor analysis, as psych::fa(df, nfactors, rotate,
+    fm) (rwf's functions take a psych::fa model). A thin wrapper around
+    pwf's psych-compatible engine, fa(); kept for code that calls it.
+
+    Parameters:
+    df (pandas.DataFrame): Raw data; correlations are pairwise.
+    n_factors (int): Number of factors.
+    rotation (str, optional): "oblimin" (default) or "none".
+    method (str, optional): "minres" (default, psych's default) or "ml".
+
+    Returns:
+    FAResult: The fitted model (see fa()).
+
+    Examples:
+    >>> model = _fit_efa(df_ocean[["E1", "E2", "E3", "E4", "E5"]], n_factors=1)
     """
-    df_complete = df.dropna()
-    n = len(df_complete)
-    p = df_complete.shape[1]
-
-    fa = FactorAnalyzer(n_factors=n_factors, rotation=rotation, method=method, **kwargs)
-    fa.fit(df_complete)
-
-    loadings = pd.DataFrame(fa.loadings_, index=df_complete.columns,
-                             columns=[f"PA{i + 1}" for i in range(n_factors)])
-    phi = (pd.DataFrame(fa.phi_, index=loadings.columns, columns=loadings.columns)
-           if getattr(fa, 'phi_', None) is not None
-           else pd.DataFrame(np.eye(n_factors), index=loadings.columns, columns=loadings.columns))
-    structure = pd.DataFrame(loadings.to_numpy() @ phi.to_numpy(), index=loadings.index, columns=loadings.columns)
-
-    r = df_complete.corr()
-    reproduced = pd.DataFrame(loadings.to_numpy() @ phi.to_numpy() @ loadings.to_numpy().T,
-                               index=r.index, columns=r.columns)
-    residual = r - reproduced
-
-    communalities = pd.Series(np.sum(loadings.to_numpy() * structure.to_numpy(), axis=1), index=loadings.index)
-    uniquenesses = 1 - communalities
-    sq = loadings.to_numpy() ** 2
-    complexity = pd.Series(np.sum(sq, axis=1) ** 2 / np.sum(sq ** 2, axis=1), index=loadings.index)
-
-    dof = int(((p - n_factors) ** 2 - (p + n_factors)) / 2)
-    offdiag_resid = residual.to_numpy()[np.triu_indices(p, k=1)]
-    chi = max((n - 1 - (2 * p + 5) / 6 - (2 * n_factors) / 3) * np.sum(offdiag_resid ** 2), 0.0)
-    rmsea = float(np.sqrt(max((chi / dof - 1) / (n - 1), 0))) if dof > 0 else np.nan
-    rms = float(np.sqrt(np.mean(offdiag_resid ** 2)))
-    crms = float(np.sqrt(np.sum(offdiag_resid ** 2) / dof)) if dof > 0 else np.nan
-
-    reduced_r_arr = r.to_numpy().copy()
-    np.fill_diagonal(reduced_r_arr, communalities.to_numpy())
-    values = np.sort(np.linalg.eigvalsh(reduced_r_arr))[::-1]
-    e_values = np.sort(np.linalg.eigvalsh(r.to_numpy()))[::-1]
-
-    weights = None
-    try:
-        weights = pd.DataFrame(fa.get_factor_scores_weights() if hasattr(fa, 'get_factor_scores_weights')
-                                else fa.get_uniquenesses(), index=df_complete.columns)
-    except Exception:
-        weights = None
-
-    return SimpleNamespace(
-        loadings=loadings, Structure=structure, Phi=phi, r=r, model=reproduced, residual=residual,
-        communality=communalities, communalities=communalities, uniquenesses=uniquenesses,
-        complexity=complexity, values=values, e_values=e_values,
-        n_obs=n, np_obs=pd.DataFrame(n, index=r.index, columns=r.columns),
-        factors=n_factors, dof=dof, chi=chi, STATISTIC=chi,
-        RMSEA={'RMSEA': rmsea, 'lower': np.nan, 'upper': np.nan, 'confidence': np.nan},
-        rms=rms, crms=crms,
-        TLI=np.nan, CFI=np.nan, BIC=np.nan, SABIC=np.nan, EBIC=np.nan, ESABIC=np.nan,
-        fit=np.nan, fit_off=np.nan,
-        weights=weights, scores=None, rotation=rotation, method=method, fm=method,
-        Call=f"_fit_efa(n_factors={n_factors}, rotation={rotation!r}, method={method!r})",
-    )
+    return fa(df, nfactors=n_factors, rotate=rotation, fm=method)
 ##########################################################################################
 # PLOT SCREE
 ##########################################################################################
@@ -189,55 +106,25 @@ _LOADING_CRITICAL = pd.DataFrame({
 
 def model_loadings(model, cut=None, matrix_type="pattern", sort=True):
     """
-    Build a pattern and/or structure loadings table, with small
-    loadings blanked out below a cutoff and rows sorted by their
-    dominant factor.
+    Pattern and/or structure loadings rounded to 2 decimals, sorted like
+    psych::fa.sort, with loadings below cut blanked (port of
+    rwf::model_loadings).
 
     Parameters:
-    model: An EFA model from _fit_efa (or with matching attributes:
-        .loadings, .Structure, .n_obs).
-    cut (float, optional): Loadings with absolute value below this are
-        blanked (""). If None (default), picked from a standard
-        sample-size-to-critical-loading table (Stevens, 2002-style).
-    matrix_type (str, optional): "pattern", "structure", or "all"
-        (both, stacked). Defaults to "pattern".
-    sort (bool, optional): If True (default), sort rows by dominant
-        factor, then by loading magnitude within factor.
+    model (FAResult): A model from fa() / _fit_efa().
+    cut (float, optional): Smallest absolute loading shown. By default the
+        critical loading for the sample size (Stevens' table), as rwf.
+    matrix_type (str, optional): "pattern" (default), "structure" or "all".
+    sort (bool, optional): Sort the items. Defaults to True.
 
     Returns:
-    pandas.DataFrame: Columns "Matrix", "variable", one column per factor.
+    pandas.DataFrame: Columns Matrix, variable and one per factor. As in rwf,
+    the loadings are text when some are blanked and numbers otherwise.
 
     Examples:
-    >>> model = _fit_efa(df_insurance.select_dtypes("number"), n_factors=2)
     >>> model_loadings(model=model, cut=None, matrix_type="pattern")
     """
-    n = model.n_obs
-    if cut is None:
-        idx = (_LOADING_CRITICAL['sample'] - n).abs().idxmin()
-        cut = _LOADING_CRITICAL.loc[idx, 'critical_loading']
-
-    def _prep(mat, label):
-        mat = mat.copy()
-        if sort:
-            dominant = mat.abs().idxmax(axis=1)
-            magnitude = mat.abs().max(axis=1)
-            order = pd.DataFrame({'dominant': dominant, 'magnitude': -magnitude}).sort_values(['dominant', 'magnitude'])
-            mat = mat.loc[order.index]
-        display = mat.mask(mat.abs() < cut, "")
-        display.insert(0, 'variable', display.index)
-        display.insert(0, 'Matrix', label)
-        return display.reset_index(drop=True)
-
-    pattern = _prep(model.loadings, "Pattern")
-    structure = _prep(model.Structure, "Structure")
-
-    if matrix_type == "pattern":
-        return pattern
-    elif matrix_type == "structure":
-        return structure
-    elif matrix_type == "all":
-        return pd.concat([pattern, structure], ignore_index=True)
-    raise ValueError(f"Unknown matrix_type: {matrix_type!r}")
+    return _model_loadings(model, cut=cut, matrix_type=matrix_type, sort=sort)
 ##########################################################################################
 # LOADINGS PLOT STACKED WITH CORRELATION
 ##########################################################################################
@@ -357,110 +244,127 @@ def compute_residual_stats(model, data=None):
 ##########################################################################################
 # REPORT EFA
 ##########################################################################################
+def _bartlett_sphericity(r, n):
+    """psych::cortest.bartlett(R, n)."""
+    p = r.shape[0]
+    statistic = -np.log(np.linalg.det(r)) * (n - 1 - (2 * p + 5) / 6)
+    df = p * (p - 1) / 2
+    return statistic, df, stats.chi2.sf(statistic, df)
+
+
+def _kmo(r):
+    """psych::KMO(r): overall and per item measures of sampling adequacy."""
+    q = np.linalg.inv(r)
+    d = 1 / np.sqrt(np.diag(q))
+    partial = q * np.outer(d, d)
+    np.fill_diagonal(partial, 0)
+    off = r.copy()
+    np.fill_diagonal(off, 0)
+    msa = np.sum(off ** 2) / (np.sum(off ** 2) + np.sum(partial ** 2))
+    msa_items = (off ** 2).sum(axis=0) / ((off ** 2).sum(axis=0) + (partial ** 2).sum(axis=0))
+    return msa, msa_items
+
+
 def report_efa(model, df, file=None, w=10, h=5, cut=0, base_size=10, scores=False):
     """
-    Full EFA report: correlation/reproduced/residual matrices,
-    determinant test, Bartlett's test, KMO, fit indices, loadings,
-    scree/loadings/residual-histogram plots, optionally written to a
-    multi-sheet Excel workbook and a PDF of plots.
+    Exploratory factor analysis report (port of rwf::report_efa): observed,
+    reproduced and residual correlations, residual statistics, determinant,
+    Bartlett's test of sphericity, KMO, fit indices, loadings with variance
+    accounted, score weights and scree, loading and residual plots,
+    optionally written to <file>.xlsx and <file>.pdf.
 
     Parameters:
-    model: An EFA model from _fit_efa.
-    df (pandas.DataFrame): The original data the model was fit on
-        (used for Bartlett's test, KMO, and the determinant test).
-    file (str, optional): Output filename (without extension). Defaults to None.
+    model (FAResult): A model from fa() / _fit_efa() (rwf: psych::fa).
+    df (pandas.DataFrame): The data the model was fitted on.
+    file (str, optional): Output filename without extension.
     w, h (float, optional): PDF page size in inches. Defaults to 10, 5.
-    cut (float, optional): Loading cutoff forwarded to model_loadings. Defaults to 0.
-    base_size (int, optional): Base font size for plots. Defaults to 10.
-    scores (bool, optional): If True, include factor scores in the
-        result/Excel export. Defaults to False.
+    cut (float, optional): Loading cut passed to model_loadings. Defaults to 0.
+    base_size (int, optional): Base font size of the plots. Defaults to 10.
+    scores (bool, optional): Add the factor scores. Defaults to False.
 
     Returns:
     dict: correlations, npobs, residual_stats, determinant_test,
-    bartlett_test, kmo_test, loadings, weights, and (if scores=True) scores.
+    bartlett_test, kmo_test, loadings, instruction_loading_critical_values,
+    weights and (scores=True) scores, as in rwf.
 
     Examples:
-    >>> model = _fit_efa(df_insurance.select_dtypes("number"), n_factors=2)
-    >>> report_efa(model=model, df=df_insurance.select_dtypes("number"))
+    >>> model = fa(df_ocean[["E1", "E2", "E3", "E4", "E5"]], nfactors=1)
+    >>> report_efa(model=model, df=df_ocean[["E1", "E2", "E3", "E4", "E5"]])
     """
-    df_complete = df.dropna()
-    correlationmatrix = df_complete.corr(numeric_only=True)
-
-    chi_square_value, p_value = calculate_bartlett_sphericity(df_complete)
-    bartlett_test = pd.DataFrame({'x_squared[bartlett]': [chi_square_value], 'df[bartlett]': [np.nan],
-                                   'p[bartlett]': [p_value]})
-
-    kmo_all, kmo_model = calculate_kmo(df_complete)
-    kmo_test = pd.DataFrame({'Overall_MSA': kmo_model, 'MSA': kmo_all}, index=df_complete.columns)
-
-    determinant = float(np.linalg.det(correlationmatrix.to_numpy()))
-    determinant_test = pd.DataFrame({'determinant': [determinant], 'above_critical': [determinant > 0.00001]})
+    correlationmatrix = df.corr().to_numpy()
+    statistic, bartlett_df, p_value = _bartlett_sphericity(correlationmatrix, len(df))
+    bartlett_test = pd.DataFrame({"x_squared[bartlett]": [statistic], "df[bartlett]": [bartlett_df],
+                                  "p[bartlett]": [p_value]})
+    determinant = float(np.linalg.det(correlationmatrix))
+    determinant_test = pd.DataFrame({"determinant": [determinant], "above_critical": [determinant > 0.00001]})
+    msa, msa_items = _kmo(correlationmatrix)
+    kmo_test = pd.DataFrame({"Overall_MSA": msa, "MSA": msa_items, "Kaiser_1974": np.nan}, index=df.columns)
 
     fit_index = pd.DataFrame({
-        'RMSEA': [model.RMSEA['RMSEA']], 'lower': [model.RMSEA['lower']], 'upper': [model.RMSEA['upper']],
-        'confidence': [model.RMSEA['confidence']], 'RMS': [model.rms], 'CRMS': [model.crms],
-        'TLI': [model.TLI], 'CFI': [model.CFI], 'BIC': [model.BIC], 'SABIC': [model.SABIC],
-        'EBIC': [model.EBIC], 'ESABIC': [model.ESABIC], 'fit': [model.fit], 'fit_off': [model.fit_off],
+        "RMSEA": [model.RMSEA["RMSEA"]], "lower": [model.RMSEA["lower"]], "upper": [model.RMSEA["upper"]],
+        "confidence": [model.RMSEA["confidence"]], "RMS": [model.rms], "CRMS": [model.crms], "TLI": [model.TLI],
+        "CFI": [model.CFI], "BIC": [model.BIC], "SABIC": [model.SABIC], "EBIC": [model.EBIC],
+        "ESABIC": [model.ESABIC], "fit": [model.fit], "fit.off": [model.fit_off],
     })
 
     plots = {
-        'plot_scree': plot_scree(df_complete, base_size=base_size, title=""),
-        'plot_loadings_structure': plot_loadings(model, matrix_type="structure", base_size=base_size),
-        'plot_loadings_pattern': plot_loadings(model, matrix_type="pattern", base_size=base_size),
+        "plot_scree": plot_scree(df, base_size=base_size, title=""),
+        "plot_loadings_structure": plot_loadings(model, matrix_type="structure", base_size=base_size),
+        "plot_loadings_pattern": plot_loadings(model, matrix_type="pattern", base_size=base_size),
     }
     residual_offdiag = model.residual.to_numpy()[np.triu_indices_from(model.residual.to_numpy(), k=1)]
-    plots['plot_residual_histogram'] = plot_histogram(
-        pd.DataFrame({'data': residual_offdiag}), bins=30, title="Histogram of residuals", base_size=base_size)
-
-    flat_plots = [plots['plot_scree'], plots['plot_loadings_structure']['plot_barplot'],
-                  plots['plot_loadings_pattern']['plot_barplot'], plots['plot_residual_histogram']]
-    report_pdf(plotlist=flat_plots, file=file, w=w, h=h, print_plot=(file is None))
+    plots["plot_residual_histogram"] = plot_histogram(
+        pd.DataFrame({"data": residual_offdiag}), bins=30, title="Histogram of residuals", base_size=base_size)
+    if file is not None:
+        flat_plots = [plots["plot_scree"], plots["plot_loadings_structure"]["plot_barplot"],
+                      plots["plot_loadings_pattern"]["plot_barplot"], plots["plot_residual_histogram"]]
+        report_pdf(plotlist=flat_plots, file=file, w=w, h=h, print_plot=False)
 
     residual_stats = compute_residual_stats(model)
-
     model_communality = pd.DataFrame({
-        'complexity': model.complexity, 'communality': model.communality, 'communalities': model.communalities,
-        'uniquenesses': model.uniquenesses, 'values': pd.Series(model.values), 'e_values': pd.Series(model.e_values),
-    })
-
+        "complexity": model.complexity, "communality": model.communality, "communalities": model.communalities,
+        "uniquenesses": model.uniquenesses, "values": model.values, "e.values": model.e_values})
     correlations = pd.concat([
-        model.model.assign(type="reproduced correlations"),
-        model.r.assign(type="observed correlations"),
-        model.residual.assign(type="residual correlations"),
+        pd.concat([pd.DataFrame({"type": "reproduced correlations"}, index=model.model.index), model.model], axis=1),
+        pd.concat([pd.DataFrame({"type": "observed correlations"}, index=model.r.index), model.r], axis=1),
+        pd.concat([pd.DataFrame({"type": "residual correlations"}, index=model.residual.index), model.residual],
+                  axis=1),
     ])
-
-    loadings = model_loadings(model, cut, matrix_type="all")
-    model_call = pd.DataFrame({'call': [call_to_string(model)]})
-
-    result = {
-        'correlations': correlations, 'npobs': model.np_obs, 'residual_stats': residual_stats,
-        'determinant_test': determinant_test, 'bartlett_test': bartlett_test, 'kmo_test': kmo_test,
-        'loadings': loadings, 'weights': model.weights,
-    }
+    vaccounted = model.Vaccounted.copy()
+    vaccounted.insert(0, "row.names.model.Vaccounted.", vaccounted.index)
+    vaccounted.insert(0, "type", "variance accounted")
+    loadings = pd.concat([model_loadings(model, cut, matrix_type="all"), vaccounted.reset_index(drop=True)],
+                         ignore_index=True)
+    loadings = loadings[[c for c in loadings.columns if c not in ("type", "row.names.model.Vaccounted.")]
+                        + ["type", "row.names.model.Vaccounted."]]
+    model_call = pd.DataFrame({"call": [f"fa(nfactors={model.factors},fm='{model.fm}')"]})
+    result = {"correlations": correlations, "npobs": model.np_obs, "residual_stats": residual_stats,
+              "determinant_test": determinant_test, "bartlett_test": bartlett_test, "kmo_test": kmo_test,
+              "loadings": loadings, "instruction_loading_critical_values": _LOADING_CRITICAL.copy(),
+              "weights": model.weights}
     if scores:
-        result['scores'] = model.scores
+        result["scores"] = model.scores
 
     if file is not None:
         try:
-            from .functions_excel import excel_matrix, excel_critical_value, excel_generic_format
+            from .functions_excel import excel_matrix, excel_critical_value
         except ImportError:
-            from functions_excel import excel_matrix, excel_critical_value, excel_generic_format
-        writer = pd.ExcelWriter(f"{file}.xlsx", engine='xlsxwriter')
-        excel_matrix(correlations.select_dtypes('number'), writer, sheetname="r")
-        excel_matrix(model.np_obs, writer, sheetname="n")
-        excel_generic_format(residual_stats, writer, sheetname="residual stats")
-        excel_critical_value(fit_index, writer, sheetname="fit_index")
-        excel_generic_format(loadings, writer, sheetname="loadings")
-        excel_critical_value(determinant_test, writer, sheetname="determinant")
-        excel_critical_value(bartlett_test, writer, sheetname="bartlett test")
-        excel_generic_format(kmo_test.reset_index(), writer, sheetname="msa")
-        excel_matrix(model_communality, writer, sheetname="communalities")
-        if scores and model.scores is not None:
-            excel_matrix(model.scores, writer, sheetname="scores")
-        excel_generic_format(model_call, writer, sheetname="call")
-        writer._save()
-        writer.close()
-
+            from functions_excel import excel_matrix, excel_critical_value
+        with pd.ExcelWriter(f"{file}.xlsx", engine="xlsxwriter") as writer:
+            excel_matrix(correlations.drop(columns="type"), writer, sheet="r")
+            excel_matrix(model.np_obs, writer, sheet="n")
+            excel_critical_value(residual_stats, writer, sheet="residual stats")
+            excel_critical_value(fit_index, writer, sheet="fit_index")
+            excel_critical_value(loadings, writer, sheet="loadings")
+            excel_critical_value(_LOADING_CRITICAL, writer, sheet="loading critical values")
+            excel_matrix(model.weights, writer, sheet="weights")
+            excel_critical_value(determinant_test, writer, sheet="determinant")
+            excel_critical_value(bartlett_test, writer, sheet="bartlett test")
+            excel_critical_value(kmo_test.reset_index(names="variable"), writer, sheet="msa")
+            excel_matrix(model_communality, writer, sheet="communalities")
+            if scores:
+                excel_matrix(model.scores, writer, sheet="scores")
+            excel_critical_value(model_call, writer, sheet="call")
     return result
 ##########################################################################################
 # EXAMPLES

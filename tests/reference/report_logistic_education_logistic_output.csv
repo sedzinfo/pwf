@@ -1,0 +1,2 @@
+"AIC","df.residual","df.null","deviance","null.deviance","epsilon","tol","qr.rank","rank","maxit","iteration","method","converged","boundary","trace"
+322.168821402927,245,247,316.168821402928,316.171110816404,1e-08,1e-11,3,3,25,4,"glm.fit",TRUE,FALSE,FALSE

@@ -1,162 +1,237 @@
 # -*- coding: utf-8 -*-
 """
-Python port of R rwf::GLM_LDA.R — a report/export wrapper around a fitted
-Linear Discriminant Analysis model.
+Python port of R rwf::GLM_LDA.R, with MASS::lda (method "moment") and its
+predict method ported natively, so report_lda takes the fitted model
+alone, as in rwf.
 
-Deviations from the R original, by design:
-  - MASS::lda() carries the original formula/data/call inside the fitted
-    model object (R's formula-interface reflection), so R's report_lda
-    only needs `model` itself to recover predictions, the observed
-    outcome, and a call string. scikit-learn's LinearDiscriminantAnalysis
-    has none of that — it's fit on plain X/y arrays with no memory of
-    where they came from. report_lda() here therefore takes `X` and `y`
-    explicitly (the same values used to fit `model`), matching this
-    project's established pattern for report_* functions wrapping
-    scikit-learn/statsmodels objects (e.g. glm_hlr.report_hlr,
-    functions_train_test_full.result_confusion_performance) rather than
-    R's model-formula magic.
-  - model$scaling (R's discriminant coefficients) is normalized so each
-    linear discriminant has unit within-group variance. scikit-learn's
-    `scalings_` uses a different internal normalization (from its SVD/
-    eigen solver), so the coefficient values won't numerically match R's
-    even though they describe the same discriminant directions — the
-    ratios *between* variables within a given LD column are meaningful,
-    but the absolute scale and sign of each column is solver-dependent
-    in both R and Python, and isn't expected to match across them.
-  - model$svd (the ratio of between- to within-group standard deviations
-    per discriminant axis, on its own unnormalized scale) has no exposed
-    scikit-learn equivalent for the default svd solver — only
-    `explained_variance_ratio_` (each axis's share of the total
-    between-class variance, normalized to sum to 1) is available.
-    model_description's "SDV" column uses that instead; it's a related
-    but numerically different diagnostic (relative rather than absolute),
-    not a like-for-like replacement.
-  - There is no `call` reflection in Python; report_lda's "call" field is
-    a short descriptive string built from the model/X/y actually passed
-    in, not a deparsed function call.
+lda() and report_lda() match MASS and rwf (tests/test_glm_lda.py): the
+formula is expanded as R's model.matrix (treatment-coded factors, R's
+term order and column names, intercept dropped), the within-group
+covariance is sphered by singular value decomposition and the
+discriminant axes come from the singular value decomposition of the
+weighted group means, as MASS::lda.default. The signs of the
+discriminant axes follow LAPACK's SVD, as in R.
+
+Kept from rwf: the confusion matrix is built over the observed classes
+and the predicted classes' factor codes too (R's c(observed, factor)
+turns the predicted factor into its codes), so it has empty rows and
+columns for those codes, as rwf's.
 """
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
+import os
+import re
+
 import numpy as np
 import pandas as pd
+import patsy
 
 try:
-    from .functions_train_test_full import confusion_matrix_percent
+    from ._rcompat import r_levels, r_label, r_make_names
+    from .functions_train_test import _confusion_counts, _percent_table
+    from .glm_linear_regression import _data_name, _deparse_formula, _r_column_name, _r_deparse_call
 except ImportError:
-    from functions_train_test_full import confusion_matrix_percent
+    from _rcompat import r_levels, r_label, r_make_names
+    from functions_train_test import _confusion_counts, _percent_table
+    from glm_linear_regression import _data_name, _deparse_formula, _r_column_name, _r_deparse_call
 ##########################################################################################
-# LDA
+# LDA (port of MASS::lda, method = "moment")
 ##########################################################################################
-def report_lda(model, X, y, file=None, w=10, h=10, base_size=10, title=""):
+class LDA:
     """
-    Report for a fitted sklearn LinearDiscriminantAnalysis model: prior/
-    class-count/means table, discriminant coefficients ("scalings"),
-    between/within-variance diagnostic per axis, a confusion matrix, and
-    (optionally) an Excel export.
+    A fitted linear discriminant analysis, with MASS::lda's components:
+    prior, counts, means, scaling, lev, svd, N, call and terms (the
+    formula), plus x (the model matrix) and grouping.
+    """
+
+    def predict(self, newdata=None, prior=None, dimen=None):
+        """
+        MASS::predict.lda (method "plug-in"): classes, posterior probabilities and discriminant scores.
+
+        Parameters:
+        newdata (pandas.DataFrame, optional): Data with the predictors; the training data when None.
+        prior (array-like, optional): Prior probabilities. Defaults to the model's.
+        dimen (int, optional): Number of discriminants used. Defaults to all.
+
+        Returns:
+        dict: class (pandas.Categorical), posterior (DataFrame) and x (DataFrame of scores).
+        """
+        x = self.x if newdata is None else _model_matrix(self.terms, newdata)[1].to_numpy(dtype=float)
+        prior = self.prior.to_numpy() if prior is None else np.asarray(prior, dtype=float)
+        means = prior @ self.means.to_numpy()
+        scaling = self.scaling.to_numpy()
+        scores = (x - means) @ scaling
+        dm = (self.means.to_numpy() - means) @ scaling
+        dimen = len(self.svd) if dimen is None else min(dimen, len(self.svd))
+        dm = dm[:, :dimen]
+        dist = 0.5 * np.sum(dm ** 2, axis=1) - np.log(prior) - scores[:, :dimen] @ dm.T
+        dist = np.exp(-(dist - dist.min(axis=1, keepdims=True)))
+        posterior = dist / dist.sum(axis=1, keepdims=True)
+        classes = pd.Categorical([self.lev[k] for k in posterior.argmax(axis=1)], categories=self.lev)
+        names = list(self.prior.index)
+        return {"class": classes, "posterior": pd.DataFrame(posterior, columns=names),
+                "x": pd.DataFrame(scores[:, :dimen], columns=list(self.scaling.columns[:dimen]))}
+
+
+def _expand_dot(formula, data):
+    """R's "y ~ ." : every other column of data."""
+    lhs, rhs = formula.split("~", 1)
+    if rhs.strip() == ".":
+        response = lhs.strip()
+        rhs = " + ".join(c for c in data.columns if c != response)
+    return f"{lhs.strip()} ~ {rhs.strip()}"
+
+
+def _patsy_formula(formula, data):
+    """Quote column names for patsy (R names may hold dots and spaces)."""
+    names = sorted(data.columns, key=len, reverse=True)
+    pattern = "|".join(re.escape(n) for n in names)
+    return re.sub(rf"(?<![\w.\"])({pattern})(?![\w.\"])", lambda m: f'Q("{m.group(1)}")', formula)
+
+
+def _model_matrix(formula, data):
+    """Response and model matrix (intercept dropped, R's term order and names) of a formula, as R's model.frame."""
+    quoted = _patsy_formula(formula, data)
+    y, x = patsy.dmatrices(quoted, data, return_type="dataframe", NA_action="drop")
+    info = x.design_info
+    terms = sorted(patsy.ModelDesc.from_formula(quoted).rhs_termlist, key=lambda term: len(term.factors))
+    columns = []
+    for term in terms:
+        if term.factors:
+            piece = info.term_slices[term]
+            columns.extend(info.column_names[piece])
+    x = x[columns]
+    x.columns = [_r_column_name(re.sub(r'Q\("([^"]*)"\)', r"\1", c)) for c in columns]
+    response = re.sub(r'Q\("([^"]*)"\)', r"\1", y.design_info.term_names[0]) if y.shape[1] == 1 else None
+    return response, x
+
+
+def lda(formula, data, prior=None, tol=1e-4):
+    """
+    Linear discriminant analysis, as MASS::lda(formula, data) with
+    method = "moment".
 
     Parameters:
-    model (sklearn.discriminant_analysis.LinearDiscriminantAnalysis):
-        A fitted LDA model.
-    X (pandas.DataFrame): Predictors used to fit `model`.
-    y (array-like): True outcome labels used to fit `model`.
-    file (str, optional): Output filename (without extension) for an
-        Excel report. If None (default), no file is written.
-    w, h (float, optional): Unused placeholders, kept for R-signature
-        parity (R's version accepts a PDF page size that this report
-        never actually uses — no plot is produced by report_lda itself,
-        matching the R original, which also never uses w/h/base_size/title).
-    base_size, title: Unused, see above.
+    formula (str): Grouping ~ predictors, e.g. "Species ~ ." or "case ~ age + parity".
+    data (pandas.DataFrame): Data; rows with missing values in the formula's variables are dropped.
+    prior (array-like, optional): Prior probabilities of the groups. Defaults to the group proportions.
+    tol (float, optional): Tolerance for constant variables and rank. Defaults to 1e-4.
 
     Returns:
-    dict: prior_counts, means, coeficients, model_description, cmatrix, call.
+    LDA: prior, counts, means, scaling (coefficients of the linear discriminants), lev, svd
+    (ratios of between- to within-group standard deviations), N, call and terms; .predict().
 
     Examples:
-    >>> import pandas as pd
-    >>> from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-    >>> df = pd.read_csv("data/iris.csv")
-    >>> X = df.drop(columns=["Species"])
-    >>> y = df["Species"]
-    >>> model = LinearDiscriminantAnalysis().fit(X, y)
-    >>> result = report_lda(model=model, X=X, y=y)
-    >>> result = report_lda(model=model, X=X, y=y, file="lda")
+    >>> model = lda("Species ~ .", data=iris)
+    >>> model.scaling
     """
-    X = pd.DataFrame(X)
-    y = pd.Series(y).reset_index(drop=True)
-    classes = model.classes_
-    n_components = model.scalings_.shape[1]
-    ld_names = [f"LD{i + 1}" for i in range(n_components)]
+    expanded = _expand_dot(formula, data)
+    response = expanded.split("~", 1)[0].strip()
+    used = data.dropna(subset=[c for c in data.columns if re.search(rf"(?<![\w.]){re.escape(c)}(?![\w.])",
+                                                                    expanded)])
+    _, x_frame = _model_matrix(expanded, used)
+    x = x_frame.to_numpy(dtype=float)
+    grouping = used[response].to_numpy()
+    lev = [r_label(v) for v in r_levels(pd.Series(grouping))]
+    labels = np.array([r_label(v) for v in grouping])
+    n, p = x.shape
+    counts = np.array([np.sum(labels == level) for level in lev])
+    proportions = counts / n
+    prior = proportions if prior is None else np.asarray(prior, dtype=float)
+    ng = len(lev)
+    group_means = np.array([x[labels == level].mean(axis=0) for level in lev])
+    centered = x - group_means[[lev.index(v) for v in labels]]
+    f1 = np.sqrt(np.diag(np.cov(centered, rowvar=False).reshape(p, p)))
+    if np.any(f1 < tol):
+        constant = " ".join(str(k + 1) for k in np.flatnonzero(f1 < tol))
+        raise ValueError(f"variables {constant} appear to be constant within groups")
+    scaling = np.diag(1 / f1)
+    _, d, vt = np.linalg.svd(np.sqrt(1 / (n - ng)) * centered @ scaling, full_matrices=False)
+    rank = int(np.sum(d > tol))
+    if rank == 0:
+        raise ValueError("rank = 0: variables are numerically constant")
+    scaling = scaling @ vt.T[:, :rank] @ np.diag(1 / d[:rank])
+    xbar = prior @ group_means
+    between = np.sqrt(n * prior / (ng - 1))[:, None] * (group_means - xbar) @ scaling
+    _, d, vt = np.linalg.svd(between, full_matrices=False)
+    rank = int(np.sum(d > tol * d[0]))
+    if rank == 0:
+        raise ValueError("group means are numerically identical")
+    scaling = scaling @ vt.T[:, :rank]
+    ld = [f"LD{k}" for k in range(1, rank + 1)]
 
-    counts = y.value_counts().reindex(classes).fillna(0).astype(int)
-    prior_counts = pd.DataFrame({"prior": model.priors_, "counts": counts.to_numpy()}, index=classes)
-    means_df = pd.DataFrame(model.means_, index=classes, columns=X.columns).add_prefix("mean.")
-    prior_counts = pd.concat([prior_counts, means_df], axis=1)
+    model = LDA()
+    model.prior = pd.Series(prior, index=lev)
+    model.counts = pd.Series(counts, index=lev)
+    model.means = pd.DataFrame(group_means, index=lev, columns=x_frame.columns)
+    model.scaling = pd.DataFrame(scaling, index=x_frame.columns, columns=ld)
+    model.lev = lev
+    model.svd = d[:rank]
+    model.N = n
+    model.terms = expanded
+    model.x = x
+    model.grouping = grouping
+    model.call = _r_deparse_call("lda", [("formula", _deparse_formula(formula)), ("data", _data_name(data))])
+    return model
+##########################################################################################
+# REPORT LDA
+##########################################################################################
+def report_lda(model, file=None):
+    """
+    Report of a linear discriminant analysis, as rwf::report_lda: priors,
+    counts and group means, the discriminant coefficients, the number of
+    observations with the singular values, the confusion matrix of the
+    predicted classes and the call; with file, an Excel workbook.
 
-    coeficients = pd.DataFrame(model.scalings_, index=X.columns, columns=ld_names)
+    Parameters:
+    model (LDA): A model fitted with lda().
+    file (str, optional): Excel filename without extension. Defaults to None.
 
-    model_description = pd.DataFrame({"Observations": [len(X)] * n_components,
-                                       "SDV": model.explained_variance_ratio_[:n_components]}, index=ld_names)
+    Returns:
+    dict: prior_counts, means, coeficients (rwf's spelling), terms,
+    model_description, cmatrix (rwf's text confusion table) and call.
 
-    predicted = model.predict(X)
-    cmatrix = confusion_matrix_percent(observed=y.to_numpy(), predicted=predicted)
-
-    call = pd.DataFrame({"call": [f"LinearDiscriminantAnalysis(solver={model.solver!r})."
-                                   f"fit(X=[{','.join(X.columns.astype(str))}],y={y.name or 'y'})"]})
-
-    result = {
-        "prior_counts": prior_counts,
-        "means": pd.DataFrame(model.means_, index=classes, columns=X.columns),
-        "coeficients": coeficients,
-        "model_description": model_description,
-        "cmatrix": cmatrix,
-        "call": call,
-    }
-
+    Examples:
+    >>> result = report_lda(lda("Species ~ .", data=iris))
+    >>> result = report_lda(lda("case ~ .", data=infert), file="lda")
+    """
+    prior_counts = pd.DataFrame({"prior": model.prior, "counts": model.counts})
+    means = model.means.copy()
+    means.columns = r_make_names([f"mean.{c}" for c in means.columns])
+    prior_counts = pd.concat([prior_counts, means], axis=1)
+    model_description = pd.DataFrame({"Observations": model.N, "SDV": model.svd})
+    call = pd.DataFrame({"call": [", ".join(model.call).replace(" ", "")]})
+    predicted = model.predict()["class"]
+    codes = {str(code + 1) for code in predicted.codes}
+    counts = _confusion_counts(model.grouping, np.asarray(predicted), extra_levels=codes)
+    cmatrix = _percent_table(counts)
+    result = {"prior_counts": prior_counts, "means": model.means, "coeficients": model.scaling,
+              "terms": model.terms, "model_description": model_description, "cmatrix": cmatrix, "call": call}
     if file is not None:
         try:
             from .functions_excel import excel_critical_value, excel_confusion_matrix
         except ImportError:
             from functions_excel import excel_critical_value, excel_confusion_matrix
-        writer = pd.ExcelWriter(f"{file}.xlsx", engine="xlsxwriter")
-        excel_critical_value(coeficients.reset_index(names="variable"), writer, sheetname="Coefficients")
-        excel_confusion_matrix(cmatrix, writer)
-        excel_critical_value(prior_counts.reset_index(names="class"), writer, sheetname="Priors and Counts")
-        excel_critical_value(result["means"].reset_index(names="class"), writer, sheetname="Means")
-        excel_critical_value(model_description.reset_index(names="LD"), writer, sheetname="Descriptives")
-        excel_critical_value(call, writer, sheetname="Call")
-        writer._save()
-        writer.close()
-
+        filename = f"{file}.xlsx"
+        if os.path.exists(filename):
+            os.remove(filename)
+        with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
+            excel_critical_value(model.scaling.reset_index(names="variable"), writer, sheet="Coefficients")
+            excel_confusion_matrix(cmatrix, writer)
+            excel_critical_value(prior_counts.reset_index(names="class"), writer, sheet="Priors and Counts")
+            excel_critical_value(model.means.reset_index(names="class"), writer, sheet="Means")
+            excel_critical_value(model_description, writer, sheet="Descriptives")
+            excel_critical_value(call, writer, sheet="Call")
     return result
 ##########################################################################################
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
-    import os
-    from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-    import statsmodels.api as sm
-
-    print("=" * 80, "\nreport_lda (infert, binary outcome)\n", "=" * 80, sep="")
-    infert = sm.datasets.get_rdataset("infert", "datasets").data
-    infert = pd.get_dummies(infert, columns=["education"], drop_first=True)
-    X1 = infert.drop(columns=["case"])
-    y1 = infert["case"]
-    model1 = LinearDiscriminantAnalysis().fit(X1, y1)
-    result1 = report_lda(model=model1, X=X1, y=y1)
-    print("prior_counts:\n", result1["prior_counts"])
-    print("\ncoeficients:\n", result1["coeficients"])
-    print("\nmodel_description:\n", result1["model_description"])
-    print("\ncmatrix:\n", result1["cmatrix"])
-    print("\ncall:\n", result1["call"])
-
-    print("\n" + "=" * 80, "\nreport_lda (iris, 3-class outcome, Excel export)\n", "=" * 80, sep="")
-    iris = sm.datasets.get_rdataset("iris", "datasets").data
-    X2 = iris.drop(columns=["Species"])
-    y2 = iris["Species"]
-    model2 = LinearDiscriminantAnalysis().fit(X2, y2)
-    result2 = report_lda(model=model2, X=X2, y=y2, file="lda_iris")
-    print("prior_counts:\n", result2["prior_counts"])
-    print("\ncoeficients:\n", result2["coeficients"])
-    print("\nmodel_description:\n", result2["model_description"])
-    print("\ncmatrix:\n", result2["cmatrix"])
-    print("\nExcel written:", os.path.exists("lda_iris.xlsx"))
+    folder = "data" if os.path.exists("data/iris.csv") else "../data"
+    iris = pd.read_csv(f"{folder}/iris.csv")
+    infert = pd.read_csv(f"{folder}/infert.csv")
+    result = report_lda(lda("Species ~ .", data=iris))
+    for key in ["prior_counts", "coeficients", "model_description", "cmatrix", "call"]:
+        print(f"\n{key}:\n", result[key])
+    print(report_lda(lda("case ~ .", data=infert))["coeficients"])

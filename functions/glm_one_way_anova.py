@@ -542,8 +542,8 @@ def report_oneway(df, dv, iv, file=None, w=10, h=10, base_size=10, note="", titl
                                           ("homogeneity", "Homogeneity", comment_text),
                                           ("tukey", "Tukey", comment_text),
                                           ("games_howell", "Games-Howell", comment_text)]:
-                excel_critical_value(result[table], writer, sheetname=sheet, comments=comment, critical={"p": "<0.05"})
-            excel_critical_value(descriptives, writer, sheetname="Descriptives")
+                excel_critical_value(result[table], writer, sheet=sheet, comment=comment, critical={"p": "<0.05"})
+            excel_critical_value(descriptives, writer, sheet="Descriptives")
     return result
 ##########################################################################################
 # FACTORIAL ANOVA
@@ -1007,22 +1007,22 @@ def report_factorial_anova(df, dv, wid, within=None, within_full=None, between=N
             os.remove(filename)
         with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
             if "p[GG]" in omnibus.columns:
-                excel_critical_value(omnibus, writer, sheetname="ANOVA within", comments=_FACTORIAL_COMMENT,
+                excel_critical_value(omnibus, writer, sheet="ANOVA within", comment=_FACTORIAL_COMMENT,
                                      critical={"p": "<0.05", "p[M]": "<0.05", "p[GG]": "<0.05", "p[HF]": "<0.05"})
             if "p[L]" in omnibus.columns:
-                excel_critical_value(omnibus, writer, sheetname="ANOVA between", comments=_FACTORIAL_COMMENT,
+                excel_critical_value(omnibus, writer, sheet="ANOVA between", comment=_FACTORIAL_COMMENT,
                                      critical={"p": "<0.05", "p[L]": "<0.05"})
             if "p[GG]" not in omnibus.columns and "p[L]" not in omnibus.columns:
-                excel_critical_value(omnibus, writer, sheetname="ANOVA", comments=_FACTORIAL_COMMENT,
+                excel_critical_value(omnibus, writer, sheet="ANOVA", comment=_FACTORIAL_COMMENT,
                                      critical={"p": "<0.05"})
-            excel_critical_value(omnibus_effect_size, writer, sheetname="effect size", comments=_FACTORIAL_COMMENT,
+            excel_critical_value(omnibus_effect_size, writer, sheet="effect size", comment=_FACTORIAL_COMMENT,
                                  critical={"p.value": "<0.05"})
             if len(post_hoc) and post_hoc_test:
-                excel_critical_value(post_hoc, writer, sheetname="post hoc", critical={"p.value": "<0.05"})
-            excel_critical_value(descriptives, writer, sheetname="descriptives")
+                excel_critical_value(post_hoc, writer, sheet="post hoc", critical={"p.value": "<0.05"})
+            excel_critical_value(descriptives, writer, sheet="descriptives")
             call = (f"report_factorial_anova(dv={dvs},wid={wid},within={within},within_full={within_full},"
                     f"between={between},type={type},white_adjust={white_adjust})")
-            excel_critical_value(pd.DataFrame({"call": [call]}), writer, sheetname="call")
+            excel_critical_value(pd.DataFrame({"call": [call]}), writer, sheet="call")
     return result
 ##########################################################################################
 # MANOVA RESULT
@@ -1156,8 +1156,8 @@ def report_manova(model, file=None):
         if os.path.exists(filename):
             os.remove(filename)
         with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
-            excel_critical_value(pwhr, writer, sheetname="critical", critical={"Pr(>F)": "<0.05"})
-            excel_critical_value(call, writer, sheetname="call")
+            excel_critical_value(pwhr, writer, sheet="critical", critical={"Pr(>F)": "<0.05"})
+            excel_critical_value(call, writer, sheet="call")
     return {"multivariate": pwhr, "type_three": type_three, "call": call}
 ##########################################################################################
 # EXAMPLES

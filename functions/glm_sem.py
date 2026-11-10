@@ -359,14 +359,14 @@ def report_cfa(model, file=None, w=10, h=10):
         if os.path.exists(filename):
             os.remove(filename)
         with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
-            excel_critical_value(r_squared.reset_index(names="variable"), writer, sheetname="R_Squared")
-            excel_critical_value(fit_indices.reset_index(names="index"), writer, sheetname="Fit_Indices")
-            excel_critical_value(parameters, writer, sheetname="Parameters")
-            excel_critical_value(modification_indices, writer, sheetname="Modification_Indices")
-            excel_critical_value(group, writer, sheetname="Groups")
-            excel_matrix(sample_covariance, writer, sheetname="Sample_Covariance")
-            excel_matrix(predict, writer, sheetname="Scores")
-            excel_critical_value(call, writer, sheetname="Call")
+            excel_critical_value(r_squared.reset_index(names="variable"), writer, sheet="R_Squared")
+            excel_critical_value(fit_indices.reset_index(names="index"), writer, sheet="Fit_Indices")
+            excel_critical_value(parameters, writer, sheet="Parameters")
+            excel_critical_value(modification_indices, writer, sheet="Modification_Indices")
+            excel_critical_value(group, writer, sheet="Groups")
+            excel_matrix(sample_covariance, writer, sheet="Sample_Covariance")
+            excel_matrix(predict, writer, sheet="Scores")
+            excel_critical_value(call, writer, sheet="Call")
     return result
 ##########################################################################################
 # SIMULATE CFA FROM COEFFICIENTS
@@ -421,7 +421,7 @@ def simulate_cfa_fit(model_sim=None, model=None, df=None, minnobs=50, maxnobs=10
         if os.path.exists(filename):
             os.remove(filename)
         with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
-            excel_generic_format(sim_results, writer, sheetname="simulation")
+            excel_generic_format(sim_results, writer, sheet="simulation")
         report_pdf(plotlist=[p for p in plots.values() if p is not None], w=w, h=h, file=file, print_plot=False)
     return [sim_results, plots]
 ##########################################################################################

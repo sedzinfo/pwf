@@ -28,28 +28,28 @@ Notes:
 ##########################################################################################
 import re
 import shutil
-import textwrap
 import numpy as np
 import pandas as pd
 ##########################################################################################
 # MULTIPLE GSUB
 ##########################################################################################
-def str_mgsub(mydata, pattern, replacement, fixed=True):
+def str_mgsub(mydata, pattern, replacement, fixed=False):
     """
-    Apply a single replacement for each of several patterns, sequentially.
+    Apply a single replacement for each of several patterns, sequentially,
+    as rwf::str_mgsub (R's gsub for each pattern).
 
     Parameters:
     mydata (str or list of str): String(s) to search within.
     pattern (list of str): Patterns to search for.
     replacement (str): Replacement string applied for every pattern.
-    fixed (bool, optional): If True (default), patterns are matched
-        literally; if False, as regular expressions.
+    fixed (bool, optional): Match the patterns literally (R's gsub(..., fixed = TRUE)).
+        Defaults to False: regular expressions, as R's gsub.
 
     Returns:
     Same type as `mydata` (str if given a str, else list of str).
 
     Examples:
-    >>> str_mgsub("#$%^&*_+", ["%", "*"], "REPLACE")
+    >>> str_mgsub("#$%^&*_+", ["%", "[*]"], "REPLACE")
     """
     is_scalar = isinstance(mydata, str)
     items = [mydata] if is_scalar else list(mydata)
@@ -262,11 +262,15 @@ def call_to_string(model):
 ##########################################################################################
 def str_wrap(string, width=80):
     """
-    Wrap each string to a line width, joining wrapped lines with "\\n".
+    Wrap each string as R's strwrap(x, width) and join the lines with
+    "\\n", as rwf::str_wrap: whitespace runs become one space (two after
+    a sentence end that had two), lines are shorter than width, a word
+    longer than that gets its own line, and blank lines separate
+    paragraphs.
 
     Parameters:
     string (str or list of str)
-    width (int, optional): Maximum characters per line. Defaults to 80.
+    width (int, optional): Lines are at most width - 1 characters. Defaults to 80.
 
     Returns:
     Same type as `string`.
@@ -276,8 +280,34 @@ def str_wrap(string, width=80):
     """
     is_scalar = isinstance(string, str)
     items = [string] if is_scalar else list(string)
-    result = [textwrap.fill(s, width=width) for s in items]
+    result = ["\n".join(_strwrap(s, width)) for s in items]
     return result[0] if is_scalar else result
+
+
+def _strwrap(text, width):
+    """R's strwrap(text, width) for one string (indent and exdent 0)."""
+    lines = []
+    for number, paragraph in enumerate(re.split(r"\n[ \t\n]*\n", text)):
+        if number:
+            lines.append("")
+        tokens = re.split(r"[ \t\n]", paragraph)
+        words = []  # [word, followed by a kept second space]
+        for k, token in enumerate(tokens):
+            if token:
+                words.append([token, False])
+            elif (words and k > 0 and tokens[k - 1] and not words[-1][1]
+                  and re.search(r"[.?!][)\"']*$", words[-1][0])):
+                words[-1][1] = True
+        line, extra = "", False
+        for word, word_extra in words:
+            candidate = word if not line else line + (" " if extra else "") + " " + word
+            if line and len(candidate) > width - 1:
+                lines.append(line)
+                candidate = word
+            line, extra = candidate, word_extra
+        if line or not words:
+            lines.append(line)
+    return lines
 ##########################################################################################
 # OUTPUT SEPARATOR
 ##########################################################################################
@@ -506,7 +536,7 @@ def str_squish(string):
 ##########################################################################################
 if __name__ == "__main__":
     print("=" * 80, "\nstr_mgsub\n", "=" * 80, sep="")
-    print(str_mgsub("#$%^&*_+", ["%", "*"], "REPLACE"))
+    print(str_mgsub("#$%^&*_+", ["%", "[*]"], "REPLACE"))
 
     print("\n" + "=" * 80, "\nstr_split\n", "=" * 80, sep="")
     string = [f"{i}/aa/bb/cc" for i in range(1, 11)]

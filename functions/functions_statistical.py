@@ -61,13 +61,11 @@ def compute_standard(vector, mean=0, sd=1, type="z", input="non_standard"):
         - "percent": percentage of the maximum observed value.
         - "percentile": cumulative normal percentile (0-100).
         - "scale_zero_one": min-max scaled (0-1).
-        - "normal_density": normal density values. Note: uses the same
-          (non-standard) formula as the R source, 1/sqrt(sd*pi) rather
-          than the textbook normal PDF's 1/(sd*sqrt(2*pi)) — kept as-is
-          for parity rather than "corrected", since the goal is
-          matching R's actual behavior.
+        - "normal_density": the normal density of the values with the
+          given mean and sd, 1/(sd*sqrt(2*pi)) * exp(-((x-mean)/sd)^2/2), as rwf.
         - "cumulative_density": cumulative sum of the input vector.
-        - "all": data frame with every score type, sorted by z-score.
+        - "all": data frame with every score type, sorted by z-score
+          (stable, missing last), keeping the original row index as R's row names.
         Defaults to "z".
     input (str, optional): "non_standard" (vector holds raw scores) or
         "standard" (vector already holds z-scores). Defaults to
@@ -110,7 +108,7 @@ def compute_standard(vector, mean=0, sd=1, type="z", input="non_standard"):
     elif type == "scale_zero_one":
         result = (vector - np.nanmin(vector)) / (np.nanmax(vector) - np.nanmin(vector))
     elif type == "normal_density":
-        result = (1 / np.sqrt(sd * np.pi)) * np.exp(-0.5 * ((vector - mean) / sd) ** 2)
+        result = (1 / (sd * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((vector - mean) / sd) ** 2)
     elif type == "cumulative_density":
         result = np.cumsum(vector)
     elif type == "all":
@@ -119,7 +117,8 @@ def compute_standard(vector, mean=0, sd=1, type="z", input="non_standard"):
                        ('percent', 'percent'), ('percentile', 'percentile'),
                        ('scale_0_1', 'scale_zero_one')]:
             mydata[col] = compute_standard(mydata['score'].to_numpy(), mean=mean, sd=sd, type=t, input=input)
-        result = mydata.sort_values('z').reset_index(drop=True)
+        # R's order() is stable and the rows keep their original names
+        result = mydata.sort_values('z', kind='stable')
     else:
         raise ValueError(f"Unknown type: {type!r}")
     return result
@@ -179,8 +178,9 @@ def compute_skewness(vector):
     vector = pd.Series(vector).dropna().to_numpy()
     n = len(vector)
     x = vector - vector.mean()
-    y = np.sqrt(n) * np.sum(x ** 3) / (np.sum(x ** 2) ** 1.5)
-    return y * (1 - 1 / n) ** 1.5
+    with np.errstate(invalid="ignore", divide="ignore"):  # a constant vector gives NaN, as in R
+        y = np.sqrt(n) * np.sum(x ** 3) / (np.sum(x ** 2) ** 1.5)
+        return y * (1 - 1 / n) ** 1.5
 ##########################################################################################
 # COMPUTE KURTOSIS
 ##########################################################################################
@@ -205,8 +205,9 @@ def compute_kurtosis(vector):
     vector = pd.Series(vector).dropna().to_numpy()
     n = len(vector)
     x = vector - vector.mean()
-    r = n * np.sum(x ** 4) / (np.sum(x ** 2) ** 2)
-    return r * (1 - 1 / n) ** 2 - 3
+    with np.errstate(invalid="ignore", divide="ignore"):  # a constant vector gives NaN, as in R
+        r = n * np.sum(x ** 4) / (np.sum(x ** 2) ** 2)
+        return r * (1 - 1 / n) ** 2 - 3
 ##########################################################################################
 # COMPUTE STANDARD ERROR
 ##########################################################################################

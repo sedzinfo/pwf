@@ -118,3 +118,139 @@ def r_round(x, digits=0):
     if x is None or pd.isna(x):
         return np.nan
     return float(round(float(x), digits))
+
+
+def r_p_adjust(p, method="holm"):
+    """
+    R's stats::p.adjust(p, method): "holm", "hochberg", "hommel", "bonferroni",
+    "BH" (alias "fdr"), "BY" or "none". Missing values stay missing and are not
+    counted.
+    """
+    p = np.asarray(p, dtype=float)
+    result = p.copy()
+    keep = ~np.isnan(p)
+    values = p[keep]
+    n = len(values)
+    if n <= 1 or method == "none":
+        return result
+    if n == 2 and method == "hommel":
+        method = "hochberg"
+    if method == "bonferroni":
+        adjusted = np.minimum(1, n * values)
+    elif method == "holm":
+        order = np.argsort(values, kind="stable")
+        adjusted = np.empty(n)
+        adjusted[order] = np.minimum(1, np.maximum.accumulate((n - np.arange(n)) * values[order]))
+    elif method in ("hochberg", "BH", "fdr", "BY"):
+        order = np.argsort(-values, kind="stable")
+        i = np.arange(n, 0, -1)
+        if method == "hochberg":
+            scaled = (n + 1 - i) * values[order]
+        elif method == "BY":
+            scaled = np.sum(1 / np.arange(1, n + 1)) * n / i * values[order]
+        else:
+            scaled = n / i * values[order]
+        adjusted = np.empty(n)
+        adjusted[order] = np.minimum(1, np.minimum.accumulate(scaled))
+    elif method == "hommel":
+        order = np.argsort(values, kind="stable")
+        sorted_p = values[order]
+        i = np.arange(1, n + 1)
+        q = np.full(n, np.min(n * sorted_p / i))
+        pa = q.copy()
+        for m in range(n - 1, 1, -1):
+            i1 = np.arange(n - m + 1)
+            i2 = np.arange(n - m + 1, n)
+            q1 = np.min(m * sorted_p[i2] / np.arange(2, m + 1))
+            q[i1] = np.minimum(m * sorted_p[i1], q1)
+            q[i2] = q[n - m]
+            pa = np.maximum(pa, q)
+        adjusted = np.empty(n)
+        adjusted[order] = np.maximum(pa, sorted_p)
+    else:
+        raise ValueError(f"unknown p.adjust method {method!r}")
+    result[keep] = adjusted
+    return result
+
+
+def _r_strip_chars(name, minlength):
+    """The C routine behind R's abbreviate() (use.classes = TRUE) for one name."""
+    chars = list(name.lstrip())
+    if len(chars) < minlength:
+        return "".join(chars)
+
+    def first_char(i):
+        return chars[i - 1].isspace()
+
+    def last_char(i):
+        return not chars[i - 1].isspace() and (i + 1 >= len(chars) or chars[i + 1].isspace())
+
+    def lower_vowel(i):
+        return chars[i] in "aeiou"
+
+    n_space = 0
+    upper = len(chars) - 1
+    done = False
+    trailing = True
+    for i in range(upper, 0, -1):
+        if i < len(chars) and chars[i].isspace():
+            if trailing:
+                del chars[i:]
+            else:
+                n_space += 1
+        else:
+            trailing = False
+        if len(chars) - n_space <= minlength:
+            done = True
+            break
+    tests = [lambda i: lower_vowel(i) and last_char(i), lambda i: lower_vowel(i) and not first_char(i),
+             lambda i: chars[i].islower() and last_char(i), lambda i: chars[i].islower() and not first_char(i),
+             lambda i: not first_char(i) and not chars[i].isspace()]
+    for test in tests:
+        if done:
+            break
+        for i in range(len(chars) - 1, 0, -1):
+            if i < len(chars) and test(i):
+                del chars[i]
+            if len(chars) - n_space <= minlength:
+                done = True
+                break
+    if len(chars) > minlength:
+        chars = [chars[0]] + [c for c in chars[1:] if not c.isspace()]
+    return "".join(chars)
+
+
+def r_abbreviate(names, minlength=4):
+    """R's abbreviate(names, minlength): drop lower-case vowels, then lower-case letters, from the end
+    until the names are minlength characters long, lengthening duplicates until they are unique."""
+    names = [str(name).strip(" ") for name in names]
+    unique = list(dict.fromkeys(names))
+    x = list(unique)
+    redo = [True] * len(unique)
+    length = minlength
+    while True:
+        for k, flag in enumerate(redo):
+            if flag:
+                x[k] = _r_strip_chars(unique[k], length)
+        seen, duplicated = set(), []
+        for value in x:
+            duplicated.append(value in seen)
+            seen.add(value)
+        if not any(duplicated):
+            break
+        length += 1
+        repeated = {x[k] for k, flag in enumerate(duplicated) if flag}
+        redo = [value in repeated for value in x]
+    mapping = dict(zip(unique, x))
+    return [mapping[name] for name in names]
+
+
+def r_mixedsort_key(text):
+    """Sort key of gtools::mixedsort: numeric chunks by value before text, text as R's collation (a < A < b)."""
+    key = []
+    for chunk in re.findall(r"\d+(?:\.\d+)?|\D+", str(text)):
+        if chunk[0].isdigit():
+            key.append((0, float(chunk), "", ""))
+        else:
+            key.append((1, 0.0, chunk.casefold(), chunk.swapcase()))
+    return key

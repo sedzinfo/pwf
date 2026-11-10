@@ -347,7 +347,11 @@ def model_loadings(model, cut=None, matrix_type="pattern", sort=True):
         rounded = matrix.round(2)
         if sort:
             rounded = fa_sort(rounded)
-        text = rounded.map(lambda v: "" if abs(v) < cut else _r_text(v))
+        # as R's ifelse(): text when a loading is blanked, otherwise the numbers themselves
+        if (rounded.abs() < cut).any().any():
+            text = rounded.map(lambda v: "" if abs(v) < cut else _r_text(v))
+        else:
+            text = rounded
         return pd.concat([pd.DataFrame({"Matrix": label, "variable": rounded.index}), text.reset_index(drop=True)],
                          axis=1)
 
