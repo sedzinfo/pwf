@@ -771,3 +771,17 @@ for (estimator in c("ULSMV", "WLSMV")) {
   ref(paste0(prefix, "_heywood"), data.frame(item = names(heywood), value = vapply(heywood, function(x)
     if (is.data.frame(x)) nrow(x) else if (is.logical(x)) as.numeric(x) else NA_real_, numeric(1))))
 }
+##########################################################################################
+# DATASETS (how R reads pwf's CSVs)
+##########################################################################################
+dataset_summary <- do.call(rbind, lapply(c("admission", "automotive_data", "blood_pressure", "co2", "crop_yield",
+                                           "difficile", "insurance", "ocean", "personality", "responses",
+                                           "responses_state", "sexual_comp", "titanic"), function(name) {
+  path <- file.path(data_dir, paste0(name, ".csv"))
+  df <- if (name == "ocean") utils::read.delim(path, stringsAsFactors = FALSE) else utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+  data.frame(dataset = name, column = names(df), numeric = vapply(df, is.numeric, logical(1)),
+             missing = vapply(df, function(x) sum(is.na(x)), numeric(1)),
+             total = vapply(df, function(x) if (is.numeric(x)) sum(x, na.rm = TRUE) else NA_real_, numeric(1)),
+             row.names = NULL)
+}))
+ref("datasets_summary", dataset_summary)

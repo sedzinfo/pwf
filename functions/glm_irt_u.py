@@ -5,13 +5,12 @@ formulas (item response function, Newton-Raphson ability estimation,
 1PL/2PL/3PL item/test information, and the SE of theta), independent of
 any fitted mirt model. Companion to glm_irt.py, which wraps mirt itself.
 
-Preserved R quirk: compute_unidimensional_theta accepts an
-"inattentiveness" parameter `i` (documented as making the function
-compute a 4PL response when i != 1), but the R formula never actually
-uses `i` anywhere in the computation — it's a dead, no-op parameter.
-Kept exactly as-is (still accepted, still ignored) rather than "fixed"
-into a real 4PL formula, since this preserves an existing bug/quirk of
-the R source rather than changing its behavior.
+compute_unidimensional_theta is the 4PL response function
+g + (i - g) / (1 + exp(-a * d * (theta - b))): the inattentiveness `i` is the
+upper asymptote (i = 1 gives the 3PL, i = 1 and g = 0 the 2PL), as in rwf.
+All functions are vectorised like their R versions: numbers give a float,
+vectors give a numpy array. Outputs are checked against R reference output in
+tests/test_glm_irt_u.py.
 
 Verified against R directly (R + this exact function definition, run via
 Rscript): compute_unidimensional_ability's three worked examples in the R
@@ -30,16 +29,15 @@ import numpy as np
 ##########################################################################################
 def compute_unidimensional_theta(a, b=0, g=0, i=1, d=1.702, theta=0):
     """
-    Item response function for unidimensional 1PL/2PL/3PL models (see
-    module docstring: the `i` inattentiveness parameter is accepted but
-    has no effect, matching the R original verbatim).
+    Item response function for unidimensional 2PL/3PL/4PL models:
+    g + (i - g) / (1 + exp(-a * d * (theta - b))).
 
     Parameters:
-    a (float): Discrimination parameter.
-    b (float, optional): Difficulty parameter. Defaults to 0.
-    g (float, optional): Guessing parameter. Defaults to 0 (2PL).
-    i (float, optional): Inattentiveness parameter. Accepted for R
-        parity but has no effect on the result. Defaults to 1.
+    a (float or array-like): Discrimination parameter.
+    b (float or array-like, optional): Difficulty parameter. Defaults to 0.
+    g (float or array-like, optional): Guessing parameter. Defaults to 0.
+    i (float, optional): Inattentiveness parameter, the upper asymptote.
+        Defaults to 1 (no inattentiveness: a 2PL/3PL response).
     d (float, optional): Scaling constant (commonly 1.702 or 1.749).
         Defaults to 1.702.
     theta (float or array-like, optional): Ability value(s). Defaults to 0.
@@ -53,11 +51,12 @@ def compute_unidimensional_theta(a, b=0, g=0, i=1, d=1.702, theta=0):
     >>> x = np.arange(-3, 3.01, .01)
     >>> compute_unidimensional_theta(a=5, b=0, theta=x)
     >>> compute_unidimensional_theta(a=10, b=0, g=.5, theta=x)
+    >>> compute_unidimensional_theta(a=10, b=0, g=0, i=.9, theta=x)
     """
-    theta = np.asarray(theta, dtype=float)
+    a, b, g, i, d, theta = (np.asarray(v, dtype=float) for v in (a, b, g, i, d, theta))
     e = np.exp(-a * d * (theta - b))
     denom = 1 + e
-    renum = 1 - g
+    renum = i - g
     denom = np.where(denom == 0, 1e-22, denom)
     result = g + renum / denom
     return result.item() if result.ndim == 0 else result
@@ -86,7 +85,7 @@ def compute_unidimensional_ability(a, b, g=None, d=1.702, u=None, lim_theta=(-6,
     >>> a = [0.39,0.45,0.52,0.3,0.35,0.43,0.42,0.44,0.34,0.42]
     >>> b = [-1.96,-1.9,-1.38,-0.58,0.48,-0.81,-0.35,1.59,1.33,2.93]
     >>> u = [1,1,1,1,0,0,1,0,1,0]
-    >>> compute_unidimensional_ability(a=a, b=b, u=u, d=1.7, g=None)  # 0.48402574251176
+    >>> compute_unidimensional_ability(a=a, b=b, u=u, d=1.7, g=None)  # 0.484014962072778
     """
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
@@ -131,7 +130,7 @@ def compute_info_1pl(b, theta):
     Item/test information for a 1PL (Rasch) model.
 
     Parameters:
-    b (float): Difficulty parameter.
+    b (float or array-like): Difficulty parameter.
     theta (float or array-like): Ability value(s).
 
     Returns:
@@ -142,7 +141,7 @@ def compute_info_1pl(b, theta):
     >>> import numpy as np
     >>> ti = compute_info_1pl(b=1, theta=np.arange(-6, 6.01, .01))
     """
-    theta = np.asarray(theta, dtype=float)
+    b, theta = np.asarray(b, dtype=float), np.asarray(theta, dtype=float)
     p_theta = 1 / (1 + np.exp(-(theta - b)))
     q = 1 - p_theta
     info = p_theta * q
@@ -155,8 +154,8 @@ def compute_info_2pl(a, b, theta):
     Item/test information for a 2PL model.
 
     Parameters:
-    a (float): Discrimination parameter.
-    b (float): Difficulty parameter.
+    a (float or array-like): Discrimination parameter.
+    b (float or array-like): Difficulty parameter.
     theta (float or array-like): Ability value(s).
 
     Returns:
@@ -167,7 +166,7 @@ def compute_info_2pl(a, b, theta):
     >>> import numpy as np
     >>> ti = compute_info_2pl(a=2, b=0, theta=np.arange(-6, 6.01, .01))
     """
-    theta = np.asarray(theta, dtype=float)
+    a, b, theta = (np.asarray(v, dtype=float) for v in (a, b, theta))
     p_theta = 1 / (1 + np.exp(-a * (theta - b)))
     q = 1 - p_theta
     info = (a ** 2) * p_theta * q
@@ -180,9 +179,9 @@ def compute_info_3pl(a, b, g, theta):
     Item/test information for a 3PL model.
 
     Parameters:
-    a (float): Discrimination parameter.
-    b (float): Difficulty parameter.
-    g (float): Guessing parameter.
+    a (float or array-like): Discrimination parameter.
+    b (float or array-like): Difficulty parameter.
+    g (float or array-like): Guessing parameter.
     theta (float or array-like): Ability value(s).
 
     Returns:
@@ -193,7 +192,7 @@ def compute_info_3pl(a, b, g, theta):
     >>> import numpy as np
     >>> ti = compute_info_3pl(a=1.5, b=1, g=.2, theta=np.arange(-6, 6.01, .01))
     """
-    theta = np.asarray(theta, dtype=float)
+    a, b, g, theta = (np.asarray(v, dtype=float) for v in (a, b, g, theta))
     p_theta = g + (1 - g) * (1 / (1 + np.exp(-a * (theta - b))))
     q = 1 - p_theta
     info = a ** 2 * q / p_theta * (p_theta - g) ** 2 / (1 - g) ** 2
@@ -247,10 +246,10 @@ if __name__ == "__main__":
     fig2, axes2 = plt.subplots(1, 3, figsize=(12, 4))
     for ax, i in zip(axes2, [1, .9, .6]):
         ax.plot(x, compute_unidimensional_theta(a=10, b=0, g=0, i=i, theta=x))
-        ax.set_title(f"i={i} (no effect, see module docstring)")
+        ax.set_title(f"i={i}")
     fig2.tight_layout()
     fig2.savefig("compute_unidimensional_theta_i.png")
-    print("saved compute_unidimensional_theta_i.png (i has no effect, by design)")
+    print("saved compute_unidimensional_theta_i.png")
 
     print("\n" + "=" * 80, "\ncompute_unidimensional_ability\n", "=" * 80, sep="")
     a1 = [0.39, 0.45, 0.52, 0.3, 0.35, 0.43, 0.42, 0.44, 0.34, 0.42]

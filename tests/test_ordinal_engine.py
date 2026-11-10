@@ -56,9 +56,7 @@ def test_fit_measures_match_lavaan(fits, reference, case, par):
     mine = fits[(case, par)].fit_measures()
     expected = reference(f"wlsmv_{case}_{par}_fit").set_index("measure")["value"]
     for name, value in expected.items():
-        if name in ROBUST:
-            assert np.isnan(mine[name]), name
-        elif np.isnan(value):
+        if np.isnan(value):
             assert np.isnan(mine[name]), name
         else:
             assert mine[name] == pytest.approx(value, rel=1e-5, abs=1e-7), name

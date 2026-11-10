@@ -42,7 +42,10 @@ def _phi2(x, y, rho):
 
 def _bvn_upper(h, k, r):
     """P(X > h, Y > k) of a standard bivariate normal with correlation r (Genz's BVNU)."""
-    from .glm_correlation import _bvn_upper as upper
+    try:
+        from .glm_correlation import _bvn_upper as upper
+    except ImportError:
+        from glm_correlation import _bvn_upper as upper
     return upper(h, k, r)
 
 
@@ -770,14 +773,10 @@ class OrdinalSEM:
                "baseline.chisq.scaling.factor": 1 / base_a}
         for suffix, t, tb in [("", chisq, base_chisq), (".scaled", chisq_scaled, base_chisq_scaled)]:
             out.update({f"{k}{suffix}": v for k, v in _incremental(t, df, tb, base_df).items()})
-        for key in ["cfi.robust", "tli.robust", "nnfi.robust", "rni.robust"]:
-            out[key] = np.nan
         # lavaan's WLS family uses N - 1 where ML uses N
         out.update(_rmsea(chisq, df, n - 1, ""))
         out.update(_rmsea(chisq_scaled, df, n - 1, ".scaled"))
-        for key in ["rmsea.robust", "rmsea.ci.lower.robust", "rmsea.ci.upper.robust", "rmsea.pvalue.robust",
-                    "rmsea.notclose.pvalue.robust"]:
-            out[key] = np.nan
+        out.update(self._robust(df, base_df))
         residual = self.stats.cor - self._model_correlation()
         squared = np.sum(residual[np.tril_indices(self.p, -1)] ** 2)
         squared_th = np.sum((self.stats.th - self.implied()[:nth]) ** 2)
@@ -792,8 +791,59 @@ class OrdinalSEM:
         out["wrmr"] = np.sqrt((n - 1) * self.fdwls / nstat)
         return pd.Series(out)
 
+    def _robust(self, df, base_df):
+        """
+        lavaan's robust CFI, TLI, RNI, RMSEA and GFI of a categorical fit (lav_fit_catml_dwls, Savalei):
+        the ML discrepancy of the polychoric correlations from the model correlations at the least squares
+        estimates (N times, its baseline -N log|R|), corrected by c = tr(U' V U Gamma) / df with the ML
+        weights V of the correlations and U = I - Delta E^-1 Delta' W. NaN when the polychoric matrix is
+        not positive definite (lavaan's cat_nonpd = "na").
+        """
+        names = ["cfi.robust", "tli.robust", "nnfi.robust", "rni.robust", "rmsea.robust", "rmsea.ci.lower.robust",
+                 "rmsea.ci.upper.robust", "rmsea.pvalue.robust", "rmsea.notclose.pvalue.robust", "gfi.robust",
+                 "gfi.ci.lower.robust", "gfi.ci.upper.robust"]
+        r = self.stats.cor
+        if np.linalg.eigvalsh(r).min() < np.sqrt(np.finfo(float).eps):
+            return dict.fromkeys(names, np.nan)
+        n, p = self.n, self.p
+        sigma = self._model_correlation()
+        inverse = np.linalg.inv(sigma)
+        x2 = n * (np.linalg.slogdet(sigma)[1] + np.trace(r @ inverse) - np.linalg.slogdet(r)[1] - p)
+        x2_null = -n * np.linalg.slogdet(r)[1]
+        pairs = self.stats.pairs
+        v = np.array([[inverse[i, k] * inverse[j, l] + inverse[i, l] * inverse[j, k] for k, l in pairs]
+                      for i, j in pairs])
+        nth = len(self.stats.th)
+        jac = self._jac[nth:]
+        u = np.eye(len(pairs)) - jac @ np.linalg.pinv(self.information_expected) @ jac.T * self.weights[nth:]
+        gamma = self.stats.nacov[nth:, nth:]
+        c = np.trace(u.T @ v @ u @ gamma) / df
+        c_null = np.trace(gamma) / base_df
+        x2_scaled = x2 / c
+        t1, t2 = x2 - c * df, x2_null - c_null * base_df
+        cfi_den = max(t1, t2, 0)
+        out = {"cfi.robust": 1 - max(t1, 0) / cfi_den if cfi_den > 0 else 1.0,
+               "tli.robust": 1 - t1 * base_df / (t2 * df), "rni.robust": 1 - t1 / t2}
+        out["nnfi.robust"] = out["tli.robust"]
+
+        def ncp(probability):
+            f = lambda lam: (scipy.stats.ncx2.cdf(x2_scaled, df, lam) if lam > 0
+                             else scipy.stats.chi2.cdf(x2_scaled, df)) - probability
+            return 0.0 if f(0) < 0 else scipy.optimize.brentq(f, 0, max(n, 4 * x2_scaled))
+        lower, upper = ncp(0.95), ncp(0.05)
+        out.update({"rmsea.robust": np.sqrt(max((x2 / n) / df - c / n, 0)),
+                    "rmsea.ci.lower.robust": np.sqrt(c * lower / (n * df)),
+                    "rmsea.ci.upper.robust": np.sqrt(c * upper / (n * df)),
+                    "rmsea.pvalue.robust": 1 - scipy.stats.ncx2.cdf(x2_scaled, df, n * df / c * 0.05 ** 2),
+                    "rmsea.notclose.pvalue.robust": scipy.stats.ncx2.cdf(x2_scaled, df, n * df / c * 0.08 ** 2)})
+        np_ = n * p
+        out.update({"gfi.robust": min(np_ / (np_ + 2 * x2 - 2 * c * df), 1.0),
+                    "gfi.ci.lower.robust": min(np_ / (np_ + 2 * c * upper), 1.0),
+                    "gfi.ci.upper.robust": min(np_ / (np_ + 2 * c * lower), 1.0)})
+        return out
+
     def _gfi(self, chisq, df, nstat):
-        """lavaan's GFI family for a WLS fit (N - 1 in place of N); the robust GFI is not ported."""
+        """lavaan's GFI family for a WLS fit (N - 1 in place of N); the robust GFI is in _robust."""
         n1, p = self.n - 1, self.p
         np_ = n1 * p
 
@@ -808,7 +858,7 @@ class OrdinalSEM:
         return {"gfi": min(np_ / (np_ + 2 * chisq - 2 * df), 1.0),
                 "gfi.ci.lower": min(np_ / (np_ + 2 * ncp(0.05)), 1.0),
                 "gfi.ci.upper": min(np_ / (np_ + 2 * ncp(0.95)), 1.0), "gfi.ci.level": 0.90,
-                "gfi.robust": np.nan, "gfi.ci.lower.robust": np.nan, "gfi.ci.upper.robust": np.nan,
+
                 "cn_05": scipy.stats.chi2.ppf(0.95, df) / (chisq / n1) + 1,
                 "cn_01": scipy.stats.chi2.ppf(0.99, df) / (chisq / n1) + 1,
                 "gfi_lisrel": gfi_lisrel, "agfi_lisrel": 1 - (nstat / df) * (1 - gfi_lisrel),

@@ -46,6 +46,14 @@ def _load_reference(name, **read_csv_kwargs):
     return pd.read_csv(path, **read_csv_kwargs)
 
 
+@pytest.fixture(autouse=True)
+def _close_figures():
+    """Close every matplotlib figure a test opened (matplotlib warns beyond 20 open figures)."""
+    yield
+    import matplotlib.pyplot as plt
+    plt.close("all")
+
+
 @pytest.fixture
 def load_data():
     """Load a bundled dataset by name, e.g. load_data("co2")."""

@@ -1,0 +1,336 @@
+"dataset","column","numeric","missing","total"
+"admission","admit",TRUE,0,127
+"admission","gre",TRUE,0,235080
+"admission","gpa",TRUE,0,1355.96000266075
+"admission","rank",TRUE,0,994
+"automotive_data","symboling",TRUE,0,171
+"automotive_data","normalized-losses",TRUE,41,20008
+"automotive_data","make",FALSE,0,NA
+"automotive_data","fuel-type",FALSE,0,NA
+"automotive_data","aspiration",FALSE,0,NA
+"automotive_data","num-of-doors",FALSE,2,NA
+"automotive_data","body-style",FALSE,0,NA
+"automotive_data","drive-wheels",FALSE,0,NA
+"automotive_data","engine-location",FALSE,0,NA
+"automotive_data","wheel-base",TRUE,0,20245.1
+"automotive_data","length",TRUE,0,35680.1
+"automotive_data","width",TRUE,0,13511.1
+"automotive_data","height",TRUE,0,11013.6
+"automotive_data","curb-weight",TRUE,0,523891
+"automotive_data","engine-type",FALSE,0,NA
+"automotive_data","num-of-cylinders",FALSE,0,NA
+"automotive_data","engine-size",TRUE,0,26016
+"automotive_data","fuel-system",FALSE,0,NA
+"automotive_data","bore",TRUE,4,669.28
+"automotive_data","stroke",TRUE,4,654.34
+"automotive_data","compression-ratio",TRUE,0,2079.22
+"automotive_data","horsepower",TRUE,2,21164
+"automotive_data","peak-rpm",TRUE,2,1040450
+"automotive_data","city-mpg",TRUE,0,5170
+"automotive_data","highway-mpg",TRUE,0,6304
+"automotive_data","price",TRUE,4,2654633
+"blood_pressure","patient",TRUE,0,7260
+"blood_pressure","sex",FALSE,0,NA
+"blood_pressure","agegrp",FALSE,0,NA
+"blood_pressure","bp_before",TRUE,0,18774
+"blood_pressure","bp_after",TRUE,0,18163
+"co2","Plant",FALSE,0,NA
+"co2","Type",FALSE,0,NA
+"co2","Treatment",FALSE,0,NA
+"co2","conc",TRUE,0,36540
+"co2","uptake",TRUE,0,2285.9
+"crop_yield","Fert",FALSE,0,NA
+"crop_yield","Water",FALSE,0,NA
+"crop_yield","Yield",TRUE,0,580.8
+"difficile","person",TRUE,0,120
+"difficile","dose",TRUE,0,30
+"difficile","libido",TRUE,0,52
+"insurance","age",TRUE,0,52459
+"insurance","sex",FALSE,0,NA
+"insurance","bmi",TRUE,0,41027.625
+"insurance","children",TRUE,0,1465
+"insurance","smoker",FALSE,0,NA
+"insurance","region",FALSE,0,NA
+"insurance","charges",TRUE,0,17755824.990759
+"ocean","race",TRUE,0,104988
+"ocean","age",TRUE,0,1001075023
+"ocean","engnat",TRUE,0,26919
+"ocean","gender",TRUE,0,31884
+"ocean","hand",TRUE,0,22285
+"ocean","source",TRUE,0,38497
+"ocean","country",FALSE,8,NA
+"ocean","E1",TRUE,0,51840
+"ocean","E2",TRUE,0,54419
+"ocean","E3",TRUE,0,67375
+"ocean","E4",TRUE,0,62155
+"ocean","E5",TRUE,0,67680
+"ocean","E6",TRUE,0,48363
+"ocean","E7",TRUE,0,56540
+"ocean","E8",TRUE,0,66581
+"ocean","E9",TRUE,0,61016
+"ocean","E10",TRUE,0,70699
+"ocean","N1",TRUE,0,64325
+"ocean","N2",TRUE,0,63783
+"ocean","N3",TRUE,0,75774
+"ocean","N4",TRUE,0,54351
+"ocean","N5",TRUE,0,58205
+"ocean","N6",TRUE,0,58770
+"ocean","N7",TRUE,0,62153
+"ocean","N8",TRUE,0,55277
+"ocean","N9",TRUE,0,61824
+"ocean","N10",TRUE,0,55879
+"ocean","A1",TRUE,0,45592
+"ocean","A2",TRUE,0,77428
+"ocean","A3",TRUE,0,42647
+"ocean","A4",TRUE,0,79469
+"ocean","A5",TRUE,0,42711
+"ocean","A6",TRUE,0,76827
+"ocean","A7",TRUE,0,42606
+"ocean","A8",TRUE,0,74271
+"ocean","A9",TRUE,0,77786
+"ocean","A10",TRUE,0,72612
+"ocean","C1",TRUE,0,65437
+"ocean","C2",TRUE,0,58739
+"ocean","C3",TRUE,0,78541
+"ocean","C4",TRUE,0,52339
+"ocean","C5",TRUE,0,53249
+"ocean","C6",TRUE,0,57636
+"ocean","C7",TRUE,0,71909
+"ocean","C8",TRUE,0,48930
+"ocean","C9",TRUE,0,63583
+"ocean","C10",TRUE,0,71722
+"ocean","O1",TRUE,0,72812
+"ocean","O2",TRUE,0,42389
+"ocean","O3",TRUE,0,81363
+"ocean","O4",TRUE,0,41004
+"ocean","O5",TRUE,0,76372
+"ocean","O6",TRUE,0,35391
+"ocean","O7",TRUE,0,80315
+"ocean","O8",TRUE,0,63259
+"ocean","O9",TRUE,0,81510
+"ocean","O10",TRUE,0,78970
+"personality","pers01",TRUE,0,1569
+"personality","pers02",TRUE,0,1275
+"personality","pers03",TRUE,0,1804
+"personality","pers04",TRUE,0,1093
+"personality","pers05",TRUE,0,1527
+"personality","pers06",TRUE,0,1227
+"personality","pers07",TRUE,0,1699
+"personality","pers08",TRUE,0,1142
+"personality","pers09",TRUE,0,1283
+"personality","pers10",TRUE,0,1727
+"personality","pers11",TRUE,0,1491
+"personality","pers12",TRUE,0,944
+"personality","pers13",TRUE,0,1856
+"personality","pers14",TRUE,0,1536
+"personality","pers15",TRUE,0,1544
+"personality","pers16",TRUE,0,1523
+"personality","pers17",TRUE,0,1622
+"personality","pers18",TRUE,0,1100
+"personality","pers19",TRUE,0,1476
+"personality","pers20",TRUE,0,1633
+"personality","pers21",TRUE,0,1281
+"personality","pers22",TRUE,0,1745
+"personality","pers23",TRUE,0,1143
+"personality","pers24",TRUE,0,1311
+"personality","pers25",TRUE,0,1443
+"personality","pers26",TRUE,0,1430
+"personality","pers27",TRUE,0,1032
+"personality","pers28",TRUE,0,1637
+"personality","pers29",TRUE,0,1543
+"personality","pers30",TRUE,0,1609
+"personality","pers31",TRUE,0,1399
+"personality","pers32",TRUE,0,1713
+"personality","pers33",TRUE,0,1740
+"personality","pers34",TRUE,0,1454
+"personality","pers35",TRUE,0,1316
+"personality","pers36",TRUE,0,1619
+"personality","pers37",TRUE,0,1097
+"personality","pers38",TRUE,0,1560
+"personality","pers39",TRUE,0,1346
+"personality","pers40",TRUE,0,1554
+"personality","pers41",TRUE,0,1095
+"personality","pers42",TRUE,0,1683
+"personality","pers43",TRUE,0,1328
+"personality","pers44",TRUE,0,1419
+"responses","Participant Number",TRUE,0,510555
+"responses","Music",TRUE,3,4765
+"responses","Slow songs or fast songs",TRUE,2,3355
+"responses","Dance",TRUE,4,3132
+"responses","Folk",TRUE,5,2300
+"responses","Country",TRUE,5,2134
+"responses","Classical music",TRUE,7,2965
+"responses","Musical",TRUE,2,2784
+"responses","Pop",TRUE,3,3496
+"responses","Rock",TRUE,6,3777
+"responses","Metal or Hardrock",TRUE,3,2378
+"responses","Punk",TRUE,8,2461
+"responses","Hiphop, Rap",TRUE,4,2928
+"responses","Reggae, Ska",TRUE,7,2778
+"responses","Swing, Jazz",TRUE,6,2771
+"responses","Rock n roll",TRUE,7,3151
+"responses","Alternative",TRUE,7,2837
+"responses","Latino",TRUE,8,2848
+"responses","Techno, Trance",TRUE,7,2346
+"responses","Opera",TRUE,1,2159
+"responses","Movies",TRUE,6,4632
+"responses","Horror",TRUE,2,2816
+"responses","Thriller",TRUE,1,3414
+"responses","Comedy",TRUE,3,4526
+"responses","Romantic",TRUE,3,3514
+"responses","Sci-fi",TRUE,2,3138
+"responses","War",TRUE,2,3181
+"responses","Fantasy/Fairy tales",TRUE,3,3776
+"responses","Animated",TRUE,3,3815
+"responses","Documentary",TRUE,8,3651
+"responses","Western",TRUE,4,2139
+"responses","Action",TRUE,2,3565
+"responses","History",TRUE,2,3233
+"responses","Psychology",TRUE,5,3154
+"responses","Politics",TRUE,1,2619
+"responses","Mathematics",TRUE,3,2351
+"responses","Physics",TRUE,3,2079
+"responses","Internet",TRUE,4,4201
+"responses","PC",TRUE,6,3149
+"responses","Economy Management",TRUE,5,2657
+"responses","Biology",TRUE,6,2676
+"responses","Chemistry",TRUE,10,2165
+"responses","Reading",TRUE,6,3172
+"responses","Geography",TRUE,9,3086
+"responses","Foreign languages",TRUE,5,3797
+"responses","Medicine",TRUE,5,2529
+"responses","Law",TRUE,1,2277
+"responses","Cars",TRUE,4,2703
+"responses","Art exhibitions",TRUE,6,2600
+"responses","Religion",TRUE,3,2289
+"responses","Countryside, outdoors",TRUE,7,3698
+"responses","Dancing",TRUE,3,2479
+"responses","Musical instruments",TRUE,1,2345
+"responses","Writing",TRUE,6,1909
+"responses","Passive sport",TRUE,15,3371
+"responses","Active sport",TRUE,4,3311
+"responses","Gardening",TRUE,7,1913
+"responses","Celebrities",TRUE,2,2381
+"responses","Shopping",TRUE,2,3303
+"responses","Science and technology",TRUE,6,3247
+"responses","Theatre",TRUE,8,3031
+"responses","Fun with friends",TRUE,4,4585
+"responses","Adrenaline sports",TRUE,3,2969
+"responses","Pets",TRUE,4,3355
+"responses","Flying",TRUE,3,2076
+"responses","Storm",TRUE,1,1991
+"responses","Darkness",TRUE,2,2269
+"responses","Heights",TRUE,3,2634
+"responses","Spiders",TRUE,5,2840
+"responses","Snakes",TRUE,0,3058
+"responses","Rats",TRUE,3,2426
+"responses","Ageing",TRUE,1,2604
+"responses","Dangerous dogs",TRUE,1,3070
+"responses","Fear of public speaking",TRUE,1,2829
+"responses","Smoking",FALSE,0,NA
+"responses","Alcohol",FALSE,0,NA
+"responses","Healthy eating",TRUE,3,3053
+"responses","Daily events",TRUE,7,3084
+"responses","Prioritising workload",TRUE,5,2659
+"responses","Writing notes",TRUE,3,3105
+"responses","Workaholism",TRUE,5,3011
+"responses","Thinking ahead",TRUE,3,3438
+"responses","Final judgement",TRUE,7,2657
+"responses","Reliability",TRUE,4,3882
+"responses","Keeping promises",TRUE,1,4023
+"responses","Loss of interest",TRUE,4,2725
+"responses","Friends versus money",TRUE,6,3794
+"responses","Funniness",TRUE,4,3313
+"responses","Fake",TRUE,1,2150
+"responses","Criminal damage",TRUE,7,2612
+"responses","Decision making",TRUE,4,3217
+"responses","Elections",TRUE,3,3439
+"responses","Self-criticism",TRUE,5,3597
+"responses","Judgment calls",TRUE,4,4011
+"responses","Hypochondria",TRUE,4,1924
+"responses","Empathy",TRUE,5,3878
+"responses","Eating to survive",TRUE,0,2251
+"responses","Giving",TRUE,6,2988
+"responses","Compassion to animals",TRUE,7,3983
+"responses","Borrowed stuff",TRUE,2,4050
+"responses","Loneliness",TRUE,1,2913
+"responses","Cheating in school",TRUE,4,3767
+"responses","Health",TRUE,1,3280
+"responses","Changing the past",TRUE,2,2976
+"responses","God",TRUE,2,3329
+"responses","Dreams",TRUE,0,3330
+"responses","Charity",TRUE,3,2119
+"responses","Number of friends",TRUE,0,3377
+"responses","Punctuality",FALSE,0,NA
+"responses","Lying",FALSE,0,NA
+"responses","Waiting",TRUE,3,2691
+"responses","New environment",TRUE,2,3503
+"responses","Mood swings",TRUE,4,3278
+"responses","Appearence and gestures",TRUE,3,3623
+"responses","Socializing",TRUE,5,3174
+"responses","Achievements",TRUE,2,2987
+"responses","Responding to a serious letter",TRUE,6,3083
+"responses","Children",TRUE,4,3643
+"responses","Assertiveness",TRUE,2,3547
+"responses","Getting angry",TRUE,4,3033
+"responses","Knowing the right people",TRUE,2,3514
+"responses","Public speaking",TRUE,2,3550
+"responses","Unpopularity",TRUE,3,3486
+"responses","Life struggles",TRUE,3,3053
+"responses","Happiness in life",TRUE,4,3728
+"responses","Energy levels",TRUE,5,3652
+"responses","Small - big dogs",TRUE,4,2991
+"responses","Personality",TRUE,4,3312
+"responses","Finding lost valuables",TRUE,4,2889
+"responses","Getting up",TRUE,5,3610
+"responses","Interests or hobbies",TRUE,3,3576
+"responses","Parents' advice",TRUE,2,3292
+"responses","Questionnaires or polls",TRUE,4,2765
+"responses","Internet usage",FALSE,0,NA
+"responses","Finances",TRUE,3,3045
+"responses","Shopping centres",TRUE,2,3260
+"responses","Branded clothing",TRUE,2,3075
+"responses","Entertainment spending",TRUE,3,3224
+"responses","Spending on looks",TRUE,3,3128
+"responses","Spending on gadgets",TRUE,0,2899
+"responses","Spending on healthy eating",TRUE,2,3586
+"responses","Age",TRUE,7,20495
+"responses","Height",TRUE,20,171779
+"responses","Weight",TRUE,20,65741
+"responses","Number of siblings",TRUE,6,1303
+"responses","Gender",FALSE,0,NA
+"responses","Left - right handed",FALSE,0,NA
+"responses","Education",FALSE,0,NA
+"responses","Only child",FALSE,0,NA
+"responses","Village - town",FALSE,0,NA
+"responses","House - block of flats",FALSE,0,NA
+"responses_state","Participant Number",TRUE,0,510555
+"responses_state","State",FALSE,0,NA
+"sexual_comp","Q1",TRUE,0,7786
+"sexual_comp","Q2",TRUE,0,7512
+"sexual_comp","Q3",TRUE,0,7495
+"sexual_comp","Q4",TRUE,0,6530
+"sexual_comp","Q5",TRUE,0,7548
+"sexual_comp","Q6",TRUE,0,10415
+"sexual_comp","Q7",TRUE,0,7393
+"sexual_comp","Q8",TRUE,0,7721
+"sexual_comp","Q9",TRUE,0,8287
+"sexual_comp","Q10",TRUE,0,8471
+"sexual_comp","score",TRUE,0,79158
+"sexual_comp","gender",TRUE,0,4446
+"sexual_comp","age",TRUE,0,105680
+"titanic","PassengerId",TRUE,0,857395
+"titanic","survived",TRUE,0,500
+"titanic","pclass",TRUE,0,3004
+"titanic","name",FALSE,0,NA
+"titanic","sex",FALSE,0,NA
+"titanic","age",TRUE,263,31255.6667
+"titanic","sibsp",TRUE,0,653
+"titanic","parch",TRUE,0,504
+"titanic","ticket",FALSE,0,NA
+"titanic","fare",TRUE,1,43550.4869
+"titanic","cabin",FALSE,0,NA
+"titanic","embarked",FALSE,0,NA
+"titanic","boat",FALSE,0,NA
+"titanic","body",TRUE,1188,19458
+"titanic","home.dest",FALSE,0,NA

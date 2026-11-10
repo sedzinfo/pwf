@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Python port of R rwf::FUNCTIONS_GENERATEDATA.R.
+Python port of R rwf::FUNCTIONS_GENERATE_DATA.R. Random draws use numpy's
+global RNG (np.random.seed() makes them reproducible); the values differ from
+R's, but the shapes, column names, types and every deterministic part match
+rwf (checked in tests/test_functions_generate_data.py).
 
 Note: `functions_generic.py` already has differently-shaped versions of
 several of these ideas (generate_normal/generate_uniform instead of a
@@ -18,6 +21,11 @@ functions_generic.py versions if both are wildcard-imported together.
 import string
 import numpy as np
 import pandas as pd
+def _r_colon(start, end):
+    """R's start:end: steps of 1 from start towards end (integers when start is whole)."""
+    step = 1 if end >= start else -1
+    values = start + step * np.arange(int(np.floor(abs(end - start) + 1e-10)) + 1)
+    return values.astype(int) if float(start).is_integer() else values
 ##########################################################################################
 # GENERATE RANDOM NUMBERS
 ##########################################################################################
@@ -36,12 +44,15 @@ def generate_data(nrows=10, ncols=5, mean=0, sd=1, min=1, max=5, type="normal"):
     min (int, optional): Minimum of the uniform distribution (inclusive).
         Only used with type="uniform". Defaults to 1.
     max (int, optional): Maximum of the uniform distribution (inclusive).
-        Only used with type="uniform". Defaults to 5.
+        Only used with type="uniform". Defaults to 5. As in rwf the values
+        are drawn from R's min:max (min, min + 1, ... up to max), so
+        min=1.5, max=4 draws from 1.5, 2.5, 3.5, and, as R's sample(), a
+        single value n >= 1 (min == max) draws from 1..n.
     type (str, optional): "normal" or "uniform". Defaults to "normal".
 
     Returns:
     pandas.DataFrame: nrows x ncols of random values, columns named
-    "X1".."Xncols".
+    "X1".."Xncols". Any other type gives all-missing columns, as in rwf.
 
     Examples:
     >>> generate_data(nrows=10, ncols=5, mean=0, sd=1, type="normal")
@@ -51,7 +62,8 @@ def generate_data(nrows=10, ncols=5, mean=0, sd=1, min=1, max=5, type="normal"):
     if type == "normal":
         data = np.random.normal(loc=mean, scale=sd, size=(nrows, ncols))
     elif type == "uniform":
-        data = np.random.randint(min, max + 1, size=(nrows, ncols))
+        pool = _r_sample_pool(_r_colon(min, max))
+        data = np.random.choice(np.asarray(pool), size=(nrows, ncols), replace=True)
     else:
         data = np.full((nrows, ncols), np.nan)
     return pd.DataFrame(data, columns=columns)
@@ -68,15 +80,17 @@ def generate_factor(vector=None, nrows=2, ncols=10, type="random"):
     nrows (int, optional): Number of rows. For type="balanced", nrows
         should be divisible by len(vector). Defaults to 2.
     ncols (int, optional): Number of columns. When ncols=1, a single
-        pandas.Categorical Series is returned instead of a DataFrame.
+        categorical Series (no name) is returned instead of a DataFrame, as
+        R returns a single factor.
         Defaults to 10.
     type (str, optional): "random" (sample independently with
         replacement) or "balanced" (each level appears exactly
         nrows/len(vector) times per column). Defaults to "random".
 
     Returns:
-    pandas.DataFrame or pandas.Series: Categorical data, nrows x ncols
-    (or a single Series when ncols=1).
+    pandas.DataFrame or pandas.Series: Categorical columns "X1".."Xncols",
+    nrows x ncols, with categories in the order of `vector` (or a single
+    Series when ncols=1).
 
     Examples:
     >>> generate_factor(vector=list("ABCDE"), ncols=5, nrows=10, type="random")
@@ -96,7 +110,7 @@ def generate_factor(vector=None, nrows=2, ncols=10, type="random"):
 
     result = pd.DataFrame(data)
     if ncols == 1:
-        return result.iloc[:, 0]
+        return result.iloc[:, 0].rename(None)
     return result
 ##########################################################################################
 # GENERATE RANDOM STRING
@@ -179,31 +193,37 @@ def generate_multiple_responce_vector(responces=None, responded=None, length=10)
 ##########################################################################################
 # SIMULATE CORRELATION MATRIX
 ##########################################################################################
-def _random_symmetric_matrix(n):
-    """Random symmetric matrix with unit diagonal, used as a convenience default."""
-    m = np.random.uniform(0.1, 1, size=(n, n))
-    m = (m + m.T) / 2
+def _default_correlation_matrix(n):
+    """
+    rwf's default target: symmetric_matrix(as.matrix(generate_data(ncols = n,
+    nrows = n, min = 0.1, max = 1, type = "uniform"))) with a unit diagonal.
+    R's 0.1:1 is the single value 0.1, so every off-diagonal cell is 0.1.
+    """
+    m = np.full((n, n), 0.1)
     np.fill_diagonal(m, 1)
     return m
 
 
-def generate_correlation_matrix(correlation_matrix=None, nrows=10):
+def generate_correlation_matrix(correlation_martix=None, nrows=10, correlation_matrix=None):
     """
     Generate a data frame whose columns reproduce a target correlation
-    structure, via Cholesky decomposition. If no matrix is given, a
-    random symmetric matrix (unit diagonal) is generated automatically.
-
-    Note: R's parameter is named `correlation_martix` (a typo in the R
-    source); the Python parameter is spelled correctly.
+    structure, via Cholesky decomposition (data = t(chol(R)) %*% Z).
 
     Parameters:
-    correlation_matrix (array-like, optional): Symmetric positive-definite
-        matrix of the desired correlations. If None, a random one is used.
+    correlation_martix (array-like or pandas.DataFrame, optional): Symmetric
+        positive-definite matrix of the desired correlations (rwf's spelling
+        of the argument). If None, rwf's default is used: an nrows x nrows
+        matrix with 0.1 off the diagonal and 1 on it (rwf builds it from
+        generate_data(min = 0.1, max = 1, type = "uniform"), and R's 0.1:1
+        is the single value 0.1).
     nrows (int, optional): Number of observations to generate. Defaults to 10.
+    correlation_matrix (array-like, optional): Correctly spelled alias of
+        correlation_martix, kept for existing pwf code.
 
     Returns:
-    pandas.DataFrame: nrows x ncol(correlation_matrix), columns named
-    "X1".."Xn". Reproduced correlations approximate the target matrix,
+    pandas.DataFrame: nrows x ncol(correlation_martix), columns named after
+    the matrix's columns when it is a DataFrame (R keeps its colnames),
+    "X1".."Xn" otherwise. Reproduced correlations approximate the target matrix,
     with accuracy improving as nrows increases.
 
     Examples:
@@ -211,9 +231,12 @@ def generate_correlation_matrix(correlation_matrix=None, nrows=10):
     >>> data = generate_correlation_matrix(df.to_numpy(), nrows=100)
     >>> data.corr()
     """
-    if correlation_matrix is None:
-        correlation_matrix = _random_symmetric_matrix(nrows)
-    correlation_matrix = np.asarray(correlation_matrix, dtype=float)
+    if correlation_martix is None:
+        correlation_martix = correlation_matrix
+    if correlation_martix is None:
+        correlation_martix = _default_correlation_matrix(nrows)
+    columns = list(correlation_martix.columns) if isinstance(correlation_martix, pd.DataFrame) else None
+    correlation_matrix = np.asarray(correlation_martix, dtype=float)
 
     # numpy's cholesky returns lower-triangular L (L @ L.T = Sigma), the
     # transpose of R's chol() upper-triangular convention (t(U) %*% U = Sigma)
@@ -222,7 +245,7 @@ def generate_correlation_matrix(correlation_matrix=None, nrows=10):
     nvars = L.shape[0]
     z = np.random.normal(size=(nvars, nrows))
     r = L @ z
-    return pd.DataFrame(r.T, columns=[f"X{i+1}" for i in range(nvars)])
+    return pd.DataFrame(r.T, columns=columns or [f"X{i+1}" for i in range(nvars)])
 ##########################################################################################
 # SIMULATE DATA FROM SAMPLE
 ##########################################################################################
@@ -261,14 +284,16 @@ def generate_missing(df, missing=5):
     column for a data frame.
 
     Parameters:
-    df (array-like or pandas.DataFrame): Numeric vector or data frame.
+    df (array-like, pandas.Series or pandas.DataFrame): Vector or data
+        frame; text columns are allowed, as in R.
     missing (int, optional): Number of values to replace with NaN, per
         vector or per column. Must not exceed the vector length /
         nrow(df). Defaults to 5.
 
     Returns:
-    Same type as `df`, with `missing` values replaced by NaN (a fresh
-    copy — the input is not modified in place).
+    Same type as `df` (a numpy array for a list), with `missing` values per
+    vector or column replaced by NaN; integer columns become floats, text
+    keeps its type. A copy: the input is not modified.
 
     Examples:
     >>> import numpy as np
@@ -276,17 +301,24 @@ def generate_missing(df, missing=5):
     >>> generate_missing(generate_data(nrows=10, ncols=2), missing=5)
     """
     if isinstance(df, pd.DataFrame):
-        result = df.astype(float)
+        result = df.copy()
         n = len(result)
-        for col in result.columns:
+        for j in range(result.shape[1]):
             idx = np.random.choice(n, size=missing, replace=False)
-            result.iloc[idx, result.columns.get_loc(col)] = np.nan
+            column = result.iloc[:, j].copy()
+            column = column.astype(float) if column.dtype.kind in "iub" else column.astype(object)
+            column.iloc[idx] = np.nan
+            result.isetitem(j, column.infer_objects())
         return result
-    else:
-        arr = np.array(df, dtype=float)
-        idx = np.random.choice(len(arr), size=missing, replace=False)
-        arr[idx] = np.nan
-        return arr
+    if isinstance(df, pd.Series):
+        result = df.astype(float) if df.dtype.kind in "iub" else df.astype(object)
+        result.iloc[np.random.choice(len(result), size=missing, replace=False)] = np.nan
+        return result.infer_objects()
+    arr = np.array(df)
+    arr = arr.astype(float) if arr.dtype.kind in "iufb" else arr.astype(object)
+    idx = np.random.choice(len(arr), size=missing, replace=False)
+    arr[idx] = np.nan
+    return arr
 ##########################################################################################
 # EXAMPLES
 ##########################################################################################

@@ -1,0 +1,5 @@
+"QUARTER","MONTH","JULIAN","WEEKDAY","DAY_PERIOD","YEAR","MONTH_NUMERIC","DAY_NUMERIC","HOUR","MINUTE","SECOND","FULL_DATE","FULL_TIME"
+"Q1","March",20513.9583333333,"Sunday","Evening","2026","03","01","23","00","00","2026-03-01","23:00"
+"Q1","March",20513.2119097222,"Sunday","Night","2026","03","01","05","05","09","2026-03-01","05:05"
+"Q3","July",20638.5416782407,"Saturday","Noon","2026","07","04","13","00","01","2026-07-04","13:00"
+"Q4","December",20818.0208333333,"Thursday","Night","2026","12","31","00","30","00","2026-12-31","00:30"

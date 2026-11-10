@@ -1,20 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-Python port of R rwf::GLM_IRT_T.R — Thurstonian IRT (forced-choice/ranking)
-utilities: comparison-matrix construction, rank-to-binary recoding, the
-Thurstonian item characteristic curve, ML/MAP ability scoring, and a
-from-scratch Gauss-Jordan-based MAP scorer for lavaan-fitted Thurstonian
-models.
+Python port of R rwf::GLM_IRT_T.R: Thurstonian IRT (forced-choice and
+ranking) utilities: comparison-matrix construction, rank-to-binary
+recoding, the Thurstonian item characteristic curve, ML/MAP ability
+scoring, and the MAP scorer of lavaan-fitted Thurstonian models.
 
-Two functions (extract_tirt_params, check_heywood) operate on a *fitted
-lavaan model object*, which only exists in R (this project has no native
-Python SEM library with lavaan's exact parameter-table/lavInspect output
-structure — semopy's API and output shapes are different enough that a
-faithful port isn't a simple substitution). Following the same approach
-as glm_irt.py for mirt, these two bridge to the real R lavaan package via
-rpy2 (already a project dependency; lavaan/thurstonianIRT are both
-present in this environment) rather than attempt a lossy reimplementation.
-Every other function here is pure math/data-munging with no R dependency.
+extract_tirt_params and check_heywood work on a fitted model of pwf's
+native lavaan port (_ordinal.py: thresholds, polychoric correlations,
+ULSMV / WLSMV estimation with labels and linear constraints), which
+reproduces thurstonianIRT::fit_TIRT_lavaan's lavaan fit
+(tests/test_glm_irt_t.py); fit_tirt fits such a model from its lavaan
+syntax. No R is needed.
 
 Renamed parameters: any R parameter named `lambda` is `lambda_` here,
 since `lambda` is a reserved word in Python.
@@ -46,6 +42,11 @@ import pandas as pd
 from scipy.stats import norm
 from scipy.optimize import minimize
 from plotnine import ggplot, aes, geom_point, geom_line, theme_bw, labs
+
+try:
+    from ._ordinal import OrdinalSEM
+except ImportError:
+    from _ordinal import OrdinalSEM
 ##########################################################################################
 # GENERATE INDEX FOR ITEM COMPARISONS
 ##########################################################################################
@@ -764,174 +765,134 @@ def score_tirt(patterns, lambda_, theta_diag, tau, Psi, nu=None):
         return pd.DataFrame(scores, columns=trait_names)
     return scores
 ##########################################################################################
-# EXTRACT TIRT PARAMETERS (rpy2 bridge to R lavaan -- see module docstring)
+# FIT A THURSTONIAN IRT MODEL (native lavaan WLSMV/ULSMV, see _ordinal.py)
+##########################################################################################
+def fit_tirt(model, data, estimator="ULSMV"):
+    """
+    Fit a Thurstonian IRT model given in lavaan syntax to binary pairwise
+    comparisons, as thurstonianIRT::fit_TIRT_lavaan does with lavaan:
+    lavaan::lavaan(model, data, ordered = all, auto.fix.first = FALSE,
+    auto.th = TRUE, parameterization = "theta", estimator = estimator).
+    Python-only helper (rwf takes the fit from thurstonianIRT); the
+    estimation is pwf's native port of lavaan's WLSMV/ULSMV.
+
+    Parameters:
+    model (str): lavaan syntax, e.g. from thurstonianIRT's make_lavaan_code.
+    data (pandas.DataFrame): The binary comparison columns (e.g. i1i2, i1i3, ...).
+    estimator (str, optional): "ULSMV" (thurstonianIRT's default) or "WLSMV".
+
+    Returns:
+    OrdinalSEM: The fitted model (parameter_estimates(), fit_measures(), inspect()).
+
+    Examples:
+    >>> fit = fit_tirt(open("tirt_lavaan_model.txt").read(), triplets)
+    >>> extract_tirt_params(fit)
+    """
+    return OrdinalSEM(model, data, estimator=estimator, parameterization="theta", auto=False)
+
+
+def _fit_of(fit_object):
+    """The model fit of a thurstonianIRT-like object (fit_object$fit in rwf) or the fit itself."""
+    if isinstance(fit_object, dict) and "fit" in fit_object:
+        return fit_object["fit"]
+    return getattr(fit_object, "fit", fit_object)
+##########################################################################################
+# EXTRACT TIRT PARAMETERS
 ##########################################################################################
 def extract_tirt_params(fit_lavaan_obj):
     """
-    Extract and align (to lambda's row order) the lambda/theta/tau/nu/Psi
-    parameter blocks needed for score_tirt/score_tirt_pattern, from a
-    fitted lavaan model. Bridges to R's lavaan via rpy2 — see module
-    docstring for why (no native Python equivalent for lavInspect's exact
-    output structure).
+    Measurement parameters of a fitted Thurstonian IRT model, as
+    rwf::extract_tirt_params: from lavInspect(fit, "est"), the loadings,
+    the residual variances, the thresholds and the intercepts of every
+    indicator (aligned to the loadings' rows) and the trait covariances.
 
     Parameters:
-    fit_lavaan_obj: An rpy2 R object with an rx2("fit") lavaan fit slot
-        (e.g. from R's thurstonianIRT::fit_TIRT_lavaan(), called via
-        rpy2), or a bare lavaan fit object itself.
+    fit_lavaan_obj: A model fitted with fit_tirt (pwf's native lavaan), or
+        an object holding it as .fit / ["fit"] (rwf's fit_lavaan_obj$fit).
 
     Returns:
-    dict: {"lambda": pandas.DataFrame, "theta_diag": pandas.Series,
-    "tau": pandas.Series, "nu": pandas.Series, "Psi": pandas.DataFrame}.
+    dict: lambda (DataFrame indicators x traits), theta_diag, tau and nu
+    (Series by indicator) and Psi (DataFrame traits x traits).
 
     Examples:
-    >>> import rpy2.robjects as ro
-    >>> from rpy2.robjects.packages import importr
-    >>> thurstonianIRT = importr("thurstonianIRT")
-    >>> # see glm_irt_t.py's __main__ block for a full worked example
+    >>> pars = extract_tirt_params(fit_tirt(model, triplets))
     """
-    import rpy2.robjects as ro
-    from rpy2.robjects.packages import importr
-    lavaan = importr("lavaan")
-    base = importr("base")
-
-    fit = fit_lavaan_obj.rx2("fit") if "fit" in tuple(fit_lavaan_obj.names or ()) else fit_lavaan_obj
-    est = lavaan.lavInspect(fit, "est")
-
-    lambda_r = est.rx2("lambda")
-    lambda_arr = np.array(lambda_r)
-    ind = list(base.rownames(lambda_r))
-    trait_names = list(base.colnames(lambda_r))
-    lambda_df = pd.DataFrame(lambda_arr, index=ind, columns=trait_names)
-
-    theta_r = est.rx2("theta")
-    theta_diag = pd.Series(np.diag(np.array(theta_r)), index=list(base.rownames(theta_r)))
-    if not (base.is_null(base.rownames(theta_r))[0]):
-        theta_diag = theta_diag.reindex(ind)
-
-    tau_r = est.rx2("tau")
-    tau_rownames = [name.split("|")[0] for name in base.rownames(tau_r)]
-    tau_vec = pd.Series(np.array(tau_r).ravel(), index=tau_rownames).reindex(ind)
-
-    nu_vec = pd.Series(np.zeros(len(ind)), index=ind)
-    nu_r = est.rx2("nu")
-    if not base.is_null(nu_r)[0]:
-        nu_named = pd.Series(np.array(nu_r).ravel(), index=list(base.rownames(nu_r)))
-        if all(name in nu_named.index for name in ind):
-            nu_vec = nu_named.reindex(ind)
-
-    psi_r = est.rx2("psi")
-    psi_names = list(base.colnames(psi_r))
-    psi_df = pd.DataFrame(np.array(psi_r), index=psi_names, columns=psi_names)
-
-    return {"lambda": lambda_df, "theta_diag": theta_diag, "tau": tau_vec, "nu": nu_vec, "Psi": psi_df}
+    est = _fit_of(fit_lavaan_obj).inspect("est")
+    lambda_ = est["lambda"]
+    ind = list(lambda_.index)
+    theta_diag = pd.Series(np.diag(est["theta"].to_numpy()), index=est["theta"].index).reindex(ind)
+    tau = est["tau"]["threshold"]
+    tau = pd.Series(tau.to_numpy(), index=[name.split("|")[0] for name in tau.index]).reindex(ind)
+    nu = est["nu"]["intercept"].reindex(ind)
+    return {"lambda": lambda_, "theta_diag": theta_diag, "tau": tau, "nu": nu, "Psi": est["psi"]}
 ##########################################################################################
-# CHECK HEYWOOD CASES AND MODEL ISSUES (rpy2 bridge to R lavaan -- see module docstring)
+# CHECK HEYWOOD CASES AND MODEL ISSUES
 ##########################################################################################
 def check_heywood(fit_model, verbose=True):
     """
-    Screen a fitted lavaan model for Heywood cases and related estimation
-    problems: negative variances, out-of-range standardized loadings/
-    correlations, extreme standard errors, and non-convergence. Bridges
-    to R's lavaan via rpy2 — see module docstring.
+    Screen a fitted model for Heywood cases and related estimation
+    problems, as rwf::check_heywood: negative variances (~~), negative
+    scaling factors (~*~), standardized loadings or correlations beyond
+    +-1, standard errors above 10, and non-convergence.
+
+    The standardized values (est.std) are the std.all column of
+    parameter_estimates(); their pvalue column is the unstandardized test
+    (lavaan's standardizedSolution tests the standardized values).
 
     Parameters:
-    fit_model: An rpy2 R lavaan fit object (e.g. from lavaan::cfa()/sem()
-        called via rpy2).
-    verbose (bool, optional): If True (default), print each diagnostic
-        section and a summary.
+    fit_model: A model fitted with pwf's native lavaan (fit_tirt, _ordinal.OrdinalSEM).
+    verbose (bool, optional): Print each problem found and a summary. Defaults to True.
 
     Returns:
-    dict: {"has_issues": bool, "issues": dict of pandas.DataFrame/str,
-    "converged": bool}.
+    dict: has_issues (bool), issues (dict of DataFrames or a message) and converged (bool).
 
     Examples:
-    >>> import rpy2.robjects as ro
-    >>> from rpy2.robjects.packages import importr
-    >>> lavaan = importr("lavaan")
-    >>> # see glm_irt_t.py's __main__ block for a full worked example
+    >>> check_heywood(fit_tirt(model, triplets), verbose=True)
     """
-    import rpy2.robjects as ro
-    from rpy2.robjects.packages import importr
-    lavaan = importr("lavaan")
-    base = importr("base")
-
-    def _r_df_to_pandas(r_df):
-        data = {name: list(r_df.rx2(name)) for name in r_df.names}
-        return pd.DataFrame(data)
-
-    params = _r_df_to_pandas(lavaan.parameterEstimates(fit_model))
-    std = _r_df_to_pandas(lavaan.standardizedSolution(fit_model))
-
+    fit = _fit_of(fit_model)
+    params = fit.parameter_estimates(standardized=True)
+    std = params.rename(columns={"std.all": "est.std"})
     issues = {}
-    has_issues = False
 
-    neg_var = params[(params["op"] == "~~") & (params["lhs"] == params["rhs"]) & (params["est"] < 0)]
-    if len(neg_var) > 0:
-        issues["negative_variances"] = neg_var
-        has_issues = True
-        if verbose:
-            print("\n=== NEGATIVE VARIANCES (~~) ===")
-            print(neg_var[["lhs", "op", "rhs", "est", "se", "pvalue"]])
+    def report(name, rows, title, columns):
+        if len(rows):
+            issues[name] = rows
+            if verbose:
+                print(f"\n=== {title} ===")
+                print(rows[columns])
 
-    neg_resid = params[(params["op"] == "~*~") & (params["est"] < 0)]
-    if len(neg_resid) > 0:
-        issues["negative_residuals"] = neg_resid
-        has_issues = True
-        if verbose:
-            print("\n=== NEGATIVE RESIDUAL VARIANCES (~*~) ===")
-            print(neg_resid[["lhs", "op", "rhs", "est", "se", "pvalue"]])
-
-    problem_loadings = std[(std["op"] == "=~") & (std["est.std"].abs() > 1)]
-    if len(problem_loadings) > 0:
-        issues["extreme_loadings"] = problem_loadings
-        has_issues = True
-        if verbose:
-            print("\n=== STANDARDIZED LOADINGS > 1 ===")
-            print(problem_loadings[["lhs", "op", "rhs", "est.std", "pvalue"]])
-
-    extreme_cors = std[(std["op"] == "~~") & (std["lhs"] != std["rhs"]) & (std["est.std"].abs() > 1)]
-    if len(extreme_cors) > 0:
-        issues["extreme_correlations"] = extreme_cors
-        has_issues = True
-        if verbose:
-            print("\n=== CORRELATIONS OUTSIDE [-1,1] ===")
-            print(extreme_cors[["lhs", "op", "rhs", "est.std", "pvalue"]])
-
-    extreme_se = params[params["se"].notna() & (params["se"] > 10)]
-    if len(extreme_se) > 0:
-        issues["extreme_se"] = extreme_se
-        has_issues = True
-        if verbose:
-            print("\n=== EXTREME STANDARD ERRORS (> 10) ===")
-            print(extreme_se[["lhs", "op", "rhs", "est", "se", "pvalue"]])
-
-    converged = bool(lavaan.lavInspect(fit_model, "converged")[0])
+    report("negative_variances", params[(params["op"] == "~~") & (params["lhs"] == params["rhs"]) &
+                                        (params["est"] < 0)],
+           "NEGATIVE VARIANCES (~~)", ["lhs", "op", "rhs", "est", "se", "pvalue"])
+    report("negative_residuals", params[(params["op"] == "~*~") & (params["est"] < 0)],
+           "NEGATIVE RESIDUAL VARIANCES (~*~)", ["lhs", "op", "rhs", "est", "se", "pvalue"])
+    report("extreme_loadings", std[(std["op"] == "=~") & (std["est.std"].abs() > 1)],
+           "STANDARDIZED LOADINGS > 1", ["lhs", "op", "rhs", "est.std", "pvalue"])
+    report("extreme_correlations", std[(std["op"] == "~~") & (std["lhs"] != std["rhs"]) & (std["est.std"].abs() > 1)],
+           "CORRELATIONS OUTSIDE [-1,1]", ["lhs", "op", "rhs", "est.std", "pvalue"])
+    report("extreme_se", params[params["se"].notna() & (params["se"] > 10)],
+           "EXTREME STANDARD ERRORS (> 10)", ["lhs", "op", "rhs", "est", "se", "pvalue"])
+    converged = bool(fit.converged)
     if not converged:
         issues["convergence"] = "Model did not converge"
-        has_issues = True
         if verbose:
-            print("\n=== CONVERGENCE ISSUE ===")
-            print("Model did not converge properly!")
-
+            print("\n=== CONVERGENCE ISSUE ===\nModel did not converge properly!")
+    has_issues = bool(issues)
     if verbose:
         print("\n=== SUMMARY ===")
         if has_issues:
             print("Issues found:")
-            if "negative_variances" in issues:
-                print(f" -{len(issues['negative_variances'])} negative variance(s) (~~)")
-            if "negative_residuals" in issues:
-                print(f" -{len(issues['negative_residuals'])} negative residual variance(s) (~*~)")
-            if "extreme_loadings" in issues:
-                print(f" -{len(issues['extreme_loadings'])} extreme standardized loading(s)")
-            if "extreme_correlations" in issues:
-                print(f" -{len(issues['extreme_correlations'])} extreme correlation(s)")
-            if "extreme_se" in issues:
-                print(f" -{len(issues['extreme_se'])} extreme standard error(s)")
+            labels = {"negative_variances": "negative variance(s) (~~)",
+                      "negative_residuals": "negative residual variance(s) (~*~)",
+                      "extreme_loadings": "extreme standardized loading(s)",
+                      "extreme_correlations": "extreme correlation(s)", "extreme_se": "extreme standard error(s)"}
+            for key, label in labels.items():
+                if key in issues:
+                    print(f" -{len(issues[key])} {label}")
             if "convergence" in issues:
                 print(" -Convergence issue")
         else:
             print("No Heywood cases or major issues detected!")
-
     return {"has_issues": has_issues, "issues": issues, "converged": converged}
 ##########################################################################################
 # EXAMPLES
@@ -1020,44 +981,15 @@ if __name__ == "__main__":
     lambda_df_synth = pd.DataFrame(lambda_synth, index=["a", "b", "c"], columns=["t1", "t2"])
     print(score_tirt(patterns_synth, lambda_df_synth, theta_diag_synth, tau_synth, Psi_synth))
 
-    print("\n" + "=" * 80, "\nextract_tirt_params / check_heywood (rpy2 bridge to R lavaan/thurstonianIRT)\n",
-          "=" * 80, sep="")
-    try:
-        import rpy2.robjects as ro
-        from rpy2.robjects.packages import importr
-        thurstonianIRT = importr("thurstonianIRT")
-        lavaan = importr("lavaan")
-
-        ro.r('data("triplets", package="thurstonianIRT")')
-        set_block = ro.r["set_block"]
-        block1 = set_block(ro.StrVector(["i1", "i2", "i3"]), traits=ro.StrVector(["t1", "t2", "t3"]),
-                            signs=ro.FloatVector([1, 1, 1]))
-        block2 = set_block(ro.StrVector(["i4", "i5", "i6"]), traits=ro.StrVector(["t1", "t2", "t3"]),
-                            signs=ro.FloatVector([-1, 1, 1]))
-        block3 = set_block(ro.StrVector(["i7", "i8", "i9"]), traits=ro.StrVector(["t1", "t2", "t3"]),
-                            signs=ro.FloatVector([1, 1, -1]))
-        block4 = set_block(ro.StrVector(["i10", "i11", "i12"]), traits=ro.StrVector(["t1", "t2", "t3"]),
-                            signs=ro.FloatVector([1, -1, 1]))
-        blocks = ro.r["+"](ro.r["+"](ro.r["+"](block1, block2), block3), block4)
-
-        triplets = ro.r["triplets"]
-        triplets_long = ro.r["make_TIRT_data"](data=triplets, blocks=blocks, direction="larger",
-                                                format="pairwise", family="bernoulli",
-                                                range=ro.FloatVector([0, 1]))
-        fit = ro.r["fit_TIRT_lavaan"](triplets_long)
-        pars = extract_tirt_params(fit)
-        print("lambda:\n", pars["lambda"].head())
-        print("tau head:\n", pars["tau"].head())
-        print("Psi:\n", pars["Psi"])
-
-        pattern = np.array(ro.r("as.numeric(triplets[1,])"))
-        score1 = score_tirt_pattern(pattern, pars["lambda"], pars["theta_diag"], pars["tau"], pars["Psi"])
-        print("score_tirt_pattern (respondent 1):", score1)
-
-        patterns_r = pd.DataFrame(np.array(ro.r("as.matrix(triplets)")), columns=list(pars["lambda"].index))
-        scores = score_tirt(patterns_r, pars["lambda"], pars["theta_diag"], pars["tau"], pars["Psi"])
-        print("score_tirt head:\n", scores.head())
-
-        check_heywood(fit.rx2("fit"), verbose=True)
-    except Exception as exc:
-        print(f"Skipped rpy2/lavaan/thurstonianIRT example (not available or failed): {exc}")
+    print("\n" + "=" * 80, "\nfit_tirt / extract_tirt_params / check_heywood\n", "=" * 80, sep="")
+    import os
+    folder = "data" if os.path.exists("data/tirt_triplets.csv") else "../data"
+    triplets = pd.read_csv(f"{folder}/tirt_triplets.csv")
+    with open(f"{folder}/tirt_lavaan_model.txt", encoding="utf-8") as handle:
+        tirt_model = handle.read()
+    fit = fit_tirt(tirt_model, triplets)
+    pars = extract_tirt_params(fit)
+    print("lambda:\n", pars["lambda"].head())
+    print("Psi:\n", pars["Psi"])
+    print("score_tirt head:\n", score_tirt(triplets, pars["lambda"], pars["theta_diag"], pars["tau"], pars["Psi"]).head())
+    check_heywood(fit, verbose=True)

@@ -2,14 +2,13 @@
 """
 Python port of R rwf::FUNCTIONS_KEYS.R.
 
-Note on questions_by_keys: R's implementation is a convoluted
-`which(match(key, i) %in% key)` expression. Traced through, its actual
-net behavior — given the function's own documented precondition that
-`key` values are consecutive integers starting at 1 — reduces exactly
-to `which(key == i)`; the roundabout match()/%in% chain always evaluates
-to that as long as the value 1 appears somewhere in `key`, which it
-always does under that precondition. This port implements the simple,
-equivalent `key == i` directly rather than replicating the indirection.
+Note on questions_by_keys: rwf computes `which(match(key, i) %in% key)`.
+match(key, i) is 1 where key == i (and missing elsewhere), so the result is
+which(key == i) whenever the value 1 occurs in `key` (the documented case:
+dimensions numbered 1..max(key)); when 1 does not occur, 1 %in% key is FALSE
+and every dimension comes back empty. The port reproduces both cases.
+rwf returns an unnamed list indexed 1..max(key); the port returns a dict
+keyed 1..max(key), so key_list[i] means the same in both.
 """
 ##########################################################################################
 # LOAD SYSTEM
@@ -30,14 +29,17 @@ def questions_by_keys(key):
 
     Returns:
     dict: {dimension_number: numpy.ndarray of 1-based question indices},
-    one entry per dimension from 1 to max(key).
+    one entry per dimension from 1 to max(key) (rwf returns the same as an
+    unnamed list). As in rwf, if the value 1 does not occur in `key`, every
+    dimension is empty.
 
     Examples:
     >>> key = [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]
     >>> questions_by_keys(key)
     """
-    key = np.asarray(key)
-    return {i: np.flatnonzero(key == i) + 1 for i in range(1, int(key.max()) + 1)}
+    key = np.asarray(key, dtype=float)
+    has_one = bool(np.any(key == 1))
+    return {i: np.flatnonzero((key == i) & has_one) + 1 for i in range(1, int(np.max(key)) + 1)}
 ##########################################################################################
 # KEYS
 ##########################################################################################

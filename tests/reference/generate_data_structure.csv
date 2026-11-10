@@ -1,0 +1,12 @@
+"call","nrow","ncol","names","classes","levels","na"
+"generate_data_normal",10,5,"X1|X2|X3|X4|X5","numeric|numeric|numeric|numeric|numeric","||||",0
+"generate_data_uniform",10,5,"X1|X2|X3|X4|X5","integer|integer|integer|integer|integer","||||",0
+"generate_data_decimal",10,2,"X1|X2","numeric|numeric","|",0
+"generate_data_other",3,2,"X1|X2","logical|logical","|",6
+"generate_factor_random",10,5,"X1|X2|X3|X4|X5","factor|factor|factor|factor|factor","A,B,C,D,E|A,B,C,D,E|A,B,C,D,E|A,B,C,D,E|A,B,C,D,E",0
+"generate_factor_balanced",10,5,"X1|X2|X3|X4|X5","factor|factor|factor|factor|factor","A,B,C,D,E|A,B,C,D,E|A,B,C,D,E|A,B,C,D,E|A,B,C,D,E",0
+"generate_factor_numeric",4,2,"X1|X2","factor|factor","3,1,2|3,1,2",0
+"generate_correlation_matrix_default",4,4,"X1|X2|X3|X4","numeric|numeric|numeric|numeric","|||",0
+"generate_correlation_matrix_named",3,2,"p|q","numeric|numeric","|",0
+"simulate_correlation_from_sample",3,2,"u|v","numeric|numeric","|",0
+"generate_missing_frame",4,2,"a|b","integer|character","|",4

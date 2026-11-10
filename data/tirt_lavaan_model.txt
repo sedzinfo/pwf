@@ -1,0 +1,70 @@
+# factor loadings (lambda)
+trait1 =~ start(1) * i1i2 + L1 * i1i2 + start(1) * i1i3 + L1 * i1i3 + start(1) * i4i5 + L4 * i4i5 + start(1) * i4i6 + L4 * i4i6 + start(1) * i7i8 + L7 * i7i8 + start(1) * i7i9 + L7 * i7i9 + start(1) * i10i11 + L10 * i10i11 + start(1) * i10i12 + L10 * i10i12
+trait2 =~ start(-1) * i1i2 + L2n * i1i2 + start(1) * i2i3 + L2 * i2i3 + start(-1) * i4i5 + L5n * i4i5 + start(1) * i5i6 + L5 * i5i6 + start(-1) * i7i8 + L8n * i7i8 + start(1) * i8i9 + L8 * i8i9 + start(-1) * i10i11 + L11n * i10i11 + start(1) * i11i12 + L11 * i11i12
+trait3 =~ start(-1) * i1i3 + L3n * i1i3 + start(-1) * i2i3 + L3n * i2i3 + start(-1) * i4i6 + L6n * i4i6 + start(-1) * i5i6 + L6n * i5i6 + start(-1) * i7i9 + L9n * i7i9 + start(-1) * i8i9 + L9n * i8i9 + start(-1) * i10i12 + L12n * i10i12 + start(-1) * i11i12 + L12n * i11i12
+
+# fix factor variances to 1
+trait1 ~~ 1 * trait1
+trait2 ~~ 1 * trait2
+trait3 ~~ 1 * trait3
+
+# factor correlations
+trait1 ~~ trait2 + trait3
+trait2 ~~ trait3
+
+# fix factor loadings of the same item to the same value
+L2 == -L2n
+L5 == -L5n
+L8 == -L8n
+L11 == -L11n
+
+# declare uniquenesses (psi)
+i1i2 ~~ P1P2 * i1i2
+i1i3 ~~ P1P3 * i1i3
+i2i3 ~~ P2P3 * i2i3
+i4i5 ~~ P4P5 * i4i5
+i4i6 ~~ P4P6 * i4i6
+i5i6 ~~ P5P6 * i5i6
+i7i8 ~~ P7P8 * i7i8
+i7i9 ~~ P7P9 * i7i9
+i8i9 ~~ P8P9 * i8i9
+i10i11 ~~ P10P11 * i10i11
+i10i12 ~~ P10P12 * i10i12
+i11i12 ~~ P11P12 * i11i12
+
+# correlated uniqunesses
+i1i2 ~~ start(1) * i1i3 + P1 * i1i3
+i1i2 ~~ start(-1) * i2i3 + P2n * i2i3
+i1i3 ~~ start(1) * i2i3 + P3 * i2i3
+i4i5 ~~ start(1) * i4i6 + P4 * i4i6
+i4i5 ~~ start(-1) * i5i6 + P5n * i5i6
+i4i6 ~~ start(1) * i5i6 + P6 * i5i6
+i7i8 ~~ start(1) * i7i9 + P7 * i7i9
+i7i8 ~~ start(-1) * i8i9 + P8n * i8i9
+i7i9 ~~ start(1) * i8i9 + P9 * i8i9
+i10i11 ~~ start(1) * i10i12 + P10 * i10i12
+i10i11 ~~ start(-1) * i11i12 + P11n * i11i12
+i10i12 ~~ start(1) * i11i12 + P12 * i11i12
+
+# pair's uniqueness is equal to sum of 2 utility uniqunesses
+P1P2 == P1 - P2n
+P1P3 == P1 + P3
+P2P3 ==  - P2n + P3
+P4P5 == P4 - P5n
+P4P6 == P4 + P6
+P5P6 ==  - P5n + P6
+P7P8 == P7 - P8n
+P7P9 == P7 + P9
+P8P9 ==  - P8n + P9
+P10P11 == P10 - P11n
+P10P12 == P10 + P12
+P11P12 ==  - P11n + P12
+
+# fix certain uniquenesses for identification
+P1 == 1
+P4 == 1
+P7 == 1
+P10 == 1
+
+# force item parameters of the same item to be equal
+
