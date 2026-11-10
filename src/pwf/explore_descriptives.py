@@ -65,7 +65,7 @@ def describe_by_mean(df, factorname=[]):
 
     Examples:
     >>> import pandas as pd
-    >>> titanic = pd.read_csv("data/titanic.csv")
+    >>> titanic = load_dataset("titanic")
     >>> describe_by_mean(df=titanic, factorname=["survived", "pclass", "sex"])
     """
     result = pd.DataFrame()
@@ -592,19 +592,18 @@ def plot_response_frequencies(df, factor_index=None, base_size=10, title="", wid
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
+    from pwf.datasets import load_dataset
     import os
 
     print("=" * 80, "\nflatten\n", "=" * 80, sep="")
     print(flatten([[1, 2], [3], [4, 5]]))
 
     print("\n" + "=" * 80, "\ndescribe_by_mean\n", "=" * 80, sep="")
-    titanic = pd.read_csv("data/titanic.csv") if os.path.exists("data/titanic.csv") \
-        else pd.read_csv("../data/titanic.csv")
+    titanic = load_dataset("titanic")
     result = describe_by_mean(df=titanic, factorname=["survived", "pclass", "sex"])
     print(result)
 
-    df_insurance = pd.read_csv("data/insurance.csv") if os.path.exists("data/insurance.csv") \
-        else pd.read_csv("../data/insurance.csv")
+    df_insurance = load_dataset("insurance")
     with pd.option_context("display.max_columns", None, "display.width", 200):
         print("\n" + "=" * 80, "\ncompute_descriptives\n", "=" * 80, sep="")
         print(compute_descriptives(df=df_insurance, dv=["age", "bmi", "charges"]))

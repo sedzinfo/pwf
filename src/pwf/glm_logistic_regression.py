@@ -127,7 +127,7 @@ def output_compare_model_logistic(model1, model2):
     Examples:
     >>> import statsmodels.api as sm
     >>> import statsmodels.formula.api as smf
-    >>> infert = pd.read_csv("data/infert.csv")
+    >>> infert = load_dataset("infert")
     >>> modelcategoricalpredictor = smf.glm("case ~ education", data=infert, family=sm.families.Binomial()).fit()
     >>> modelcontinuouspredictor = smf.glm("case ~ age", data=infert, family=sm.families.Binomial()).fit()
     >>> modeltwopredictors = smf.glm("case ~ education * age", data=infert, family=sm.families.Binomial()).fit()
@@ -541,12 +541,13 @@ def report_logistic(model, validation_data=None, file=None, title="", w=10, h=10
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
+    from pwf.datasets import load_dataset
     import matplotlib
     matplotlib.use("Agg")
     import os
     import statsmodels.formula.api as smf
 
-    infert = pd.read_csv("data/infert.csv") if os.path.exists("data/infert.csv") else pd.read_csv("../data/infert.csv")
+    infert = load_dataset("infert")
 
     print("=" * 80, "\ncompute_y_logistic\n", "=" * 80, sep="")
     x = list(range(-10, 11))

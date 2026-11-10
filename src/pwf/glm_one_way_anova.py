@@ -1163,11 +1163,11 @@ def report_manova(model, file=None):
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
+    from pwf.datasets import load_dataset
     import os
 
-    df_blood_pressure = pd.read_csv("data/blood_pressure.csv") if os.path.exists("data/blood_pressure.csv") \
-        else pd.read_csv("../data/blood_pressure.csv")
-    df_co2 = pd.read_csv("data/co2.csv") if os.path.exists("data/co2.csv") else pd.read_csv("../data/co2.csv")
+    df_blood_pressure = load_dataset("blood_pressure")
+    df_co2 = load_dataset("co2")
 
     print("=" * 80, "\ncompute_kruskal_wallis_test\n", "=" * 80, sep="")
     print(compute_kruskal_wallis_test(formula="bp_before~agegrp", df=df_blood_pressure))

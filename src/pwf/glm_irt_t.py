@@ -982,11 +982,9 @@ if __name__ == "__main__":
     print(score_tirt(patterns_synth, lambda_df_synth, theta_diag_synth, tau_synth, Psi_synth))
 
     print("\n" + "=" * 80, "\nfit_tirt / extract_tirt_params / check_heywood\n", "=" * 80, sep="")
-    import os
-    folder = "data" if os.path.exists("data/tirt_triplets.csv") else "../data"
-    triplets = pd.read_csv(f"{folder}/tirt_triplets.csv")
-    with open(f"{folder}/tirt_lavaan_model.txt", encoding="utf-8") as handle:
-        tirt_model = handle.read()
+    from pwf.datasets import data_path, load_dataset
+    triplets = load_dataset("tirt_triplets")
+    tirt_model = data_path("tirt_lavaan_model.txt").read_text(encoding="utf-8")
     fit = fit_tirt(tirt_model, triplets)
     pars = extract_tirt_params(fit)
     print("lambda:\n", pars["lambda"].head())

@@ -1,42 +1,54 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pwf"
-version = "0.1.0"
-description = "Python working functions (statistics, psychometrics, ML utilities)"
+version = "0.2.0"
+description = "Python working functions: statistics, psychometrics and machine learning reports, a port of the R package rwf"
 readme = "README.md"
-requires-python = ">=3.9"
-license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 authors = [{ name = "Dimitrios Zacharatos", email = "dimitrios.zacharatos@evalion.gr" }]
+keywords = ["statistics", "psychometrics", "sem", "factor analysis", "irt", "lavaan", "psych", "rwf"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
 dependencies = [
-    "numpy",
-    "pandas",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "scipy>=1.12",
+    "statsmodels>=0.14",
+    "patsy>=0.5",
+    "scikit-learn>=1.4",
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+    "plotnine>=0.13",
+    "xlsxwriter>=3.1",
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
-full = [
-    "scipy",
-    "scikit-learn",
-    "statsmodels",
-    "patsy",
-    "plotnine",
-    "matplotlib",
-    "seaborn",
-    "xlsxwriter",
-    "openpyxl",
-    "nltk",
-    "spylls",
-    "xgboost",
-    "rpy2",
-    "networkx",
-    "pydot",
-]
-dev = ["pytest", "build", "twine", "pdoc"]
+nlp = ["nltk>=3.8", "spylls>=0.1.7"]
+xgboost = ["xgboost>=2.0"]
+graph = ["networkx>=3.2", "pydot>=2.0"]
+r = ["rpy2>=3.5"]  # only glm_irt (mirt) still calls R
+full = ["pwf[nlp,xgboost,graph]"]
+dev = ["pwf[full]", "pytest>=8", "build", "twine", "pdoc>=14"]
 
-[tool.setuptools]
-packages = ["pwf"]
+[project.urls]
+Homepage = "https://github.com/sedzinfo/pwf"
+"R original (rwf)" = "https://github.com/sedzinfo/rwf"
 
-[tool.setuptools.package-dir]
-pwf = "functions"
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pwf = ["data/*.csv", "data/*.txt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

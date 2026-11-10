@@ -54,7 +54,7 @@ def plot_histogram(df, base_size=10, title="Histogram", bins=10):
 
     Examples:
     >>> import pandas as pd
-    >>> personality = pd.read_csv("data/personality.csv")
+    >>> personality = load_dataset("personality")
     >>> plot_histogram(personality.iloc[:, 1:6])
     """
     df = df.melt()
@@ -565,12 +565,12 @@ def report_normality_tests(df, file=None):
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
+    from pwf.datasets import load_dataset
     import os
     import matplotlib
     matplotlib.use("Agg")
 
-    personality = pd.read_csv("data/personality.csv") if os.path.exists("data/personality.csv") \
-        else pd.read_csv("../data/personality.csv")
+    personality = load_dataset("personality")
 
     print("=" * 80, "\nplot_histogram / plot_qq / plot_boxplot\n", "=" * 80, sep="")
     plot_histogram(personality.iloc[:, 1:6]).save("plot_histogram_example.png", verbose=False)

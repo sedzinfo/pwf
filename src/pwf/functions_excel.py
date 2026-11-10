@@ -342,12 +342,11 @@ def data_frame_index(nrow, ncol):
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
+    from pwf.datasets import load_dataset
     import os
 
-    df_blood_pressure = pd.read_csv("data/blood_pressure.csv") if os.path.exists("data/blood_pressure.csv") \
-        else pd.read_csv("../data/blood_pressure.csv")
-    df_personality = pd.read_csv("data/personality.csv") if os.path.exists("data/personality.csv") \
-        else pd.read_csv("../data/personality.csv")
+    df_blood_pressure = load_dataset("blood_pressure")
+    df_personality = load_dataset("personality")
 
     try:
         from .functions_train_test import confusion_matrix_percent

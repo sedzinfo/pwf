@@ -228,9 +228,9 @@ def report_lda(model, file=None):
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
-    folder = "data" if os.path.exists("data/iris.csv") else "../data"
-    iris = pd.read_csv(f"{folder}/iris.csv")
-    infert = pd.read_csv(f"{folder}/infert.csv")
+    from pwf.datasets import load_dataset
+    iris = load_dataset("iris")
+    infert = load_dataset("infert")
     result = report_lda(lda("Species ~ .", data=iris))
     for key in ["prior_counts", "coeficients", "model_description", "cmatrix", "call"]:
         print(f"\n{key}:\n", result[key])

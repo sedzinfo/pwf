@@ -72,6 +72,20 @@ def load_dataset(name):
     return _r_read_csv(_data_dir() / f"{key}.csv", sep="\t" if key == "ocean" else ",")
 
 
+def data_path(filename):
+    """
+    Path of a file in pwf's data folder, e.g. data_path("tirt_lavaan_model.txt")
+    (thurstonianIRT's lavaan syntax for tirt_triplets) or data_path("ocean_codebook.txt").
+
+    Parameters:
+    filename (str): File name.
+
+    Returns:
+    pathlib.Path: The path.
+    """
+    return _data_dir() / filename
+
+
 def list_datasets():
     """Names of the available datasets (rwf's first)."""
     return DATASETS + EXTRA_DATASETS

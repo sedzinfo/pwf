@@ -583,12 +583,12 @@ def report_regression(model, base_size=10, title="", file=None, w=10, h=10, plot
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
+    from pwf.datasets import load_dataset
     import matplotlib
     matplotlib.use("Agg")
     import os
 
-    df_insurance = pd.read_csv("data/insurance.csv") if os.path.exists("data/insurance.csv") \
-        else pd.read_csv("../data/insurance.csv")
+    df_insurance = load_dataset("insurance")
 
     print("=" * 80, "\nplot_scatterplot\n", "=" * 80, sep="")
     plots = plot_scatterplot(df_insurance[["age", "bmi", "charges"]], coord_equal=False)

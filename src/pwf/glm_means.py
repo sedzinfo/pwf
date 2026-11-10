@@ -527,10 +527,10 @@ def report_levene_bartlett(df, dv, iv):
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
+    from pwf.datasets import load_dataset
     import os
 
-    df_blood_pressure = pd.read_csv("data/blood_pressure.csv") if os.path.exists("data/blood_pressure.csv") \
-        else pd.read_csv("../data/blood_pressure.csv")
+    df_blood_pressure = load_dataset("blood_pressure")
 
     with pd.option_context('display.max_columns', None, 'display.width', 200):
         print("=" * 80, "\ncompute_cohens_d\n", "=" * 80, sep="")

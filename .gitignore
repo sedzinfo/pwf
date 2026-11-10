@@ -1,8 +1,6 @@
 venvironment
 venv
 output
-functions/.Rhistory
-functions/.RData
 __pycache__/
 *.egg-info/
 build/

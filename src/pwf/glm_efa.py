@@ -370,12 +370,12 @@ def report_efa(model, df, file=None, w=10, h=5, cut=0, base_size=10, scores=Fals
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
+    from pwf.datasets import load_dataset
     import matplotlib
     matplotlib.use("Agg")
     import os
 
-    df_insurance = pd.read_csv("data/insurance.csv") if os.path.exists("data/insurance.csv") \
-        else pd.read_csv("../data/insurance.csv")
+    df_insurance = load_dataset("insurance")
 
     np.random.seed(0)
     cm = np.array([[1, .8, .8, .1, .1, .1], [.8, 1, .8, .1, .1, .1], [.8, .8, 1, .1, .1, .1],

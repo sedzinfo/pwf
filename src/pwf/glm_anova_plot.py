@@ -335,11 +335,11 @@ def plot_oneway_diagnostics(df, dv, iv, base_size=10):
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
+    from pwf.datasets import load_dataset
     import matplotlib
     matplotlib.use("Agg")
 
-    df_insurance = pd.read_csv("data/insurance.csv") if __import__("os").path.exists("data/insurance.csv") \
-        else pd.read_csv("../data/insurance.csv")
+    df_insurance = load_dataset("insurance")
 
     print("=" * 80, "\nplot_oneway\n", "=" * 80, sep="")
     result = plot_oneway(df=df_insurance, dv=["charges"], iv=["sex", "smoker", "region"], type="se")

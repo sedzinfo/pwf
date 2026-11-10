@@ -2,7 +2,7 @@
 """
 Correlation heatmap plot built with plotnine.
 
-Note: functions/glm_correlation.py also defines a plot_corrplot(), with a
+Note: pwf.glm_correlation also defines a plot_corrplot(), with a
 different signature (mydata, title="", base_size=10, fill_limits=(-1,0,1))
 and its own diverging color scale. This file's version predates that one
 and has not been merged with it -- keep that in mind if both get imported
@@ -91,10 +91,10 @@ def plot_corrplot(df,base_size=15,title=""):
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
+    from pwf.datasets import load_dataset
     import os
 
-    personality = pd.read_csv("data/personality.csv") if os.path.exists("data/personality.csv") \
-        else pd.read_csv("../data/personality.csv")
+    personality = load_dataset("personality")
 
     print("=" * 80, "\nplot_corrplot\n", "=" * 80, sep="")
     gp = plot_corrplot(personality.iloc[:, 1:20].corr(), base_size=5, title="Personality")

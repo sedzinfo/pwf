@@ -421,11 +421,11 @@ def check_rows(df, filename=None):
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
+    from pwf.datasets import load_dataset
     print(observed(np.array([1, 2, np.nan, 4])))
     print(is_int(5), is_int(5.0))
     print(check_integer([1, 2, 3]), check_integer([1, 2.5, 3]))
-    titanic = pd.read_csv("data/titanic.csv") if os.path.exists("data/titanic.csv") \
-        else pd.read_csv("../data/titanic.csv")
+    titanic = load_dataset("titanic")
     print(short_check(df=titanic))
     print(cdf(df=titanic)["check"])
     print(cdff(df=titanic, nuniques=3)["check"])

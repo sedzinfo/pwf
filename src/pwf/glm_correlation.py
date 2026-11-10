@@ -856,12 +856,12 @@ def report_choric_serial(x, y=None, file=None, w=10, h=10, type="tetrachoric", *
 # EXAMPLES
 ##########################################################################################
 if __name__ == "__main__":
+    from pwf.datasets import load_dataset
     import matplotlib
     matplotlib.use("Agg")
     import os
 
-    df_insurance = pd.read_csv("data/insurance.csv") if os.path.exists("data/insurance.csv") \
-        else pd.read_csv("../data/insurance.csv")
+    df_insurance = load_dataset("insurance")
     numeric_df = df_insurance[["age", "bmi", "children", "charges"]]
 
     print("=" * 80, "\nplot_corrplot\n", "=" * 80, sep="")

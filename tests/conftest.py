@@ -31,7 +31,7 @@ def assert_matches_reference(result, expected, rtol=1e-8, atol=0.0, column_tol=N
             assert res.astype(str).tolist() == exp.astype(str).tolist(), col
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+DATA_DIR = ROOT / "src" / "pwf" / "data"
 REFERENCE_DIR = pathlib.Path(__file__).resolve().parent / "reference"
 
 

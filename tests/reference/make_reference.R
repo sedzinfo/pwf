@@ -13,7 +13,7 @@ grDevices::pdf(NULL)  # rwf's plot_* functions print their plots; draw them nowh
 
 script_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
 out_dir <- dirname(normalizePath(sub("^--file=", "", script_arg)))
-data_dir <- normalizePath(file.path(out_dir, "..", "..", "data"))
+data_dir <- normalizePath(file.path(out_dir, "..", "..", "src", "pwf", "data"))
 
 load_data <- function(name) {
   utils::read.csv(file.path(data_dir, paste0(name, ".csv")), stringsAsFactors = FALSE)
