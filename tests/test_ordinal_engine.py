@@ -7,9 +7,6 @@ from pwf._ordinal import OrdinalCFA, OrdinalSampleStats
 
 ITEMS = [f"E{i}" for i in range(1, 6)] + [f"N{i}" for i in range(1, 6)]
 MODEL = "E =~ E1 + E2 + E3 + E4 + E5; N =~ N1 + N2 + N3 + N4 + N5"
-ROBUST = ["cfi.robust", "tli.robust", "nnfi.robust", "rni.robust", "rmsea.robust", "rmsea.ci.lower.robust",
-          "rmsea.ci.upper.robust", "rmsea.pvalue.robust", "rmsea.notclose.pvalue.robust", "gfi.robust",
-          "gfi.ci.lower.robust", "gfi.ci.upper.robust"]
 
 
 @pytest.fixture(scope="module")
