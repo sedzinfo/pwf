@@ -108,6 +108,12 @@ pytest
 make reference RSCRIPT="C:/Program Files/R/R-4.6.2/bin/Rscript.exe"   # regenerate the R references
 ```
 
+GitHub runs the tests on every push to main and on pull requests ([.github/workflows/main.yml](.github/workflows/main.yml)):
+on Ubuntu with Python 3.11, 3.12 and 3.13 and on Windows with 3.13, against pwf installed as a package (not in
+editable mode). It also builds the source archive and the wheel and checks them as PyPI would. The R references
+are committed, so the runners need no R; for the spelling test the workflow downloads the en_US dictionary of R's
+hunspell package from CRAN.
+
 ## Documentation
 
 The docstrings (description, Parameters, Returns, Examples) are the reference documentation; build them

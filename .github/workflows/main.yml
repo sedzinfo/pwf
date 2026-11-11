@@ -1,0 +1,119 @@
+name: Tests
+
+# Runs the test suite (pwf's results against rwf's, saved in tests/reference/, so no R is needed here)
+# on every push to main and on pull requests, and checks that the package builds as it would for PyPI.
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+  workflow_dispatch:                              # also allows a manual run from the Actions tab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true                        # a newer push replaces a run still going
+
+env:
+  MPLBACKEND: Agg                                 # no screen on the runners
+
+jobs:
+  test:
+    name: pytest (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false                            # one failing combination does not cancel the others
+      matrix:
+        os: [ ubuntu-latest ]
+        python: [ "3.11", "3.12", "3.13" ]        # requires-python is >=3.11
+        include:
+          - os: windows-latest                    # where pwf is developed
+            python: "3.13"
+    env:
+      NLTK_DATA: ${{ github.workspace }}/.nltk_data
+      PWF_HUNSPELL_DIR: ${{ github.workspace }}/.hunspell
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # installed as a package, not in editable mode, the way users get it: a file missing from the
+      # package (a dataset in src/pwf/data) fails here, before it would fail on PyPI
+      - name: Install pwf with all extras, and pytest
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[full]" pytest
+
+      # the tokenizer and tagger that pwf.ml_nlp uses, kept between runs
+      - uses: actions/cache@v4
+        with:
+          path: .nltk_data
+          key: nltk-data-v1
+      - name: Download NLTK data
+        shell: bash
+        run: python -m nltk.downloader -d .nltk_data punkt_tab averaged_perceptron_tagger_eng
+
+      # stat_word_char is checked against rwf with the en_US dictionary of R's hunspell package
+      # (version 3.0.6, the files checked by their SHA-256). If it cannot be had, the step is skipped
+      # over and that one test reports itself as skipped
+      - name: Get the en_US dictionary of R's hunspell package
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .hunspell
+          cd .hunspell
+          v=3.0.6
+          curl -fsSL -o hunspell.tar.gz "https://cran.r-project.org/src/contrib/hunspell_$v.tar.gz" ||
+            curl -fsSL -o hunspell.tar.gz "https://cran.r-project.org/src/contrib/Archive/hunspell/hunspell_$v.tar.gz"
+          tar -xzf hunspell.tar.gz hunspell/inst/dict/en_US.dic hunspell/inst/dict/en_US.aff
+          mv hunspell/inst/dict/en_US.dic hunspell/inst/dict/en_US.aff .
+          sha256sum -c - <<'EOF'
+          9eb52cdeab6c87a4988df7d2845caaa39cd9bdc93b45bc2e3c228f8070807767  en_US.dic
+          5b5d3effe419c8078827fe0f297e3beefc0e50d56427707033b2b17ddbaadf4c  en_US.aff
+          EOF
+
+      # -ra lists every skipped test with its reason at the end of the log
+      - name: Run the tests
+        run: python -m pytest -ra --durations=10
+
+  package:
+    name: Build and check the package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Build the source archive and the wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+
+      # what PyPI checks on upload: metadata, and that the README renders as the project page
+      - name: Check them as PyPI would
+        run: python -m twine check --strict dist/*
+
+      - name: Check that the wheel carries the datasets
+        run: |
+          python - <<'EOF'
+          import glob, zipfile
+          names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          data = [n for n in names if n.startswith("pwf/data/")]
+          print(len(names), "files in the wheel,", len(data), "of them datasets")
+          assert any(n.endswith(".csv") for n in data), "no datasets in the wheel"
+          EOF
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pwf-dist
+          path: dist/
