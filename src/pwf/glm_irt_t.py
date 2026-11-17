@@ -40,9 +40,13 @@ from itertools import combinations
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
-from scipy.optimize import minimize
+
 from plotnine import ggplot, aes, geom_point, geom_line, theme_bw, labs
 
+try:
+    from ._rcompat import r_make_names, r_optim_bfgs
+except ImportError:
+    from _rcompat import r_make_names, r_optim_bfgs
 try:
     from ._ordinal import OrdinalSEM
 except ImportError:
@@ -244,7 +248,9 @@ def rank_df_to_binary(mydata, items, reverse=True):
     blocks = mydata.shape[1] // items
     index = increase_index(blocks=blocks, items=items)
     parts = [rank_to_binary(mydata.iloc[:, index[i] - 1], items, reverse) for i in range(blocks)]
-    return pd.concat(parts, axis=1)
+    result = pd.concat([pd.DataFrame(part) for part in parts], axis=1)
+    result.columns = r_make_names([str(c) for c in result.columns])  # R's data.frame(): i12, ..., i12.1, ...
+    return result
 ##########################################################################################
 # TRIPLET PAIRS
 ##########################################################################################
@@ -671,11 +677,13 @@ def score_tirt_pattern(pattern, lambda_, theta_diag, tau, Psi, nu=None, init=Non
         zeros are used.
     init (array-like, optional): Optimizer starting values. If None
         (default), zeros.
-    control (dict, optional): Extra scipy.optimize.minimize options,
-        merged over defaults {"gtol": 1e-10, "maxiter": 500}.
+    control (dict, optional): R's optim() controls "reltol", "abstol" and
+        "maxit", merged over rwf's {"reltol": 1e-10, "maxit": 500}.
 
     Returns:
-    numpy.ndarray: MAP trait estimates, length = number of traits.
+    numpy.ndarray (pandas.Series named by trait when lambda_ is a
+    DataFrame, as R's named vector): MAP trait estimates, from a port of
+    R's optim(method = "BFGS"), so they stop where rwf's do.
 
     Examples:
     >>> import numpy as np
@@ -685,6 +693,7 @@ def score_tirt_pattern(pattern, lambda_, theta_diag, tau, Psi, nu=None, init=Non
     >>> Psi = np.eye(2)
     >>> score_tirt_pattern([1,0,1], lambda_, theta_diag, tau, Psi)
     """
+    trait_names = list(lambda_.columns) if isinstance(lambda_, pd.DataFrame) else None
     lambda_ = np.array(lambda_, dtype=float)
     n_traits = lambda_.shape[1]
     if nu is None:
@@ -717,12 +726,11 @@ def score_tirt_pattern(pattern, lambda_, theta_diag, tau, Psi, nu=None, init=Non
 
     if init is None:
         init = np.zeros(n_traits)
-    options = {"gtol": 1e-10, "maxiter": 500}
-    if control:
-        options.update(control)
-
-    res = minimize(nll, init, jac=gnll, method="BFGS", options=options)
-    return res.x
+    ctrl = {"reltol": 1e-10, "maxit": 500, "abstol": -np.inf}  # rwf's control; R's names
+    ctrl.update(control or {})
+    # R's optim(method = "BFGS") itself, so the estimates stop where rwf's do
+    par = r_optim_bfgs(nll, gnll, init, reltol=ctrl["reltol"], abstol=ctrl["abstol"], maxit=ctrl["maxit"])["par"]
+    return pd.Series(par, index=trait_names) if trait_names is not None else par
 ##########################################################################################
 # SCORE MULTIPLE RESPONSE PATTERNS
 ##########################################################################################

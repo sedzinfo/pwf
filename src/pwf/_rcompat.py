@@ -279,3 +279,105 @@ def r_mixedsort_key(text):
         else:
             key.append((1, 0.0, chunk.casefold(), chunk.swapcase()))
     return key
+
+
+def r_optim_bfgs(fn, gr, par, reltol=1.490116119384765625e-08, abstol=-np.inf, maxit=100):
+    """
+    R's optim(par, fn, gr, method = "BFGS"), a line-by-line port of vmmin()
+    (Nash's variable metric method, R's src/appl/optim.c), so an estimate
+    stops where R's does. reltol, abstol and maxit default to optim's.
+
+    Returns:
+    dict: par, value, convergence (0, or 1 when maxit was reached) and
+    counts (function, gradient), as optim's.
+    """
+    stepredn, acctol, reltest = 0.2, 0.0001, 10.0
+    b = np.array(par, dtype=float)
+    n = b.size
+    f = float(fn(b))
+    if not np.isfinite(f):
+        raise ValueError("initial value in 'vmmin' is not finite")
+    fmin = f
+    funcount = gradcount = 1
+    g = np.array(gr(b), dtype=float)
+    iteration = 1
+    ilast = gradcount
+    B = np.zeros((n, n))
+    X, c, t = np.zeros(n), np.zeros(n), np.zeros(n)
+    while True:
+        if ilast == gradcount:
+            B = np.eye(n)
+        X[:], c[:] = b, g
+        gradproj = 0.0
+        for i in range(n):  # t = -B g, B kept in its lower triangle
+            s = 0.0
+            for j in range(i + 1):
+                s -= B[i, j] * g[j]
+            for j in range(i + 1, n):
+                s -= B[j, i] * g[j]
+            t[i] = s
+            gradproj += s * g[i]
+        if gradproj < 0.0:  # downhill: backtrack from a unit step
+            steplength = 1.0
+            accpoint = False
+            while True:
+                count = 0
+                for i in range(n):
+                    b[i] = X[i] + steplength * t[i]
+                    if reltest + X[i] == reltest + b[i]:
+                        count += 1
+                if count < n:
+                    f = float(fn(b))
+                    funcount += 1
+                    accpoint = bool(np.isfinite(f)) and f <= fmin + gradproj * steplength * acctol
+                    if not accpoint:
+                        steplength *= stepredn
+                if count == n or accpoint:
+                    break
+            enough = f > abstol and abs(f - fmin) > reltol * (abs(fmin) + reltol)
+            if not enough:
+                count = n
+                fmin = f
+            if count < n:  # progress: BFGS update of B
+                fmin = f
+                g = np.array(gr(b), dtype=float)
+                gradcount += 1
+                iteration += 1
+                D1 = 0.0
+                for i in range(n):
+                    t[i] = steplength * t[i]
+                    c[i] = g[i] - c[i]
+                    D1 += t[i] * c[i]
+                if D1 > 0:
+                    D2 = 0.0
+                    for i in range(n):
+                        s = 0.0
+                        for j in range(i + 1):
+                            s += B[i, j] * c[j]
+                        for j in range(i + 1, n):
+                            s += B[j, i] * c[j]
+                        X[i] = s
+                        D2 += s * c[i]
+                    D2 = 1.0 + D2 / D1
+                    for i in range(n):
+                        for j in range(i + 1):
+                            B[i, j] += (D2 * t[i] * t[j] - X[i] * t[j] - t[i] * X[j]) / D1
+                else:
+                    ilast = gradcount
+            elif ilast < gradcount:  # no progress: restart from the gradient
+                count = 0
+                ilast = gradcount
+        else:  # uphill: restart unless just restarted
+            count = 0
+            if ilast == gradcount:
+                count = n
+            else:
+                ilast = gradcount
+        if iteration >= maxit:
+            break
+        if gradcount - ilast > 2 * n:
+            ilast = gradcount  # periodic restart
+        if count == n and ilast == gradcount:
+            break
+    return {"par": b, "value": fmin, "convergence": 0 if iteration < maxit else 1,
+            "counts": (funcount, gradcount)}
