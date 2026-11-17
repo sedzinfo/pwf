@@ -53,15 +53,19 @@ from patsy import ModelDesc
 from scipy.stats import t as _tdist
 
 try:
+    from ._rcompat import r_number, r_round
     from .functions import comparison_combinations
     from .functions_strings import str_aes, output_separator
+    from .functions_strings import str_aes as _str_aes  # plot_scatterplot's str_aes argument hides the function
     from .functions_mathematical import rad2deg
     from .functions_environment import write_txt
     from .functions_plot import report_pdf
     from .glm_anova_plot import _lm_diagnostics_figure
 except ImportError:
+    from _rcompat import r_number, r_round
     from functions import comparison_combinations
     from functions_strings import str_aes, output_separator
+    from functions_strings import str_aes as _str_aes
     from functions_mathematical import rad2deg
     from functions_environment import write_txt
     from functions_plot import report_pdf
@@ -69,17 +73,20 @@ except ImportError:
 ##########################################################################################
 # SCATTERPLOT
 ##########################################################################################
-def plot_scatterplot(df, base_size=10, coord_equal=False, all_orders=False, title="",
-                      combinations=None, str_aes_labels=True):
+def plot_scatterplot(df, method="lm", formula="y ~ x", base_size=10, coord_equal=False, all_orders=False, title="",
+                     combinations=None, str_aes=True):
     """
-    Scatter plot with an OLS regression line, CI band, and marginal
-    histograms for variable pairs in a data frame. Each plot's caption
-    reports pairwise n, Pearson r, explained variance, the regression
-    equation, and the regression angle.
+    Scatter plot with a fitted line, CI band, and marginal histograms for
+    variable pairs in a data frame. With formula "y ~ x", each plot's
+    caption reports pairwise n, Pearson r, explained variance, the
+    regression equation, and the regression angle; otherwise only n, as rwf.
 
     Parameters:
     df (pandas.DataFrame): Numeric variables. When df has exactly 2
         columns and combinations=None, only that one (x, y) pair is used.
+    method (str, optional): The smoother, as geom_smooth's: "lm"
+        (default) or "loess" (drawn with seaborn's lowess).
+    formula (str, optional): "y ~ x" (default) or "y ~ poly(x, k)".
     base_size (int, optional): Base font size / figure height driver. Defaults to 10.
     coord_equal (bool, optional): If True, both axes share the same
         scale and limits. Defaults to False.
@@ -90,8 +97,8 @@ def plot_scatterplot(df, base_size=10, coord_equal=False, all_orders=False, titl
     combinations (pandas.DataFrame, optional): Two-column frame of
         (x, y) column-name pairs to plot. If None (default), all pairs
         are derived automatically via comparison_combinations.
-    str_aes_labels (bool, optional): If True (default), axis labels are
-        cleaned via str_aes().
+    str_aes (bool, optional): If True (default), axis labels are
+        cleaned via functions_strings.str_aes().
 
     Returns:
     dict: {"x_y": seaborn.axisgrid.JointGrid or None}, one per pair.
@@ -100,6 +107,13 @@ def plot_scatterplot(df, base_size=10, coord_equal=False, all_orders=False, titl
     Examples:
     >>> plot_scatterplot(df=df_insurance[["age", "bmi", "charges"]], coord_equal=True)
     """
+    clean_labels = str_aes
+    if method not in ("lm", "loess", "lowess"):
+        raise ValueError(f"method must be 'lm' or 'loess', not {method!r}")
+    terms = re.fullmatch(r"y~(?:x|poly\(x,(\d+)\))", re.sub(r"\s", "", formula))
+    if terms is None:
+        raise ValueError(f"formula must be 'y ~ x' or 'y ~ poly(x, k)', not {formula!r}")
+    smoother = {"lowess": True} if method != "lm" else {"order": int(terms.group(1) or 1)}
     if combinations is None:
         combinations = comparison_combinations(df, all_orders=all_orders)
         combinations.columns = ['x', 'y']
@@ -122,17 +136,18 @@ def plot_scatterplot(df, base_size=10, coord_equal=False, all_orders=False, titl
         if degrees > 180:
             degrees = 360 - degrees
 
-        note = (f"Pairwise n = {len(tempdata)}\n"
-                f"Pearson r = {round(pearsonr, 4)}\n"
-                f"Explained Variance = {round(pearsonr ** 2, 4) * 100}%\n"
-                f"y = {round(slope, 4)}x + {round(intercept, 4)}\n"
-                f"Angle = {round(degrees, 2)}")
+        note = f"Pairwise n = {len(tempdata)}"
+        if terms.group(1) is None:  # R's numbers as paste0() prints round()'s results
+            note += (f"\nPearson r = {r_number(r_round(pearsonr, 4))}"
+                     f"\nExplained Variance = {r_number(r_round(pearsonr ** 2, 4) * 100)}%"
+                     f"\ny = {r_number(r_round(slope, 4))}x + {r_number(r_round(intercept, 4))}"
+                     f"\nAngle = {r_number(r_round(degrees, 2))}")
 
-        xlabel = str_aes(xcol) if str_aes_labels else xcol
-        ylabel = str_aes(ycol) if str_aes_labels else ycol
+        xlabel = _str_aes(xcol) if clean_labels else xcol
+        ylabel = _str_aes(ycol) if clean_labels else ycol
 
         g = sns.jointplot(data=tempdata, x=xcol, y=ycol, kind="reg", height=max(base_size / 1.2, 4),
-                           joint_kws={'scatter_kws': {'alpha': 0.3}})
+                          joint_kws={'scatter_kws': {'alpha': 0.3}, **smoother})
         g.ax_joint.set_xlabel(xlabel)
         g.ax_joint.set_ylabel(ylabel)
         g.figure.suptitle(title)
@@ -141,7 +156,7 @@ def plot_scatterplot(df, base_size=10, coord_equal=False, all_orders=False, titl
 
         if x.min() <= 0 <= x.max():
             g.ax_joint.axvline(0, alpha=.5, color='gray')
-        if y.min() <= 0 <= y.max():
+        if x.min() <= 0 <= x.max():  # rwf tests x's range for the horizontal line too
             g.ax_joint.axhline(0, alpha=.5, color='gray')
 
         if coord_equal:

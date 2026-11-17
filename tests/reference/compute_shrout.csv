@@ -1,0 +1,6 @@
+"measure","result","description"
+"r1f",0.88,"Reliability (between persons) of measures taken on the same fixed k time"
+"r1r",0.628571428571429,"Reliability (between persons) of measures taken on the same random k time"
+"rc",0.666666666666667,"Reliability (within persons) of change"
+"rkf",0.956521739130435,"Reliability (between persons) of average measures taken over fixed m items and fixed k times"
+"rkr",0.835443037974683,"Reliability (between persons) of different random time with same number of points k between periods"

@@ -9,7 +9,7 @@ import pandas as pd  # noqa: E402
 import pytest  # noqa: E402
 import scipy.stats  # noqa: E402
 
-from conftest import _load_reference  # noqa: E402
+from conftest import _load_reference, assert_matches_reference  # noqa: E402
 from pwf import glm_correlation  # noqa: E402
 
 ITEMS = [f"E{i}" for i in range(1, 6)] + [f"N{i}" for i in range(1, 6)]
@@ -152,3 +152,28 @@ def test_r_p_adjust_and_abbreviate():
                 "BY": [0.09075, 0.1452, 0.1452, 0.605, 0.1452, np.nan, 1, 0.01815]}
     for method, values in expected.items():
         np.testing.assert_allclose(r_p_adjust(p, method), values, rtol=1e-12)
+
+
+POWER_CASES = {"two_sided": dict(n=30, r=0.3, sig_level=0.05, alternative="two.sided"),
+               "less": dict(n=20, r=-0.25, sig_level=0.01, alternative="less"),
+               "greater": dict(n=25, r=0.2, sig_level=0.05, alternative="greater")}
+
+
+@pytest.mark.parametrize("case", list(POWER_CASES))
+def test_compute_power_r_matches_rwf(reference, case):
+    # pwr::pwr.r.test: the t test's critical r and a bias-corrected Fisher z; r is reported as |r| or -r
+    result = glm_correlation.compute_power_r(**POWER_CASES[case])["power_table"]
+    assert_matches_reference(result, reference(f"compute_power_r_{case}"), rtol=1e-12)
+
+
+def test_compute_power_r_matrix_matches_rwf(reference):
+    m = np.array([[1, 0.3, -0.5], [0.3, 1, 0.1], [-0.5, 0.1, 1]])
+    result = glm_correlation.compute_power_r_matrix(m, n=15)["power_table"]
+    assert_matches_reference(result, reference("compute_power_r_matrix"), rtol=1e-12)
+
+
+def test_compute_power_r_accepts_scipy_spelling():
+    two_sided = glm_correlation.compute_power_r(n=12, r=0.4, alternative="two-sided")["power_table"]
+    assert two_sided["alternative"].unique().tolist() == ["two.sided"]
+    with pytest.raises(ValueError):
+        glm_correlation.compute_power_r(n=12, r=0.4, alternative="both")

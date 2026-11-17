@@ -122,7 +122,8 @@ def output_compare_model_logistic(model1, model2):
         (typically nested — model2 with more predictors than model1).
 
     Returns:
-    pandas.DataFrame: One row with columns "X^2", "df", "p".
+    pandas.DataFrame: One row with columns "X.2" (R's data.frame() turns
+    rwf's "X^2" into X.2), "df", "p".
 
     Examples:
     >>> import statsmodels.api as sm
@@ -135,9 +136,9 @@ def output_compare_model_logistic(model1, model2):
     >>> output_compare_model_logistic(model1=modelcontinuouspredictor, model2=modeltwopredictors)
     """
     x2 = model1.deviance - model2.deviance
-    x2df = model1.df_resid - model2.df_resid
+    x2df = int(round(model1.df_resid - model2.df_resid))  # R's df.residual is an integer
     x2p = 1 - scipy.stats.chi2.cdf(x2, x2df)
-    return pd.DataFrame({"X^2": [x2], "df": [x2df], "p": [x2p]})
+    return pd.DataFrame({"X.2": [x2], "df": [x2df], "p": [x2p]})
 ##########################################################################################
 # GLM DIAGNOSTICS FIGURE (internal, GLM counterpart of glm_anova_plot._lm_diagnostics_figure)
 ##########################################################################################

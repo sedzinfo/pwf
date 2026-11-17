@@ -51,6 +51,11 @@ from plotnine import (
     ggplot, aes, geom_tile, geom_text, facet_grid, labs, theme_bw, theme,
     element_rect, element_blank, element_line, element_text, scale_fill_brewer,
 )
+
+try:
+    from ._rcompat import r_label, r_make_names
+except ImportError:
+    from _rcompat import r_label, r_make_names
 ##########################################################################################
 # ALPHA (raw Cronbach's alpha from a covariance matrix)
 ##########################################################################################
@@ -286,32 +291,43 @@ def _alpha_stats(C, R):
 # REVERSE CODE (internal, mirrors psych::reverse.code)
 ##########################################################################################
 def _reverse_code(df, keys, mini=None, maxi=None):
+    """
+    psych::reverse.code, as rwf uses it: reversed items are renamed "item-",
+    which rwf's data.frame() turns into "item." (R's make.names).
+    """
     df = df.copy()
+    names = []
     for j, col in enumerate(df.columns):
         k = keys[j] if hasattr(keys, "__getitem__") else keys
         if k == -1:
             colmax = maxi if maxi is not None else df[col].max()
             colmin = mini if mini is not None else df[col].min()
             df[col] = (colmax + colmin) - df[col]
+        names.append(f"{col}-" if k == -1 else str(col))
+    df.columns = r_make_names(names)
     return df
 ##########################################################################################
-# RESPONSE FREQUENCY (internal, approximates psych::responseFrequency)
+# RESPONSE FREQUENCY (internal, mirrors psych::responseFrequency)
 ##########################################################################################
 def _response_frequency(df, max_categories=10):
-    """Proportion of each observed response value per item, for items with <= max_categories unique values."""
-    rows = {}
-    for col in df.columns:
-        s = df[col]
-        miss = s.isna().mean()
-        valid = s.dropna()
-        uniq = sorted(valid.unique())
-        row = {"miss": miss}
-        if len(uniq) <= max_categories:
-            counts = valid.value_counts(normalize=True)
-            for v in uniq:
-                row[str(v)] = counts.get(v, 0.0)
-        rows[col] = row
-    return pd.DataFrame(rows).T
+    """
+    psych::responseFrequency: for each item, the share of each response value
+    among its answered cases (the values seen in any item, sorted, named as
+    R's as.character() names them), then "miss", the share unanswered. Items
+    whose range exceeds max_categories are left out; None when there are more
+    than max_categories values (counting NA) or the first item has more.
+    """
+    ranges = df.max() - df.min()
+    items = df.loc[:, ranges < max_categories + 1]
+    values = pd.unique(items.to_numpy().ravel(order="F"))  # unique(as.vector(unlist(items))), NA included
+    if (ranges > max_categories).all() or items.iloc[:, 0].nunique() > max_categories or len(values) > max_categories:
+        return None
+    observed = sorted(v for v in values if not pd.isna(v))
+    counts = pd.DataFrame({r_label(v): (items == v).sum() for v in observed})
+    answered = counts.sum(axis=1)
+    frequency = counts.div(answered, axis=0)
+    frequency["miss"] = 1 - answered / len(items)
+    return frequency
 ##########################################################################################
 # PSYCH ALPHA (internal, mirrors the bulk of psych::alpha)
 ##########################################################################################
@@ -349,7 +365,9 @@ def _psych_alpha(df, cumulative=False, n_iter=1):
         "n": df.notna().sum().to_numpy(), "raw_r": raw_r, "std_r": item_r, "r_cor": item_rc, "r_drop": r_drop,
         "mean": df.mean(skipna=True).to_numpy(), "sd": df.std(ddof=1, skipna=True).to_numpy(),
     }, index=df.columns)
-    item_stats = pd.concat([item_stats, _response_frequency(df)], axis=1)
+    frequency = _response_frequency(df)
+    if frequency is not None:
+        item_stats = pd.concat([item_stats, frequency], axis=1)
 
     drop_rows = []
     for i in range(n):

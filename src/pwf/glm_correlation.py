@@ -30,13 +30,13 @@ from plotnine import (
 )
 
 try:
-    from ._rcompat import r_abbreviate, r_label, r_make_names, r_p_adjust
+    from ._rcompat import r_abbreviate, r_label, r_make_names, r_p_adjust, r_round
     from .functions import change_data_type
     from .functions_matrix import matrix_triangle
     from .functions_plot import plot_multiplot, report_pdf
     from .glm_linear_regression import plot_scatterplot
 except ImportError:
-    from _rcompat import r_abbreviate, r_label, r_make_names, r_p_adjust
+    from _rcompat import r_abbreviate, r_label, r_make_names, r_p_adjust, r_round
     from functions import change_data_type
     from functions_matrix import matrix_triangle
     from functions_plot import plot_multiplot, report_pdf
@@ -91,23 +91,34 @@ def plot_corrplot(mydata, title="", base_size=10, fill_limits=(-1, 0, 1)):
 ##########################################################################################
 # POWER
 ##########################################################################################
-def _pwr_r_test(n, r, sig_level=0.05, alternative="two-sided"):
-    """Fisher z-approximation power for a correlation test, matching R's pwr::pwr.r.test."""
-    zr = np.arctanh(r)
-    se = 1 / np.sqrt(n - 3)
-    if alternative == "two-sided":
-        z_crit = scipy.stats.norm.ppf(1 - sig_level / 2)
-        return scipy.stats.norm.cdf(zr / se - z_crit) + scipy.stats.norm.cdf(-zr / se - z_crit)
-    elif alternative == "greater":
-        z_crit = scipy.stats.norm.ppf(1 - sig_level)
-        return scipy.stats.norm.cdf(zr / se - z_crit)
-    elif alternative == "less":
-        z_crit = scipy.stats.norm.ppf(1 - sig_level)
-        return scipy.stats.norm.cdf(-zr / se - z_crit)
-    raise ValueError(f"Unknown alternative: {alternative!r}")
+_PWR_METHOD = "approximate correlation power calculation (arctangh transformation)"  # pwr's spelling
 
 
-def compute_power_r(n=100, r=None, sig_level=0.05, alternative="two-sided", title="", base_size=10):
+def _pwr_alternative(alternative):
+    """R's alternative names; "two-sided" (scipy's spelling) is accepted for "two.sided"."""
+    alternative = {"two-sided": "two.sided"}.get(alternative, alternative)
+    if alternative not in ("two.sided", "less", "greater"):
+        raise ValueError(f"alternative must be 'two.sided', 'less' or 'greater', not {alternative!r}")
+    return alternative
+
+
+def _pwr_r_test(n, r, sig_level=0.05, alternative="two.sided"):
+    """
+    pwr::pwr.r.test's power and the r it reports: the critical r of the t test
+    with n - 2 df, and atanh(r) + r / (2(n - 1)) as r's Fisher z. A two-sided
+    test uses |r|, and "less" negates r (pwr reports the negated r).
+    """
+    alternative = _pwr_alternative(alternative)
+    r = abs(r) if alternative == "two.sided" else -r if alternative == "less" else r
+    t = scipy.stats.t.isf(sig_level / 2 if alternative == "two.sided" else sig_level, n - 2)
+    zr, zrc = np.arctanh(r) + r / (2 * (n - 1)), np.arctanh(np.sqrt(t ** 2 / (t ** 2 + n - 2)))
+    power = scipy.stats.norm.cdf((zr - zrc) * np.sqrt(n - 3))
+    if alternative == "two.sided":
+        power += scipy.stats.norm.cdf((-zr - zrc) * np.sqrt(n - 3))
+    return power, r
+
+
+def compute_power_r(n=100, r=None, sig_level=0.05, alternative="two.sided", title="", base_size=10):
     """
     Compute and plot a statistical power curve for a correlation test,
     across sample sizes 10..n.
@@ -116,26 +127,31 @@ def compute_power_r(n=100, r=None, sig_level=0.05, alternative="two-sided", titl
     n (int, optional): Maximum sample size. Defaults to 100.
     r (float): Correlation coefficient to power against.
     sig_level (float, optional): Alpha (Type I error rate). Defaults to 0.05.
-    alternative (str, optional): "two-sided" (default), "greater", or "less".
+    alternative (str, optional): "two.sided" (default), "less" or "greater", as R's.
     title (str, optional): Plot title. Defaults to "".
     base_size (int, optional): Base font size. Defaults to 10.
 
     Returns:
-    dict: {'plot': plotnine.ggplot, 'power_table': pandas.DataFrame}.
+    dict: {'plot': plotnine.ggplot, 'power_table': pandas.DataFrame}. As
+    pwr::pwr.r.test, the table's r is |r| for a two-sided test and -r for
+    "less".
 
     Examples:
-    >>> compute_power_r(n=100, r=.5, sig_level=.05, alternative="two-sided")
+    >>> compute_power_r(n=100, r=.5, sig_level=.05, alternative="two.sided")
     """
-    rows = [{'n': i, 'r': r, 'p': sig_level, 'power': _pwr_r_test(i, r, sig_level, alternative),
-             'alternative': alternative, 'method': 'approximate correlation power calculation (arctanh transformation)'}
-            for i in range(10, n + 1)]
+    alternative = _pwr_alternative(alternative)
+    rows = []
+    for i in range(10, n + 1):
+        power, reported_r = _pwr_r_test(i, r, sig_level, alternative)
+        rows.append({'n': i, 'r': reported_r, 'p': sig_level, 'power': power, 'alternative': alternative,
+                     'method': _PWR_METHOD})
     df_power = pd.DataFrame(rows)
 
     plot = (ggplot(df_power, aes(x='n', y='power'))
             + geom_point(alpha=1)
             + geom_line()
             + labs(x="Observations", y="Power", title=title,
-                   caption=f"r power curve: r = {round(r, 2)}, alpha = {sig_level}")
+                   caption=f"r power curve: r = {r_label(r_round(r, 2))}, alpha = {r_label(sig_level)}")
             + lims(y=(0, 1))
             + theme_bw(base_size=base_size))
     return {'plot': plot, 'power_table': df_power}
@@ -870,7 +886,7 @@ if __name__ == "__main__":
     print("saved plot_corrplot_example.png")
 
     print("\n" + "=" * 80, "\ncompute_power_r\n", "=" * 80, sep="")
-    res = compute_power_r(n=100, r=.5, sig_level=.05, alternative="two-sided")
+    res = compute_power_r(n=100, r=.5, sig_level=.05, alternative="two.sided")
     print(res['power_table'].tail())
 
     print("\n" + "=" * 80, "\ncompute_power_r_matrix\n", "=" * 80, sep="")

@@ -8,7 +8,7 @@ import pytest  # noqa: E402
 import statsmodels.api as sm  # noqa: E402
 import statsmodels.formula.api as smf  # noqa: E402
 
-from conftest import _load_reference  # noqa: E402
+from conftest import _load_reference, assert_matches_reference  # noqa: E402
 from pwf import glm_logistic_regression  # noqa: E402
 
 # a cut search over few distinct predictions draws one-point lines; R's ggplot warns the same way
@@ -107,3 +107,18 @@ def test_report_logistic_writes_files(tmp_path):
     sheets = list(pd.read_excel(f"{file}.xlsx", sheet_name=None))
     assert sheets == ["summary", "coefficients", "Confusion Matrix", "confusion matrix performance", "X^2",
                       "pseudo R^2", "scores residuals", "score residual descriptives", "VIF", "Call"]
+
+
+def test_output_compare_model_logistic_matches_rwf(reference):
+    infert = reference("infert")
+    null = smf.glm("case ~ 1", data=infert, family=sm.families.Binomial()).fit()
+    full = smf.glm("case ~ age + parity + spontaneous", data=infert, family=sm.families.Binomial()).fit()
+    result = glm_logistic_regression.output_compare_model_logistic(null, full)
+    # p is 1 - pchisq(), as in rwf, so it carries the cancellation error of a value near 1
+    assert_matches_reference(result, reference("output_compare_model_logistic"), rtol=1e-6)
+
+
+def test_compute_y_logistic_matches_rwf(reference):
+    expected = reference("compute_y_logistic")
+    result = glm_logistic_regression.compute_y_logistic(intercept=0.5, coefficient=-1.2, x=expected["x"])
+    np.testing.assert_allclose(result, expected["y"], rtol=1e-14)

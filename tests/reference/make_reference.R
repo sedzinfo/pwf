@@ -1038,3 +1038,45 @@ m <- data.frame(p = 1:4, q = letters[1:4])
 ref("c_bind", c_bind(v1, v2, m))
 extremes <- min_max_index(c(3, 1, 3, 2, 1))
 ref("min_max_index", data.frame(which = rep(c("max", "min"), lengths(extremes)), index = unlist(extremes)))
+##########################################################################################
+# POWER OF A CORRELATION (pwr::pwr.r.test through rwf)
+##########################################################################################
+power_cases <- list(two_sided = list(n = 30, r = 0.3, sig.level = 0.05, alternative = "two.sided"),
+                    less = list(n = 20, r = -0.25, sig.level = 0.01, alternative = "less"),
+                    greater = list(n = 25, r = 0.2, sig.level = 0.05, alternative = "greater"))
+for (case in names(power_cases)) {
+  ref(paste0("compute_power_r_", case), do.call(compute_power_r, power_cases[[case]])$power_table)
+}
+power_matrix <- matrix(c(1, 0.3, -0.5, 0.3, 1, 0.1, -0.5, 0.1, 1), nrow = 3)
+ref("compute_power_r_matrix", compute_power_r_matrix(power_matrix, n = 15)$power_table)
+##########################################################################################
+# LOGISTIC MODEL COMPARISON
+##########################################################################################
+infert_logistic <- utils::read.csv(file.path(out_dir, "infert.csv"), stringsAsFactors = FALSE)
+ref("output_compare_model_logistic", output_compare_model_logistic(
+  glm(case ~ 1, family = binomial, data = infert_logistic),
+  glm(case ~ age + parity + spontaneous, family = binomial, data = infert_logistic)))
+ref("compute_y_logistic", data.frame(x = -2:2, y = compute_y_logistic(intercept = 0.5, coefficient = -1.2, x = -2:2)))
+##########################################################################################
+# CRONBACH'S ALPHA (rwf::report_alpha through psych::alpha, and the alpha helpers)
+##########################################################################################
+alpha_data <- list(complete = utils::read.csv(file.path(out_dir, "lavaan_data.csv")),
+                   missing = utils::read.csv(file.path(out_dir, "lavaan_fiml_data.csv")))
+alpha_key <- list(E = paste0("E", 1:5), N = paste0("N", 1:5), single = "E1")
+alpha_parts <- c("result_total", "result_item_statistics", "result_dropped")
+for (case in names(alpha_data)) {
+  invisible(capture.output(alpha <- suppressWarnings(report_alpha(alpha_data[[case]], key = alpha_key))))
+  for (part in alpha_parts) ref(paste0("report_alpha_", case, "_", sub("result_", "", part)), alpha[[part]])
+}
+invisible(capture.output(alpha <- suppressWarnings(report_alpha(
+  alpha_data$complete, key = alpha_key[1:2], reverse = list(E = c(1, -1, 1, -1, 1), N = c(1, 1, 1, 1, -1)),
+  mini = 1, maxi = 5, cumulative = TRUE))))
+for (part in alpha_parts) ref(paste0("report_alpha_reverse_", sub("result_", "", part)), alpha[[part]])
+alpha_items <- alpha_data$missing[, paste0("E", 1:5)]
+ref("compute_raw_alpha", data.frame(alpha = compute_raw_alpha(alpha_items)))
+ref("compute_alpha_diagnostics", compute_alpha_diagnostics(alpha_items))
+ref("compute_mean_sd_alpha", compute_mean_sd_alpha(alpha_items))
+ref("compute_mean_sd_alpha_divisor", compute_mean_sd_alpha(alpha_items, divisor = 5))
+ref("key_to_cfa_model", data.frame(model = key_to_cfa_model(alpha_key[1:2])))
+ref("compute_shrout", compute_shrout(sperson = 0.5, spersonitem = 0.2, stime = 0.1, spersontime = 0.15, serror = 0.3,
+                                     m = 4, k = 3))
