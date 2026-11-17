@@ -429,8 +429,13 @@ class SEMFit:
         polish = optimize.minimize(objective, fit.x, jac=gradient, method="L-BFGS-B",
                                    options={"ftol": 1e-16, "gtol": 1e-12, "maxiter": 10000})
         theta = polish.x if polish.fun <= fit.fun else fit.x
+        # At the minimum the objective can no longer be lowered in floating point, so BFGS may stop there with
+        # "precision loss" and L-BFGS-B with "ABNORMAL", depending on rounding that differs between platforms.
+        # The fit has also converged when the gradient is (near) zero by lavaan's check of the solution
+        # (check.gradient, with every element within optim.dx.tol = 1e-3).
+        dx = gradient(theta)
         self._matrices(theta)
-        self.converged = bool(fit.success or polish.success)
+        self.converged = bool(fit.success or polish.success or np.all(np.abs(dx) <= 1e-3))
         self.sigma = self.implied()
         if self.missing == "ml":
             self.logl = self._fiml_logl(theta)

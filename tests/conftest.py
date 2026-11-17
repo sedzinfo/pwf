@@ -43,7 +43,10 @@ def _load_reference(name, **read_csv_kwargs):
     path = REFERENCE_DIR / f"{name}.csv"
     if not path.exists():
         pytest.skip(f"no R reference {path.name}; run tests/reference/make_reference.R")
-    return pd.read_csv(path, **read_csv_kwargs)
+    # Read as text, so CRLF line endings (Git's checkout on Windows, or R's write.csv there) become "\n" also
+    # inside quoted cells that span lines, as R wrote them; read_csv(path) would keep their "\r"
+    with open(path, encoding="utf-8", newline=None) as handle:
+        return pd.read_csv(handle, **read_csv_kwargs)
 
 
 @pytest.fixture(autouse=True)

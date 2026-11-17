@@ -5,6 +5,7 @@ matplotlib.use("Agg")
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import pytest  # noqa: E402
+import scipy  # noqa: E402
 from scipy import stats  # noqa: E402
 
 from conftest import assert_matches_reference  # noqa: E402
@@ -55,11 +56,16 @@ def df_normality(load_data):
     })
 
 
+# SciPy before 1.18 (Python 3.11 gets 1.17) computes Shapiro-Wilk with its compiled swilk routine, whose p
+# values agree with R's shapiro.test to about 2e-7 (relative) only; SciPy 1.18's new code agrees to 1e-12
+OLD_SCIPY_SHAPIRO = np.lib.NumpyVersion(scipy.__version__) < "1.18.0"
+
+
 def test_report_normality_tests(df_normality, reference, capsys):
     result = ea.report_normality_tests(df=df_normality)
     expected = reference("report_normality_tests", keep_default_na=False, na_values=["NA"],
                          dtype={"alternative": str})
-    assert_matches_reference(result, expected)
+    assert_matches_reference(result, expected, column_tol={"p": (1e-6, 0.0)} if OLD_SCIPY_SHAPIRO else None)
     printed = capsys.readouterr().out
     assert "OUT OF BOUNDS SAMPLE SIZE FOR few" in printed
     assert "OUT OF BOUNDS SAMPLE SIZE FOR constant" in printed

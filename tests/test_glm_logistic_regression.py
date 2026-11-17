@@ -39,14 +39,16 @@ def assert_frame_matches(got, expected, label, rtol=1e-7, atol=1e-9):
                                        rtol=rtol, atol=atol, err_msg=f"{label} {column}")
 
 
+def _report_case(case):
+    formula, family, validation = CASES[case]
+    infert_data = _load_reference("infert")
+    model = smf.glm(formula, data=infert_data, family=FAMILIES[family]).fit()
+    return glm_logistic_regression.report_logistic(model, validation_data=infert_data if validation else None)
+
+
 @pytest.fixture(scope="module")
 def results():
-    infert_data = _load_reference("infert")
-    out = {}
-    for case, (formula, family, validation) in CASES.items():
-        model = smf.glm(formula, data=infert_data, family=FAMILIES[family]).fit()
-        out[case] = glm_logistic_regression.report_logistic(model, validation_data=infert_data if validation else None)
-    return out
+    return {case: _report_case(case) for case in CASES}
 
 
 @pytest.mark.parametrize("case", list(CASES))
@@ -72,9 +74,23 @@ def test_report_logistic_vif_matches_rwf(results, reference, case):
         assert_frame_matches(vif.rename_axis("term").reset_index(), expected, "VIF")
 
 
+# In "case ~ education" the 0-5yrs and 6-11yrs groups both have a fitted probability of exactly 1/3 (4/12 and
+# 40/120). The cut search starts at the smallest prediction, so which of the two groups is classed 0 depends on
+# the last bit of their fitted values, which R (LINPACK QR) and pwf (numpy's LAPACK QR) round differently. R's
+# fitted values, saved with 15 digits, keep R's order (...379 < ...380), so the confusion results of this case
+# are computed from them.
+TIED_FITTED = {"education"}
+
+
 @pytest.mark.parametrize("case", list(CASES))
-def test_report_logistic_confusion_matches_rwf(results, reference, case):
+def test_report_logistic_confusion_matches_rwf(results, reference, case, monkeypatch):
     result = results[case]
+    if case in TIED_FITTED:
+        r_fitted = reference(f"report_logistic_{case}_scores")["fitted"].to_numpy(float)
+        r_glm = glm_logistic_regression._r_glm
+        monkeypatch.setattr(glm_logistic_regression, "_r_glm",
+                            lambda model, **kwargs: {**r_glm(model, **kwargs), "fitted": r_fitted})
+        result = _report_case(case)
     cmatrix = reference(f"report_logistic_{case}_cmatrix", dtype=str, keep_default_na=False)
     assert result["cmatrix"].columns.tolist() == cmatrix.columns.tolist()
     assert result["cmatrix"].to_numpy().tolist() == cmatrix.to_numpy().tolist()
