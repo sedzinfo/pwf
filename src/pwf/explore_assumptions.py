@@ -14,6 +14,7 @@ in functions_plot.py.
 ##########################################################################################
 import contextlib
 import io
+import math
 import os
 import numpy as np
 import pandas as pd
@@ -380,6 +381,114 @@ def _cramer_von_mises(x):
     return {"statistic": w, "p": p, "method": "Cramer-von Mises normality test"}
 
 
+def _swilk_poly(cc, x):
+    """poly() of R's swilk.c (algorithm AS 181.2): cc[0] + cc[1] x + ..., summed in R's order."""
+    value = cc[0]
+    if len(cc) > 1:
+        p = x * cc[-1]
+        for j in range(len(cc) - 2, 0, -1):
+            p = (p + cc[j]) * x
+        value += p
+    return value
+
+
+def _shapiro_wilk(x):
+    """
+    stats::shapiro.test, ported line by line from R's swilk.c (algorithm AS R94,
+    in double precision), so W and p are R's whatever the SciPy version (SciPy
+    before 1.18 gave p values that differ from R's in the 7th digit).
+    """
+    x = np.asarray(x, dtype=float)
+    x = np.sort(x[~np.isnan(x)])
+    n = len(x)
+    if n < 3 or n > 5000:
+        raise ValueError("sample size must be between 3 and 5000")
+    rng = x[-1] - x[0]
+    if rng == 0:
+        raise ValueError("all 'x' values are identical")
+    if rng < 1e-10:
+        x = x / rng
+    x = [float(v) for v in x]
+
+    # coefficients a[1..n/2] (a[0] is unused, as in the 1-based C code)
+    nn2 = n // 2
+    a = [0.0] * (nn2 + 1)
+    an = float(n)
+    if n == 3:
+        a[1] = 0.70710678
+    else:
+        an25 = an + .25
+        quantiles = stats.norm.ppf((np.arange(1, nn2 + 1) - 0.375) / an25)
+        summ2 = 0.
+        for i in range(1, nn2 + 1):
+            a[i] = float(quantiles[i - 1])
+            summ2 += a[i] * a[i]
+        summ2 *= 2.
+        ssumm2 = math.sqrt(summ2)
+        rsn = 1. / math.sqrt(an)
+        a1 = _swilk_poly((0., .221157, -.147981, -2.07119, 4.434685, -2.706056), rsn) - a[1] / ssumm2
+        if n > 5:
+            i1 = 3
+            a2 = -a[2] / ssumm2 + _swilk_poly((0., .042981, -.293762, -1.752461, 5.682633, -3.582633), rsn)
+            fac = math.sqrt((summ2 - 2. * (a[1] * a[1]) - 2. * (a[2] * a[2]))
+                            / (1. - 2. * (a1 * a1) - 2. * (a2 * a2)))
+            a[2] = a2
+        else:
+            i1 = 2
+            fac = math.sqrt((summ2 - 2. * (a[1] * a[1])) / (1. - 2. * (a1 * a1)))
+        a[1] = a1
+        for i in range(i1, nn2 + 1):
+            a[i] /= -fac
+
+    range_x = x[n - 1] - x[0]
+    if range_x < 1e-19:
+        raise ValueError("ifault=6. This should not happen")
+    sx = x[0] / range_x
+    sa = -a[1]
+    i, j = 1, n - 1
+    while i < n:  # (swilk.c also checks the sort order here, which shapiro.test ignores)
+        sx += x[i] / range_x
+        i += 1
+        if i != j:
+            sa += (1. if i > j else -1.) * a[min(i, j)]
+        j -= 1
+
+    # W as the squared correlation between the data and the coefficients
+    sa /= n
+    sx /= n
+    ssa = ssx = sax = 0.
+    j = n - 1
+    for i in range(n):
+        asa = (1. if i > j else -1.) * a[1 + min(i, j)] - sa if i != j else -sa
+        xsx = x[i] / range_x - sx
+        ssa += asa * asa
+        ssx += xsx * xsx
+        sax += asa * xsx
+        j -= 1
+    # w1 is 1 - W, calculated to avoid excessive rounding error for W very near 1
+    ssassx = math.sqrt(ssa * ssx)
+    w1 = (ssassx - sax) * (ssassx + sax) / (ssa * ssx)
+    w = 1. - w1
+
+    if n == 3:  # exact p value
+        pw = 1.90985931710274 * (math.asin(math.sqrt(w)) - 1.04719755119660)
+        return {"statistic": w, "p": max(pw, 0.), "method": "Shapiro-Wilk normality test"}
+    y = math.log(w1)
+    xx = math.log(an)
+    if n <= 11:
+        gamma = _swilk_poly((-2.273, .459), an)
+        if y >= gamma:
+            return {"statistic": w, "p": 1e-99, "method": "Shapiro-Wilk normality test"}
+        y = -math.log(gamma - y)
+        m = _swilk_poly((.544, -.39978, .025054, -6.714e-4), an)
+        s = math.exp(_swilk_poly((1.3822, -.77857, .062767, -.0020322), an))
+    else:
+        m = _swilk_poly((-1.5861, -.31082, -.083751, .0038915), xx)
+        s = math.exp(_swilk_poly((-.4803, -.082676, .0030302), xx))
+    pw = float(stats.norm.sf(y, loc=m, scale=s))
+    return {"statistic": w, "p": pw, "method": "Shapiro-Wilk normality test"}
+
+
 def _shapiro_francia(x):
     """nortest::sf.test."""
     x = np.sort(x)
@@ -532,9 +641,7 @@ def report_normality_tests(df, file=None):
         n = len(vector)
         if 7 < n < 5000 and np.var(vector, ddof=1) != 0:
             z = np.asarray(compute_standard(vector, type="z"), dtype=float)
-            shapiro = stats.shapiro(z)
-            add({"statistic": shapiro.statistic, "p": shapiro.pvalue, "method": "Shapiro-Wilk normality test"},
-                variable, n, _NORMALITY_INSTRUCTIONS["shapiro"])
+            add(_shapiro_wilk(z), variable, n, _NORMALITY_INSTRUCTIONS["shapiro"])
             add(_anderson_darling(z), variable, n, _NORMALITY_INSTRUCTIONS["anderson"])
             add(_cramer_von_mises(z), variable, n, _NORMALITY_INSTRUCTIONS["crammer"])
             add(_shapiro_francia(z), variable, n, _NORMALITY_INSTRUCTIONS["shapiro_francia"])

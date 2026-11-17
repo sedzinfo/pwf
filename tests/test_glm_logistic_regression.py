@@ -76,9 +76,10 @@ def test_report_logistic_vif_matches_rwf(results, reference, case):
 
 # In "case ~ education" the 0-5yrs and 6-11yrs groups both have a fitted probability of exactly 1/3 (4/12 and
 # 40/120). The cut search starts at the smallest prediction, so which of the two groups is classed 0 depends on
-# the last bit of their fitted values, which R (LINPACK QR) and pwf (numpy's LAPACK QR) round differently. R's
-# fitted values, saved with 15 digits, keep R's order (...379 < ...380), so the confusion results of this case
-# are computed from them.
+# the last bit of their fitted values, which differs between platforms: rwf (R 4.6.2) classes the 6-11yrs group
+# 0 on Windows (the reference, 80/40/120) and the 0-5yrs group 0 on Linux (8/4/12), as pwf does there. rwf's
+# fitted values, saved with 15 digits, keep its order (...379 < ...380), so this case's confusion results are
+# computed from them.
 TIED_FITTED = {"education"}
 
 
