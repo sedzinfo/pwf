@@ -615,6 +615,10 @@ sleepstudy$Fatigue <- round(sleepstudy$Reaction / 50 + sin(seq_len(nrow(sleepstu
 ref("sleepstudy", sleepstudy)
 ref("report_hlr_sleepstudy", report_hlr(df = sleepstudy, corlist = c(1, 4), factorlist = 3, predictor = "Days",
                                         random_effect = "Subject"))
+# as rwf's example, grouping by the predictor: the random-effect variances are 0 at the maximum
+ref("report_hlr_infert", report_hlr(df = utils::read.csv(file.path(out_dir, "infert.csv"), stringsAsFactors = FALSE),
+                                    corlist = c(2, 3, 4, 6), factorlist = 1, predictor = "case",
+                                    random_effect = "case"))
 ##########################################################################################
 # REPORT LDA (MASS::lda)
 ##########################################################################################

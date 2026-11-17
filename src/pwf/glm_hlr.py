@@ -2,14 +2,38 @@
 """
 Python port of R rwf::GLM_HLR.R.
 
-report_hlr matches rwf (tests/test_glm_hlr.py): nlme's gls and lme fitted
-by maximum likelihood become statsmodels' ols and mixedlm(reml=False),
-whose log-likelihoods agree with nlme's, and nlme::anova.lme's sequential
-likelihood-ratio table is rebuilt (df counts the fixed effects, the
-random-effect covariances and the residual variance; AIC and BIC use it).
-The random-slope model is left out when it does not converge, as rwf's
-try() leaves it out when nlme fails. The fixed, random and call columns
+report_hlr matches rwf (tests/test_glm_hlr.py): nlme's gls fitted by
+maximum likelihood becomes statsmodels' ols, nlme's lme fits become
+_lme_fit (lme4's profiled deviance), whose log-likelihoods agree with
+nlme's, and nlme::anova.lme's sequential likelihood-ratio table is rebuilt
+(df counts the fixed effects, the random-effect covariances and the
+residual variance; AIC and BIC use it). The fixed, random and call columns
 hold R's deparsed formulas and rwf's calls.
+
+statsmodels' mixedlm isn't used: when the ML random-effects covariance is
+singular (a variance of 0 or a correlation of +-1) its optimizer can stop
+far from the maximum (logLik -280.0 instead of -252.58 for the Fatigue
+slope model in the tests) or return an infinite log-likelihood (rwf's
+infert example), and whether it reports convergence depends on the scipy
+version. Where a random intercept's variance is 0 at the maximum, nlme
+stops just short of it, so its logLik can be ~1e-7 lower than pwf's and a
+likelihood ratio near 0 is optimizer noise (its p-value moves with the
+ratio's square root).
+
+The random intercept and slope model: rwf's try() leaves it out when
+nlme::lme fails, which is when nlminb reaches its iteration limit.
+- That mostly happens when the ML random effects are perfectly correlated
+  (a correlation of +-1, both variances above 0). nlme's log-Cholesky
+  parameters can only reach that at infinity, and the likelihood flattens
+  too slowly for nlminb to stop.
+- Where the maximum has a variance of 0 instead, the likelihood flattens
+  fast and nlme finishes. The tests' Fatigue slope model is the first
+  kind, rwf's infert example the second.
+nlminb's path can't be ported, so pwf leaves the model out when its ML
+random effects are perfectly correlated. On 300 simulated data sets this
+matched rwf's choice on 252. It left out 145 of the 147 models nlme failed
+on, and also 46 that nlme finished, mostly where the correlation adds
+little likelihood.
 
 Notes kept from rwf:
   - corlist and factorlist are 1-based column positions.
@@ -22,10 +46,13 @@ Notes kept from rwf:
 ##########################################################################################
 import re
 import warnings
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import patsy
 import statsmodels.formula.api as smf
+from scipy.optimize import minimize
 from scipy.stats import chi2
 
 try:
@@ -70,6 +97,63 @@ def _anova_lme(fits, names):
 def _r_name(name):
     """A column name as R deparses it: backquoted unless syntactic."""
     return name if re.fullmatch(r"[A-Za-z.][A-Za-z0-9._]*", name) else f"`{name}`"
+
+
+def _lme_fit(y, x, z, groups):
+    """
+    ML fit of the linear mixed model y = x beta + z b + e, with random effects b ~ N(0, Psi) per group.
+
+    Minimises lme4's profiled deviance over theta, the lower-triangular
+    Cholesky factor of Psi relative to the residual variance. It needs no
+    inverse of Psi, so a singular Psi is reached at a finite theta.
+    - The Psi whose theta has a last diagonal element of 0 are exactly the
+      singular ones.
+    - Those with a zero row j have a variance of 0 for random effect j.
+    The maximum is one of these when fixing those elements at 0 lowers the
+    log-likelihood by less than 1e-6. On simulated data, the loss from
+    making Psi singular was either below 1e-10 or above 1e-4.
+
+    Returns:
+    tuple: the fit (llf, nobs, k_fe, k_re, as _anova_lme reads them) and whether its random effects are
+    perfectly correlated (Psi singular at the maximum, with every variance above 0).
+    """
+    n, p = x.shape
+    q = z.shape[1]
+    groups = pd.factorize(groups)[0]
+    ztz, ztx, zty = (np.zeros((groups.max() + 1,) + shape) for shape in [(q, q), (q, p), (q,)])
+    np.add.at(ztz, groups, np.einsum("ni,nj->nij", z, z))
+    np.add.at(ztx, groups, np.einsum("ni,nj->nij", z, x))
+    np.add.at(zty, groups, z * y[:, None])
+    rows, cols = np.tril_indices(q)  # theta's last element is the last diagonal one
+
+    def deviance(theta):
+        lam = np.zeros((q, q))
+        lam[rows, cols] = theta
+        m = np.eye(q) + lam.T @ ztz @ lam  # per group: I + lam' Z'Z lam
+        b, c = lam.T @ ztx, zty @ lam  # per group: lam' Z'X and lam' Z'y
+        m_b, m_c = np.linalg.solve(m, b), np.linalg.solve(m, c[..., None])[..., 0]
+        xwx = x.T @ x - np.einsum("gki,gkj->ij", b, m_b)
+        xwy = x.T @ y - np.einsum("gki,gk->i", b, m_c)
+        rss = y @ y - np.einsum("gk,gk->", c, m_c) - xwy @ np.linalg.solve(xwx, xwy)
+        return np.linalg.slogdet(m)[1].sum() + n * (1 + np.log(2 * np.pi * rss / n))
+
+    options = {"gtol": 1e-8, "maxiter": 10000}
+    free = minimize(deviance, np.eye(q)[rows, cols], method="BFGS", options=options)
+
+    def restricted(varied):
+        """The maximum log-likelihood with theta's elements outside varied fixed at 0."""
+        def masked(theta_varied):
+            theta = np.zeros(len(rows))
+            theta[varied] = theta_varied
+            return deviance(theta)
+        return -(minimize(masked, free.x[varied], method="BFGS", options=options).fun if varied.any()
+                 else masked([])) / 2
+
+    singular = restricted((rows != q - 1) | (cols != q - 1))
+    zero_variance = max(restricted(rows != j) for j in range(q))
+    llf = max(-free.fun / 2, singular, zero_variance)
+    correlated = llf - singular < 1e-6 and llf - zero_variance >= 1e-6
+    return SimpleNamespace(llf=llf, nobs=n, k_fe=p, k_re=q), correlated
 ##########################################################################################
 # REPORT HLR
 ##########################################################################################
@@ -78,9 +162,9 @@ def report_hlr(df, corlist, factorlist, predictor, random_effect, file=None, she
     Multilevel model comparison, as rwf::report_hlr: for each outcome in
     corlist, maximum-likelihood fits of the intercept-only model, a
     random intercept per random_effect, the random intercept with the
-    fixed predictor, and (when it converges) a random intercept and
-    slope of the predictor, compared in sequence by likelihood-ratio
-    tests (nlme::anova.lme).
+    fixed predictor, and (unless its random effects are perfectly
+    correlated) a random intercept and slope of the predictor, compared in
+    sequence by likelihood-ratio tests (nlme::anova.lme).
 
     Parameters:
     df (pandas.DataFrame): Data.
@@ -108,24 +192,24 @@ def report_hlr(df, corlist, factorlist, predictor, random_effect, file=None, she
         dv = df.columns[i - 1]
         columns = list(dict.fromkeys([dv] + [df.columns[j - 1] for j in factorlist] + [predictor]))
         temp = df[columns].dropna()
-        groups = temp[random_effect]
-        baseline, with_predictor = f'Q("{dv}") ~ 1', f'Q("{dv}") ~ Q("{predictor}")'
+        y, groups = temp[dv].to_numpy(float), temp[random_effect]
+        intercept = np.ones((len(temp), 1))
+        with_predictor = np.asarray(patsy.dmatrix(f'Q("{predictor}")', temp))  # intercept and predictor
         fixed_baseline, fixed_predictor = f"{_r_name(dv)} ~ 1", f"{_r_name(dv)} ~ {_r_name(predictor)}"
         random_intercept, random_slope = f"~1 | {_r_name(random_effect)}", \
             f"~{_r_name(predictor)} | {_r_name(random_effect)}"
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            fits = [smf.ols(baseline, data=temp).fit(),
-                    smf.mixedlm(baseline, data=temp, groups=groups, re_formula="~1").fit(reml=False),
-                    smf.mixedlm(with_predictor, data=temp, groups=groups, re_formula="~1").fit(reml=False)]
+            fits = [smf.ols(f'Q("{dv}") ~ 1', data=temp).fit(),
+                    _lme_fit(y, intercept, intercept, groups)[0],
+                    _lme_fit(y, with_predictor, intercept, groups)[0]]
             names = ["base", "random_intercept", "random_intercept_predictor"]
             fixed = [fixed_baseline, fixed_baseline, fixed_predictor]
             random = [np.nan, random_intercept, random_intercept]
             try:
-                slope = smf.mixedlm(with_predictor, data=temp, groups=groups,
-                                    re_formula=f'~Q("{predictor}")').fit(reml=False)
-                if slope.converged and np.isfinite(slope.llf):
+                slope, correlated = _lme_fit(y, with_predictor, with_predictor, groups)
+                if not correlated and np.isfinite(slope.llf):
                     fits.append(slope)
                     names.append("random_intercept_slope")
                     fixed.append(fixed_predictor)
