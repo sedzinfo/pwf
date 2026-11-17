@@ -41,6 +41,7 @@ Deviations from the R original, by design:
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
+import inspect
 import itertools
 import re
 
@@ -329,6 +330,87 @@ def _response_frequency(df, max_categories=10):
     frequency["miss"] = 1 - answered / len(items)
     return frequency
 ##########################################################################################
+# REPORT ALPHA COMMENTS AND CALL (internal, rwf's texts)
+##########################################################################################
+def _r_to_string(parts):
+    """R's toString(): the parts joined by ", "."""
+    return ", ".join(parts)
+
+
+# rwf's comments on report_alpha's column headers
+_ALPHA_COMMENT = {
+    "raw_alpha": _r_to_string([
+        "Crombach's alpha", "\n\nalpha based on covariances",
+        "\n\nLambda 3=(n)/(n-1)(1-tr(Vx)/(Vx) = (n)/(n-1)(Vx-tr(Vx)/Vx=alpha",
+        "\n\n0.91-1.00 Excellent (however check for multicolinearity problems)", "\n\n0.81-0.90 Good",
+        "\n\n0.71-0.80 Good and Acceptable", "\n\n0.61-0.70 Acceptable", "\n\n0.56-0.60 Marginally Acceptable",
+        "\n\n0.01-0.55 Unacceptable"]),
+    "std_alpha": "standardized alpha based on correlations",
+    "g6(smc)": _r_to_string([
+        "Guttman's Lambda 6 reliability", "\nsquared multiple correlation",
+        "\n\nconsiders the amount of variance in each item that can be accounted for the linear regression of all "
+        "of the other items",
+        "\n\nlambda 6=1-sum(e^2)/Vx = 1-sum(1-r^2(smc))/Vx", "\n\nif equal item loadings alpha>G6",
+        "\nif unequal item loadings alpha<G6", "\nif there is a general factor alpha<G6"]),
+    "average_r": "average interitem correlation",
+    "median_r": "median interitem correlation",
+    "s/n": _r_to_string([
+        "signal to noise ratio",
+        "\n\nindex of the quality of the test that is linear with the number of items and the average correlation",
+        "\n\n s/n = n r/(1-r)"]),
+    "ase": "alpha standard error",
+    "mean": _r_to_string([
+        "for total statistics:",
+        "\nmean of the scale formed by averaging or summing the items (depending upon the cumulative option)",
+        "\n\nfor item statistics:", "\nmean of each item"]),
+    "sd": _r_to_string([
+        "for total statistics:", "\nstandard deviation of the total score", "\n\nfor item statistics:",
+        "\nstandard deviation of each item"]),
+    "alpha_drop": "A data frame with all of the above for the case of each item being removed one by one.",
+    "n": "number of complete cases for the item",
+    "raw_r": "correlation of each item with the total score, not corrected for item overlap",
+    "std_r": "correlation of each item with the total score (not corrected for item overlap) if the items were all "
+             "standardized",
+    "r_cor": "item whole correlation corrected for item overlap and scale reliability",
+    "r_drop": "item whole correlation for this item against the scale without this item",
+    "response_freq": "the frequency of each item response (if less than 20)",
+    "scores": _r_to_string([
+        "scores are by default the average response for all items that a participant took",
+        "\nIf cumulative=TRUE, then these are sum scores."]),
+    "boot_ci_2_5%": "bootstrap confidence interval lower bound 2.5%",
+    "boot_ci_50%": "bootstrap confidence interval 50%",
+    "boot_ci_97_5%": "bootstrap confidence interval lower bound 97.5%",
+    "miss": "proportion of non answered items",
+    "alpha se": "alpha standard error",
+    "med_r": "median interitem correlation",
+    "unidim": "index of unidimensionality",
+    "kaiser_criterion": "number of eigenvalues > 1",
+}
+
+
+def _alpha_call(df, key, questions, reverse, mini, maxi, file, cumulative, n_iter):
+    """
+    The "call" sheet's text: rwf deparses its R call (spaces removed); pwf
+    writes the Python call with the arguments that were given, the data frame
+    by the name it has in the caller.
+    """
+    name = "df"
+    frame = inspect.currentframe().f_back.f_back  # past report_alpha
+    try:
+        while frame is not None:
+            found = [k for k, v in {**frame.f_globals, **frame.f_locals}.items() if v is df and not k.startswith("_")]
+            if found:
+                name = found[0]
+                break
+            frame = frame.f_back
+    finally:
+        del frame
+    given = [("key", key), ("questions", questions), ("reverse", reverse), ("mini", mini), ("maxi", maxi),
+             ("file", file), ("cumulative", cumulative or None), ("n_iter", n_iter if n_iter != 1 else None)]
+    arguments = [f"df={name}"] + [f"{k}={v!r}" for k, v in given if v is not None]
+    # rwf strips the quotes and spaces of its call text
+    return f"report_alpha({','.join(arguments)})".replace(" ", "").replace("'", "").replace('"', "")
+##########################################################################################
 # PSYCH ALPHA (internal, mirrors the bulk of psych::alpha)
 ##########################################################################################
 def _psych_alpha(df, cumulative=False, n_iter=1):
@@ -496,24 +578,33 @@ def report_alpha(df, key=None, questions=None, reverse=None, mini=None, maxi=Non
     result_dropped.columns = [c.lower().replace(".", "_") for c in result_dropped.columns]
 
     if not result_total.empty:
-        result_total["alpha_criterion"] = np.select(
-            [result_total["raw_alpha"] < .6, result_total["raw_alpha"] < .7, result_total["raw_alpha"] < .8,
-             result_total["raw_alpha"] < .9, result_total["raw_alpha"] >= .9],
-            ["Unacceptable", "Acceptable", "Good and Acceptable", "Good", "Excellent"], default="")
+        # rwf's bands are open at both ends: an alpha of exactly .6, .7, .8 or .9 gets NA
+        alpha = result_total["raw_alpha"]
+        criterion = pd.Series(np.nan, index=result_total.index, dtype=object)
+        for label, inside in [("Unacceptable", alpha < .6), ("Acceptable", (alpha < .7) & (alpha > .6)),
+                              ("Good and Acceptable", (alpha < .8) & (alpha > .7)),
+                              ("Good", (alpha < .9) & (alpha > .8)), ("Excellent", alpha > .9)]:
+            criterion[inside] = label
+        result_total["alpha_criterion"] = criterion
 
     if file is not None:
         try:
             from .functions_excel import excel_critical_value
         except ImportError:
             from functions_excel import excel_critical_value
+        call = pd.DataFrame({"call": [_alpha_call(df, key, questions, reverse, mini, maxi, file, cumulative,
+                                                   n_iter)]})
         writer = pd.ExcelWriter(f"{file}.xlsx", engine="xlsxwriter")
-        excel_critical_value(result_total, writer, sheet="total statistics", critical={"raw_alpha": ">0.60"})
+        excel_critical_value(result_total, writer, sheet="total statistics", critical={"raw_alpha": ">0.60"},
+                             comment=_ALPHA_COMMENT)
         if not result_boot.empty:
-            excel_critical_value(result_boot, writer, sheet="bootstrap", critical={"raw_alpha": ">0.60"})
+            excel_critical_value(result_boot, writer, sheet="bootstrap", critical={"raw_alpha": ">0.60"},
+                                 comment=_ALPHA_COMMENT)
         excel_critical_value(result_item_statistics, writer, sheet="item statistics",
-                              critical={"raw_alpha": ">0.60"})
+                             critical={"raw_alpha": ">0.60"}, comment=_ALPHA_COMMENT)
         excel_critical_value(result_dropped, writer, sheet="if dropped",
-                              critical={"scale_alpha": ">0.60", "raw_alpha": ">0.60"})
+                             critical={"scale_alpha": ">0.60", "raw_alpha": ">0.60"}, comment=_ALPHA_COMMENT)
+        excel_critical_value(call, writer, sheet="call")
         writer._save()
         writer.close()
 

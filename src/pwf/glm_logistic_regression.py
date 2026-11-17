@@ -524,7 +524,7 @@ def report_logistic(model, validation_data=None, file=None, title="", w=10, h=10
             os.remove(filename)
         with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
             excel_critical_value(result["logistic_output"], writer, sheet="summary")
-            excel_critical_value(result["coefficients"].reset_index(names="term"), writer, sheet="coefficients",
+            excel_critical_value(result["coefficients"], writer, sheet="coefficients",  # rwf: terms are row names
                                  critical={fit["labels_test"][1]: "<0.05"})
             excel_confusion_matrix(cmatrix, writer)
             excel_critical_value(confusion_performance["cut_performance"], writer,
@@ -535,7 +535,7 @@ def report_logistic(model, validation_data=None, file=None, title="", w=10, h=10
                 excel_critical_value(result["scores"], writer, sheet="scores residuals")
             excel_critical_value(result["score_descriptives"], writer, sheet="score residual descriptives")
             if len(vif) > 0:
-                excel_critical_value(vif.reset_index(names="term"), writer, sheet="VIF")
+                excel_critical_value(vif, writer, sheet="VIF")
             excel_critical_value(result["model_call"], writer, sheet="Call")
     return {**result, "cmatrix": cmatrix, "confusion_performance": confusion_performance}
 ##########################################################################################

@@ -87,13 +87,19 @@ def _write_sheet(df, workbook, sheet):
     return frame
 
 
-def _is_whole(column):
-    """rwf's integer test: every value of a numeric column equals its rounded value (text counts as whole)."""
+def _column_style(column):
+    """
+    rwf's column style: "whole" ("#0") when all(y == round(y)) is TRUE, which
+    includes text columns; "decimal" (numFmt) when it is FALSE; None (no style,
+    Excel's General) when it is NA, a whole-number column with missing values.
+    """
     if not pd.api.types.is_numeric_dtype(column) or pd.api.types.is_bool_dtype(column):
-        return True
+        return "whole"
     values = pd.to_numeric(column, errors="coerce").to_numpy(dtype=float)
-    finite = values[np.isfinite(values)]
-    return bool(np.all(finite == np.round(finite)))
+    present = values[~np.isnan(values)]
+    if np.any(present != np.round(present)):
+        return "decimal"
+    return "whole" if len(present) == len(values) else None
 
 
 def excel_generic_format(df, workbook, sheet="output", title=None, comment=None, numFmt="#0.00", **kwargs):
@@ -140,7 +146,8 @@ def excel_generic_format(df, workbook, sheet="output", title=None, comment=None,
     widths = get_col_widths(frame)
     worksheet.set_column(0, 0, widths[0] + 2, header)
     for k, column in enumerate(frame.columns, start=1):
-        worksheet.set_column(k, k, widths[k] + 2, whole if _is_whole(frame[column]) else content)
+        style = _column_style(frame[column])
+        worksheet.set_column(k, k, widths[k] + 2, {"whole": whole, "decimal": content}.get(style))
     if not isinstance(frame.columns, pd.MultiIndex) and not isinstance(frame.index, pd.MultiIndex):
         worksheet.write_row(0, 0, [""] + [str(column) for column in frame.columns], header)
     worksheet.freeze_panes(1, 1)

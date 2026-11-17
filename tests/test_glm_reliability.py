@@ -85,3 +85,17 @@ def test_key_to_cfa_model_and_compute_shrout_match_rwf(reference):
     result = glm_reliability.compute_shrout(sperson=0.5, spersonitem=0.2, stime=0.1, spersontime=0.15, serror=0.3,
                                             m=4, k=3)
     assert_matches_reference(result.reset_index(drop=True), reference("compute_shrout"), rtol=1e-12)
+
+
+def test_report_alpha_workbook_matches_rwf(reference, tmp_path):
+    # rwf's sheets, and its comments on the headers they name (10, 9 and 7 on the three result sheets)
+    import re
+    import zipfile
+    file = str(tmp_path / "alpha")
+    _report_alpha(reference("lavaan_data"), key={k: ALPHA_KEY[k] for k in "EN"}, file=file)
+    assert list(pd.read_excel(f"{file}.xlsx", sheet_name=None)) == ["total statistics", "item statistics",
+                                                                      "if dropped", "call"]
+    with zipfile.ZipFile(f"{file}.xlsx") as archive:
+        counts = [len(re.findall(r"<comment ", archive.read(name).decode("utf-8")))
+                  for name in sorted(n for n in archive.namelist() if re.search(r"comments\d+\.xml$", n))]
+    assert counts == [10, 9, 7]

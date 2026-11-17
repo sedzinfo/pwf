@@ -536,13 +536,16 @@ def report_oneway(df, dv, iv, file=None, w=10, h=10, base_size=10, note="", titl
         if os.path.exists(filename):
             os.remove(filename)
         with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
-            for table, sheet, comment in [("fisher", "Fisher", comment_fisher_welch),
-                                          ("welch", "Welch", comment_fisher_welch),
-                                          ("kruskal_wallis", "Kruskal", comment_kruskal),
-                                          ("homogeneity", "Homogeneity", comment_text),
-                                          ("tukey", "Tukey", comment_text),
-                                          ("games_howell", "Games-Howell", comment_text)]:
-                excel_critical_value(result[table], writer, sheet=sheet, comment=comment, critical={"p": "<0.05"})
+            # rwf's titles (A1 comments); its instruction$homogeneity partially matches homogeneity_instruction
+            for table, sheet, comment, title in [
+                    ("fisher", "Fisher", comment_fisher_welch, "fisher"),
+                    ("welch", "Welch", comment_fisher_welch, "welch"),
+                    ("kruskal_wallis", "Kruskal", comment_kruskal, "kruskal"),
+                    ("homogeneity", "Homogeneity", comment_text, "homogeneity_instruction"),
+                    ("tukey", "Tukey", comment_text, "tukey"),
+                    ("games_howell", "Games-Howell", comment_text, "games_howell")]:
+                excel_critical_value(result[table], writer, sheet=sheet, comment=comment, critical={"p": "<0.05"},
+                                     title=_ONEWAY_INSTRUCTIONS[title])
             excel_critical_value(descriptives, writer, sheet="Descriptives")
     return result
 ##########################################################################################

@@ -56,7 +56,7 @@ from scipy.stats import t as _tdist
 try:
     from ._rcompat import r_number, r_round
     from .functions import comparison_combinations
-    from .functions_strings import str_aes, output_separator
+    from .functions_strings import output_separator
     from .functions_strings import str_aes as _str_aes  # plot_scatterplot's str_aes argument hides the function
     from .functions_mathematical import rad2deg
     from .functions_environment import write_txt
@@ -65,7 +65,7 @@ try:
 except ImportError:
     from _rcompat import r_number, r_round
     from functions import comparison_combinations
-    from functions_strings import str_aes, output_separator
+    from functions_strings import output_separator
     from functions_strings import str_aes as _str_aes
     from functions_mathematical import rad2deg
     from functions_environment import write_txt

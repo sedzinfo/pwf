@@ -217,10 +217,11 @@ def report_lda(model, file=None):
         if os.path.exists(filename):
             os.remove(filename)
         with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
-            excel_critical_value(model.scaling.reset_index(names="variable"), writer, sheet="Coefficients")
+            # rwf passes R matrices here, which its formatting skips (no column names): Excel shows them unformatted
+            excel_critical_value(model.scaling, writer, sheet="Coefficients", numFmt="General")
             excel_confusion_matrix(cmatrix, writer)
-            excel_critical_value(prior_counts.reset_index(names="class"), writer, sheet="Priors and Counts")
-            excel_critical_value(model.means.reset_index(names="class"), writer, sheet="Means")
+            excel_critical_value(prior_counts, writer, sheet="Priors and Counts")
+            excel_critical_value(model.means, writer, sheet="Means", numFmt="General")
             excel_critical_value(model_description, writer, sheet="Descriptives")
             excel_critical_value(call, writer, sheet="Call")
     return result
