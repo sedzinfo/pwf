@@ -1003,3 +1003,38 @@ ref("irt_u_ability_limits", data.frame(
   theta = c(compute_unidimensional_ability(a = c(1, 1, 1), b = c(0, 0, 0), u = c(1, 1, 1)),
             compute_unidimensional_ability(a = c(1, 1, 1), b = c(0, 0, 0), u = c(0, 0, 0), lim_theta = c(-4, 4)))
 ))
+##########################################################################################
+# FUNCTIONS (data frame utilities)
+##########################################################################################
+df_round <- data.frame(x = c(0.15, 2.675, 1.005, -0.5, 2.5, NA, 0.285, -0.05), y = 1:8, label = letters[1:8])
+for (type in c("round", "ceiling", "floor", "tenth")) {
+  ref(paste0("round_dataframe_", type), round_dataframe(df_round, digits = 1, type = type))
+}
+df_types <- data.frame(f = c(1, 0.1 + 0.2, NA, 1e-20, 123456789.123), i = c(1L, NA, 3L, 4L, 5L),
+                       s = c("\t a \n", "b", NA, " c", "1.5"), l = c(TRUE, FALSE, NA, TRUE, TRUE),
+                       stringsAsFactors = FALSE)
+ref("change_data_type_character", change_data_type(df_types, "character"))
+ref("change_data_type_numeric", suppressWarnings(change_data_type(df_types, "numeric")))
+# levels of text with leading whitespace follow the platform's collation, so this column has none
+factors <- change_data_type(data.frame(df_types[, c("f", "i", "l")], s = c("b", "B", "a", NA, "A10")), "factor")
+ref("change_data_type_factor_levels", data.frame(column = names(factors),
+                                                 levels = vapply(factors, function(x) paste(levels(x), collapse = "|"), "")))
+combinations <- comparison_combinations(data.frame(b = 1, a = 2, C = 3, `d e` = 4, check.names = FALSE))
+ref("comparison_combinations", data.frame(row = row.names(combinations), combinations))
+bound <- rbind_all(data.frame(A = 1:2, B = c("x", "y")), data.frame(B = c("z", "w"), C = c(7.5, 8.5), row.names = c("r3", "r4")))
+ref("rbind_all", data.frame(row = row.names(bound), bound))
+df_nc <- data.frame(a = c(1, NA, Inf, 4), b = c(NA, NA, NA, NA), c = c(5, 5, 5, 5), d = c(-Inf, NaN, 2, 3))
+ref("remove_nc_value", remove_nc(df_nc, value = 0))
+for (aggressive in c(FALSE, TRUE)) {
+  kept <- remove_nc(df_nc[, c("a", "d")], remove_rows = TRUE, aggressive = aggressive)
+  ref(paste0("remove_nc_rows_", tolower(aggressive)), data.frame(row = row.names(kept), kept))
+}
+ref("remove_nc_cols", remove_nc(df_nc, remove_cols = TRUE, remove_zero_variance = TRUE))
+ref("replace_na_with_previous", data.frame(value = replace_na_with_previous(c(NA, NA, 3, NA, 5, NA))))
+ref("padNA", rwf:::padNA(data.frame(A = 1:2, B = c("x", "y")), 4, first = FALSE))
+v1 <- 1:3
+v2 <- c(10.5, 20.5)
+m <- data.frame(p = 1:4, q = letters[1:4])
+ref("c_bind", c_bind(v1, v2, m))
+extremes <- min_max_index(c(3, 1, 3, 2, 1))
+ref("min_max_index", data.frame(which = rep(c("max", "min"), lengths(extremes)), index = unlist(extremes)))

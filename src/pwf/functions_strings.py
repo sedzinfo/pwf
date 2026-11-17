@@ -30,6 +30,11 @@ import re
 import shutil
 import numpy as np
 import pandas as pd
+
+try:
+    from ._rcompat import resolve_columns
+except ImportError:
+    from _rcompat import resolve_columns
 ##########################################################################################
 # MULTIPLE GSUB
 ##########################################################################################
@@ -103,7 +108,8 @@ def str_split_df(df, split="/", type="row", index=None, **kwargs):
     type (str, optional): "row" splits df.index; "collumn" (matching
         R's own typo for "column") splits the column at `index`.
         Defaults to "row".
-    index (int, optional): Column position to split when type="collumn".
+    index (int or str, optional): Column to split when type="collumn": a
+        1-based position, as in R, or a name.
     **kwargs: Forwarded to str_split.
 
     Returns:
@@ -117,7 +123,7 @@ def str_split_df(df, split="/", type="row", index=None, **kwargs):
     if type == "row":
         source = df.index.astype(str).tolist()
     else:
-        source = df.iloc[:, index].astype(str).tolist()
+        source = df[resolve_columns(df, index)[0]].astype(str).tolist()
     split_df = str_split(source, split=split, **kwargs)
     split_df.index = df.index
     return pd.concat([split_df, df], axis=1)
@@ -176,9 +182,11 @@ def str_proper(x):
 def str_trim_df(df):
     """
     Trim and collapse whitespace in every string cell of a data frame;
-    non-string cells are unchanged. Matches R's actual behavior (which
-    uses strwrap(), collapsing internal whitespace too, not just
-    trimming leading/trailing).
+    non-string cells are unchanged. Like R's strwrap(), it collapses
+    internal whitespace too, not just leading/trailing. Deviation: R's
+    apply() turns a mixed data frame into a text matrix, so rwf also
+    returns the numeric columns as formatted text ("10.0"); pwf leaves
+    them numeric.
 
     Parameters:
     df (pandas.DataFrame)
@@ -321,8 +329,8 @@ def output_separator(string, output=None, instruction=None, length=None):
     output (optional): Content printed below the heading, if given.
     instruction (str, optional): Text printed between the heading and
         output, followed by a shorter separator.
-    length (int, optional): Width of the main separator. Defaults to
-        half the current terminal width.
+    length (int, optional): Width of the main separator. Defaults to a
+        quarter of the terminal width, as R's getOption("width") / 4.
 
     Returns:
     None.
@@ -331,7 +339,7 @@ def output_separator(string, output=None, instruction=None, length=None):
     >>> output_separator(string="TEST", output="TEST", instruction="TEST", length=40)
     """
     if length is None:
-        length = shutil.get_terminal_size().columns // 2
+        length = shutil.get_terminal_size().columns // 4  # R: getOption("width") / 4
     separator_title = "#" * length
     separator_subtitle = "#" * (length // 2)
     print(separator_title)

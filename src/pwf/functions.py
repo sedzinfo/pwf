@@ -20,6 +20,11 @@ import sys
 from itertools import combinations as _combinations
 import numpy as np
 import pandas as pd
+
+try:
+    from ._rcompat import _sort_key, r_label, r_levels, r_round
+except ImportError:
+    from _rcompat import _sort_key, r_label, r_levels, r_round
 ##########################################################################################
 # ROUND DATAFRAME
 ##########################################################################################
@@ -53,14 +58,40 @@ def round_dataframe(df, digits=0, type="round"):
     df = df.copy()
     numeric_cols = df.select_dtypes(include='number').columns
     if type == "round":
-        df[numeric_cols] = df[numeric_cols].round(digits)
+        df[numeric_cols] = df[numeric_cols].apply(_r_round_column, digits=digits)
     elif type == "ceiling":
         df[numeric_cols] = np.ceil(df[numeric_cols])
     elif type == "floor":
         df[numeric_cols] = np.floor(df[numeric_cols])
     elif type == "tenth":
-        df[numeric_cols] = (df[numeric_cols] / 10).round(digits)
+        df[numeric_cols] = (df[numeric_cols] / 10).apply(_r_round_column, digits=digits)
     return df
+
+
+def _r_round_column(col, digits):
+    """R's round() of a numeric column: 0.15 -> 0.1 and 2.675 -> 2.67 (numpy's scale-then-round gives 0.2, 2.68)."""
+    if pd.api.types.is_integer_dtype(col) and digits >= 0:
+        return col
+    return pd.Series([r_round(v, digits) for v in col.to_numpy(dtype=float, na_value=np.nan)], index=col.index)
+
+
+def _r_character(col):
+    """R's as.character() of a column, missing values kept: 1.0 -> "1", 0.1 + 0.2 -> "0.3", True -> "TRUE"."""
+    return pd.Series([np.nan if pd.isna(v) else r_label(v) for v in col], index=col.index, dtype=object)
+
+
+def _r_factor(col):
+    """R's as.factor() of a column: levels in R's sort order, labelled as R's as.character() labels them."""
+    if isinstance(col.dtype, pd.CategoricalDtype):
+        return col
+    labels = [np.nan if pd.isna(v) else r_label(v) for v in col]
+    return pd.Series(pd.Categorical(labels, categories=list(dict.fromkeys(r_label(v) for v in r_levels(col)))),
+                     index=col.index)
+
+
+def _is_character(col):
+    """Whether a column holds text, as R's is.character() (pandas 3 stores text as "str", not object)."""
+    return pd.api.types.is_object_dtype(col) or isinstance(col.dtype, pd.StringDtype)
 ##########################################################################################
 # CHANGE DATA TYPE OF COLUMNS IN DATA FRAME
 ##########################################################################################
@@ -95,16 +126,18 @@ def change_data_type(df, type):
     >>> change_data_type(change_data_type(df, "factor"), "factor_character")
     """
     df = df.copy()
-    if type == "character":
-        df = df.apply(lambda col: col.astype(str).str.strip('\t\r\n'))
-    elif type == "numeric":
-        df = df.apply(lambda col: pd.to_numeric(col.astype(str).str.strip('\t\r\n'), errors='coerce'))
-    elif type == "factor":
-        df = df.apply(lambda col: col.astype('category'))
-    elif type == "factor_character":
-        df = df.apply(lambda col: col.astype(str) if col.dtype.name == 'category' else col)
-    elif type == "character_factor":
-        df = df.apply(lambda col: col.astype('category') if col.dtype == object else col)
+    for name in df.columns:
+        col = df[name]
+        if type in ("character", "numeric"):
+            text = _r_character(col).map(lambda v: v.strip('\t\r\n') if isinstance(v, str) else v)
+            # numeric goes through R's 15-digit text, as R's as.numeric(as.character(x)): 0.1 + 0.2 -> 0.3
+            df[name] = text if type == "character" else pd.to_numeric(text, errors='coerce')
+        elif type == "factor":
+            df[name] = _r_factor(col)
+        elif type == "factor_character" and isinstance(col.dtype, pd.CategoricalDtype):
+            df[name] = _r_character(col)
+        elif type == "character_factor" and _is_character(col):
+            df[name] = _r_factor(col)
     return df
 ##########################################################################################
 # RBIND ALL
@@ -332,7 +365,9 @@ def comparison_combinations(df, all_orders=True):
     if all_orders:
         reversed_pairs = pd.DataFrame({'X1': result['X2'], 'X2': result['X1']})
         result = pd.concat([result, reversed_pairs], ignore_index=True)
-        result = result.sort_values(['X1', 'X2']).reset_index(drop=True)
+        # R's order() on text uses the locale's collation (a < b < C); rows keep their positions, as R's row names
+        order = sorted(range(len(result)), key=lambda i: (_sort_key(result['X1'][i]), _sort_key(result['X2'][i])))
+        result = result.iloc[order]
     return result
 ##########################################################################################
 # MINIMUM MAXIMUM INDEX OF A VECTOR
