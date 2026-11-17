@@ -1,0 +1,2 @@
+"DV","IV","level1","level2","n1","n2","W","p","CI_l","CI_u","alternative","method","mean1","mean2","sd1","sd2","sd_pooled","d","r","k_squared[bartlett]","df[bartlett]","p[bartlett]","bonferroni_p","significant"
+"bp_before","sex","Female","Male",60,60,1020.5,4.29888398002406e-05,-9.99994523146071,-1.99997319300086,"two.sided","Wilcoxon rank sum test with continuity correction",153.633333333333,159.266666666667,10.7355999992843,11.4134423670804,11.0797060884145,0.508437073003574,0.373437207103477,0.219176854079807,1,0.639667831223982,0.05,"TRUE"

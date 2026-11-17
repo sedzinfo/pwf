@@ -147,9 +147,10 @@ def fa(data, nfactors=1, rotate="oblimin", fm="ml", alpha=0.1):
     rotation), residual, model, communality, uniquenesses, RMSEA (Series:
     RMSEA, lower, upper, confidence), rms, CFI, TLI, STATISTIC, dof,
     objective, null_chisq, null_dof, n_obs. Factors are ordered by the
-    variance they explain, as in psych; with several factors their ML1, ML2,
-    ... labels can be in a different order from psych's (the values and
-    column order are the same).
+    variance they explain, as in psych, and labelled ML1, ML2, ... in that
+    order. psych's labels of the same columns depend on R's random number
+    state (after set.seed(1) they are pwf's; set.seed(2) gives ML1, ML3,
+    ML2): the values and column order are the same.
 
     Examples:
     >>> model = fa(df_ocean[["E1", "E2", "E3", "E4", "E5"]], nfactors=1)

@@ -86,3 +86,33 @@ def test_kolmogorov_exact_small_sample():
     expected = stats.kstest(x, lambda v: stats.norm.cdf(v, loc=x.mean(), scale=x.std(ddof=1)), method="exact")
     assert ks["statistic"] == pytest.approx(expected.statistic)
     assert ks["p"] == pytest.approx(expected.pvalue)
+
+
+def test_outlier_summary_matches_rwf(reference):
+    # R's sd() (n - 1) with na.rm = TRUE, and paste(round(...), "%"): "4.29 %", "5 %"
+    vector = reference("outlier_vector")["v"].to_numpy()
+    result = pd.concat([ea.outlier_summary(vector),
+                        ea.outlier_summary(np.r_[np.arange(1, 20), 100])], ignore_index=True)
+    assert_matches_reference(result, reference("outlier_summary", dtype=str))
+
+
+def test_remove_outliers_matches_rwf(reference):
+    vector = reference("outlier_vector")["v"].to_numpy()
+    expected = reference("remove_outliers")
+    np.testing.assert_array_equal(ea.remove_outliers(vector), expected["default"].to_numpy())
+    np.testing.assert_array_equal(ea.remove_outliers(vector, probs=(0.1, 0.9), type=6),
+                                  expected["type6"].to_numpy())
+    with pytest.raises(ValueError):
+        ea.remove_outliers(vector, na_rm=False)
+
+
+def test_explore_plot_captions_match_rwf(load_data, reference):
+    # one plot per numeric column, captioned as rwf's paste0() prints R's round(): "SD=6.1", "Median=39"
+    data = load_data("insurance")[["age", "sex", "bmi", "charges"]].copy()
+    data.loc[[2, 8], "bmi"] = np.nan
+    captions = {f"histogram_{n}": p.labels.get("caption", None) for n, p in ea.plot_histogram(data).items()}
+    captions.update({f"qq_{n}": p.labels.get("caption", None) for n, p in ea.plot_qq(data).items()})
+    captions["boxplot"] = ea.plot_boxplot(data).labels.get("caption", None)
+    expected = reference("explore_plot_captions", dtype=str)
+    assert list(captions) == expected["plot"].tolist()
+    assert list(captions.values()) == expected["caption"].tolist()

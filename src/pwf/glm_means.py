@@ -20,14 +20,16 @@ import functools
 import itertools
 import numpy as np
 import pandas as pd
-from scipy import optimize, stats
+from scipy import stats
 from scipy.stats import levene, bartlett
 try:
-    from ._rcompat import r_label as _level_label, r_levels as _factor_levels, resolve_columns as _resolve_columns
+    from ._rcompat import (r_label as _level_label, r_levels as _factor_levels, r_uniroot,
+                           resolve_columns as _resolve_columns)
     from .functions_excel import report_dataframe
     from .functions_statistical import compute_adjustment
 except ImportError:
-    from _rcompat import r_label as _level_label, r_levels as _factor_levels, resolve_columns as _resolve_columns
+    from _rcompat import (r_label as _level_label, r_levels as _factor_levels, r_uniroot,
+                          resolve_columns as _resolve_columns)
     from functions_excel import report_dataframe
     from functions_statistical import compute_adjustment
 ##########################################################################################
@@ -252,7 +254,9 @@ def _wilcox_test_two_sample(x, y, alternative="two.sided", mu=0, exact=None, cor
                 return mumin
             if w_max - zq >= 0:
                 return mumax
-            return optimize.brentq(lambda d: w_of(d) - zq, mumin, mumax, xtol=1e-4)
+            # R's uniroot(tol = 1e-4) itself: with a tolerance this loose, where it stops depends on the method
+            return r_uniroot(lambda d: w_of(d) - zq, mumin, mumax, f_lower=w_min - zq, f_upper=w_max - zq,
+                             tol=1e-4)
 
         if alternative == "two.sided":
             cint = (root(stats.norm.isf(alpha / 2)), root(stats.norm.ppf(alpha / 2)))

@@ -1080,3 +1080,90 @@ ref("compute_mean_sd_alpha_divisor", compute_mean_sd_alpha(alpha_items, divisor 
 ref("key_to_cfa_model", data.frame(model = key_to_cfa_model(alpha_key[1:2])))
 ref("compute_shrout", compute_shrout(sperson = 0.5, spersonitem = 0.2, stime = 0.1, spersontime = 0.15, serror = 0.3,
                                      m = 4, k = 3))
+##########################################################################################
+# THURSTONIAN IRT HELPERS (scoring with the ULSMV parameters above, and the data helpers)
+##########################################################################################
+tirt_lambda <- utils::read.csv(file.path(out_dir, "tirt_ulsmv_lambda.csv"), check.names = FALSE)
+tirt_lambda <- as.matrix(data.frame(tirt_lambda[, -1], row.names = tirt_lambda$indicator, check.names = FALSE))
+tirt_vectors <- utils::read.csv(file.path(out_dir, "tirt_ulsmv_vectors.csv"))
+tirt_psi <- as.matrix(utils::read.csv(file.path(out_dir, "tirt_ulsmv_psi.csv"), check.names = FALSE))
+tirt_patterns <- utils::read.csv(file.path(out_dir, "tirt_triplets.csv"))[1:25, rownames(tirt_lambda)]
+tirt_patterns[3, 2] <- NA
+tirt_patterns[5, c(1, 7)] <- NA
+ref("score_tirt", data.frame(score_tirt(tirt_patterns, tirt_lambda, tirt_vectors$theta_diag, tirt_vectors$tau,
+                                        tirt_psi, tirt_vectors$nu)))
+tirt_ranks <- data.frame(a = c(1, 3, 2, 2, 1, 3), b = c(2, 1, 3, 1, 3, 2), c = c(3, 2, 1, 3, 2, 1),
+                         d = c(2, 3, 1, 1, 2, 3), e = c(1, 2, 3, 3, 1, 2), f = c(3, 1, 2, 2, 3, 1))
+ref("rank_to_binary", data.frame(rank_to_binary(tirt_ranks[, 1:3], 3)))
+ref("rank_df_to_binary", rank_df_to_binary(tirt_ranks, 3))
+ref("rank3_to_triplets", rank3_to_triplets(rank_to_binary(tirt_ranks[, 1:3], 3)))
+ref("generate_matrix_A", data.frame(generate_matrix_A(2, 4)))
+ref("generate_matrix_lambda_hat", data.frame(generate_matrix_lambda_hat(2, 3)))
+ref("name_triplet_pairs", data.frame(pair = name_triplet_pairs(7, strict = FALSE)))
+tirt_ability <- compute_ability(c(1, 0, 1), seq(-3, 3, 0.25), gamma = c(0.2, -0.3, 0.1), lambda = c(1, 1.5, 0.8),
+                                psi = c(0.5, 0.7, 0.6))
+ref("compute_ability_icc", tirt_ability$icc)
+ref("compute_ability", data.frame(ability_ml = tirt_ability$ability_ml, ability_map = tirt_ability$ability_map))
+ref("compute_solve", data.frame(compute_solve(matrix(c(4, 1, 2, 1, 3, 0.5, 2, 0.5, 5), 3), matrix(1:6, 3))))
+##########################################################################################
+# OUTLIERS AND EFA RESIDUAL STATISTICS
+##########################################################################################
+set.seed(11)
+outlier_vector <- c(rnorm(300), 4.2, -3.9, 6, NA, NA)
+ref("outlier_vector", data.frame(v = outlier_vector))
+outlier_vector <- utils::read.csv(file.path(out_dir, "outlier_vector.csv"))$v
+ref("outlier_summary", rbind(outlier_summary(outlier_vector), outlier_summary(c(1:19, 100))))
+ref("remove_outliers", data.frame(default = remove_outliers(outlier_vector),
+                                  type6 = remove_outliers(outlier_vector, probs = c(0.1, 0.9), type = 6)))
+residual_a <- matrix(c(1, 0.5, 0.3, 0.5, 1, 0.2, 0.3, 0.2, 1), 3)
+residual_b <- matrix(c(1, 0.42, 0.36, 0.42, 1, 0.27, 0.36, 0.27, 1.1), 3)
+ref("compute_residual_stats_matrices", compute_residual_stats(residual_a, residual_b))
+##########################################################################################
+# EXPLORE PLOT CAPTIONS (rwf::plot_histogram, plot_qq, plot_boxplot)
+##########################################################################################
+caption_data <- utils::read.csv(file.path(out_dir, "..", "..", "src", "pwf", "data", "insurance.csv"))
+caption_data$bmi[c(3, 9)] <- NA
+caption_data <- caption_data[, c("age", "sex", "bmi", "charges")]
+caption_histograms <- plot_histogram(caption_data)
+caption_qq <- plot_qq(caption_data)
+ref("explore_plot_captions", data.frame(
+  plot = c(paste0("histogram_", names(caption_histograms)), paste0("qq_", names(caption_qq)), "boxplot"),
+  caption = c(vapply(caption_histograms, function(p) p$labels$caption, ""), vapply(caption_qq, function(p) p$labels$caption, ""),
+              plot_boxplot(caption_data)$labels$caption)))
+##########################################################################################
+# GLM_MEANS OPTIONS (mu, conf.level, exact, correct)
+##########################################################################################
+means_bp <- utils::read.csv(file.path(out_dir, "..", "..", "src", "pwf", "data", "blood_pressure.csv"),
+                            stringsAsFactors = FALSE)
+ref("report_ttests_mu_conf", report_ttests(df = means_bp, dv = 4:5, iv = 2:3, mu = 2, conf.level = 0.9))
+ref("report_wtests_asymptotic_uncorrected", suppressWarnings(
+  report_wtests(df = means_bp, dv = 4:5, iv = 2:3, exact = FALSE, correct = FALSE, conf.level = 0.9)))
+ref("report_wtests_mu", suppressWarnings(report_wtests(df = means_bp, dv = 4, iv = 2, mu = 3)))
+ref("report_wtests_exact", suppressWarnings(report_wtests(df = means_bp[c(1:12, 61:72), ], dv = 4:5, iv = 2,
+                                                          exact = TRUE)))
+##########################################################################################
+# REPORT REGRESSION (polynomial, log outcome, no intercept, missing values)
+##########################################################################################
+regression_data <- utils::read.csv(file.path(out_dir, "..", "..", "src", "pwf", "data", "insurance.csv"),
+                                   stringsAsFactors = FALSE)
+regression_na <- regression_data
+regression_na$bmi[c(5, 50, 500)] <- NA
+regression_na$children[c(7, 70)] <- NA
+regression_more <- list(poly = lm(charges ~ age + I(age^2) + sex, data = regression_data),
+                        log = lm(log(charges) ~ age + smoker * sex, data = regression_data),
+                        noint = lm(charges ~ 0 + age + bmi, data = regression_data),
+                        na = lm(charges ~ bmi + children + smoker, data = regression_na))
+for (case in names(regression_more)) {
+  set.seed(1)
+  invisible(capture.output(result <- suppressWarnings(report_regression(regression_more[[case]],
+                                                                         plot_diagnostics = FALSE))))
+  for (part in c("r", "coeficients", "deviance", "vif")) {
+    ref(paste0("report_regression_", case, "_", part), result[[part]])
+  }
+  ref(paste0("report_regression_", case, "_anova"), data.frame(term = rownames(result$anova), result$anova,
+                                                                 check.names = FALSE))
+}
+##########################################################################################
+# FLATTEN LIST (nested lists, R's data.frame() naming)
+##########################################################################################
+ref("flatten_list_nested", flatten_list(list(a = list(c = 2, d = list(e = 3)), b = list(c = 4, d = list(e = 5, f = 6)))))

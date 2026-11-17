@@ -6,7 +6,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import pytest  # noqa: E402
 
-from conftest import _load_reference  # noqa: E402
+from conftest import _load_reference, assert_matches_reference  # noqa: E402
 from pwf import glm_efa  # noqa: E402
 
 ITEMS = [f"E{i}" for i in range(1, 6)] + [f"N{i}" for i in range(1, 6)]
@@ -84,3 +84,12 @@ def test_report_efa_writes_files(datasets, tmp_path):
     sheets = list(pd.read_excel(f"{file}.xlsx", sheet_name=None))
     assert sheets[:4] == ["r", "n", "residual stats", "fit_index"] and "scores" in sheets
     assert (tmp_path / "efa.pdf").exists()
+
+
+def test_compute_residual_stats_of_two_matrices_matches_rwf(reference):
+    # rwf counts every element of model - data and divides by its number of rows
+    a = np.array([[1, 0.5, 0.3], [0.5, 1, 0.2], [0.3, 0.2, 1]])
+    b = np.array([[1, 0.42, 0.36], [0.42, 1, 0.27], [0.36, 0.27, 1.1]])
+    result = glm_efa.compute_residual_stats(a, b)
+    assert_matches_reference(result, reference("compute_residual_stats_matrices", keep_default_na=False,
+                                               na_values=["NA"]), rtol=1e-12)

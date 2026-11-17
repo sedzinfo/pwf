@@ -72,9 +72,18 @@ def _r_rows(df):
 
 
 def _write_sheet(df, workbook, sheet):
-    """openxlsx::addWorksheet + writeData(rowNames = TRUE)."""
+    """
+    openxlsx::addWorksheet + writeData(rowNames = TRUE): the row names are a
+    first column of plain text under an empty header (pandas would write the
+    index as bold numbers).
+    """
     frame = _r_rows(df)
-    frame.to_excel(workbook, sheet_name=sheet, index=True)
+    if isinstance(frame.columns, pd.MultiIndex) or isinstance(frame.index, pd.MultiIndex):
+        frame.to_excel(workbook, sheet_name=sheet, index=True)
+        return frame
+    out = frame.copy()
+    out.insert(0, "", [str(label) for label in frame.index], allow_duplicates=True)
+    out.to_excel(workbook, sheet_name=sheet, index=False)
     return frame
 
 
@@ -126,11 +135,14 @@ def excel_generic_format(df, workbook, sheet="output", title=None, comment=None,
     font = {"font_name": "Liberation Sans", "font_size": 10}
     content = book.add_format({**font, "border": 1, "border_color": "gray", "valign": "bottom", "num_format": numFmt})
     whole = book.add_format({**font, "border": 1, "border_color": "gray", "valign": "bottom", "num_format": "#0"})
-    header = book.add_format({**font, "border": 1, "border_color": "black", "valign": "bottom", "bold": True})
+    # rwf's header_style (header row and row-name column): black borders and numFmt, not bold
+    header = book.add_format({**font, "border": 1, "border_color": "black", "valign": "bottom", "num_format": numFmt})
     widths = get_col_widths(frame)
     worksheet.set_column(0, 0, widths[0] + 2, header)
     for k, column in enumerate(frame.columns, start=1):
         worksheet.set_column(k, k, widths[k] + 2, whole if _is_whole(frame[column]) else content)
+    if not isinstance(frame.columns, pd.MultiIndex) and not isinstance(frame.index, pd.MultiIndex):
+        worksheet.write_row(0, 0, [""] + [str(column) for column in frame.columns], header)
     worksheet.freeze_panes(1, 1)
     if title is not None:
         worksheet.write_comment(0, 0, str(title), {"author": "pwf", "visible": False})

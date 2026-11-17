@@ -38,6 +38,7 @@ report_regression matches rwf (tests/test_glm_linear_regression.py):
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
+import ast
 import contextlib
 import inspect
 import io
@@ -171,11 +172,33 @@ def plot_scatterplot(df, method="lm", formula="y ~ x", base_size=10, coord_equal
 ##########################################################################################
 # R lm() VIEW OF A STATSMODELS FORMULA MODEL (internal)
 ##########################################################################################
+def _r_spelling(text):
+    """A patsy formula or term in R's spelling: I(age ** 2) -> I(age^2), np.log(x) -> log(x)."""
+    text = re.sub(r"\s*\*\*\s*", "^", text)
+    return re.sub(r"\b(?:np|numpy)\.(log|log10|log2|log1p|exp|sqrt|abs)\(", r"\1(", text)
+
+
 def _r_column_name(name):
     """R's coefficient name of a patsy column: Intercept -> (Intercept), smoker[T.yes] -> smokeryes."""
     if name == "Intercept":
         return "(Intercept)"
-    return re.sub(r"\[(?:T\.)?([^\]]*)\]", r"\1", name)
+    return re.sub(r"\[(?:T\.)?([^\]]*)\]", r"\1", _r_spelling(name))
+
+
+def _factor_variables(code, columns):
+    """The data columns a patsy factor reads, as R's all.vars(): "I(age ** 2)" -> ["age"]."""
+    try:
+        tree = ast.parse(code, mode="eval")
+    except SyntaxError:
+        return [code]
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in columns:
+            found.append(node.id)
+        elif (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "Q" and node.args
+              and isinstance(node.args[0], ast.Constant) and node.args[0].value in columns):
+            found.append(node.args[0].value)
+    return list(dict.fromkeys(found)) or [code]
 
 
 def _design_info(model):
@@ -191,7 +214,7 @@ def _r_terms(formula):
 
 def _deparse_formula(formula):
     """R's deparse() spacing of a formula: spaces around ~ + - * / and after commas, none around : and ^."""
-    text = re.sub(r"\s+", "", formula)
+    text = re.sub(r"\s+", "", _r_spelling(formula))
     out = []
     for k, char in enumerate(text):
         previous = text[k - 1] if k else ""
@@ -259,7 +282,7 @@ def _r_lm(model):
         piece = design_info.term_slices[term]
         columns.extend(range(piece.start, piece.stop))
         assign.extend([k] * (piece.stop - piece.start))
-        labels.append(term.name())
+        labels.append(_r_spelling(term.name()))
     exog = np.asarray(model.model.exog)[:, columns]
     names = [_r_column_name(design_info.column_names[c]) for c in columns]
     rows = model.model.data.row_labels
@@ -349,10 +372,16 @@ def _vif_predictor(model):
     the single column "vif" is returned then.
     """
     di = _design_info(model)
-    term_names = [term.name() for term in _r_terms(model.model.formula) if term.factors]
+    terms = _r_terms(model.model.formula)
+    if not terms or terms[0].factors:
+        raise ValueError("no intercept: car::vif fails")
+    term_names = [term.name() for term in terms if term.factors]
     if len(term_names) < 2:
         raise ValueError("model contains fewer than 2 terms")
-    term_vars = {t: t.split(":") for t in term_names}
+    data_columns = set(map(str, model.model.data.frame.columns))
+    # as car, a predictor is a variable: I(age ** 2) belongs to age
+    term_vars = {t: list(dict.fromkeys(v for factor in t.split(":") for v in _factor_variables(factor, data_columns)))
+                 for t in term_names}
     predictors = list(dict.fromkeys(v for t in term_names for v in term_vars[t]))
 
     X = np.asarray(model.model.exog)
@@ -377,7 +406,7 @@ def _vif_predictor(model):
         which_terms = [t for t in term_names if predictor in term_vars[t]]
         related = set()
         for t in which_terms:
-            related.update(t.split(":"))
+            related.update(term_vars[t])
         unrelated = [p for p in predictors if p not in related]
         if unrelated:
             unrelated_terms = {t for t in term_names if any(u in term_vars[t] for u in unrelated)}

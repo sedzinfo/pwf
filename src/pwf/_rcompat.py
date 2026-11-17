@@ -381,3 +381,99 @@ def r_optim_bfgs(fn, gr, par, reltol=1.490116119384765625e-08, abstol=-np.inf, m
             break
     return {"par": b, "value": fmin, "convergence": 0 if iteration < maxit else 1,
             "counts": (funcount, gradcount)}
+
+
+# R's (X11's) levels of gray0 ... gray100, from grDevices::col2rgb(); no rounding rule gives all of them
+_R_GRAY = (
+    0, 3, 5, 8, 10, 13, 15, 18, 20, 23, 26, 28, 31, 33, 36, 38, 41, 43, 46, 48, 51, 54, 56, 59, 61,
+    64, 66, 69, 71, 74, 77, 79, 82, 84, 87, 89, 92, 94, 97, 99, 102, 105, 107, 110, 112, 115, 117,
+    120, 122, 125, 127, 130, 133, 135, 138, 140, 143, 145, 148, 150, 153, 156, 158, 161, 163, 166,
+    168, 171, 173, 176, 179, 181, 184, 186, 189, 191, 194, 196, 199, 201, 204, 207, 209, 212, 214,
+    217, 219, 222, 224, 227, 229, 232, 235, 237, 240, 242, 245, 247, 250, 252, 255
+)
+
+
+def r_color(name):
+    """An R colour name for matplotlib/plotnine: R's "gray25"/"grey25" become R's hex, others pass through."""
+    match = re.fullmatch(r"gr[ae]y(\d{1,3})", str(name))
+    if match and int(match.group(1)) <= 100:
+        return "#{0:02X}{0:02X}{0:02X}".format(_R_GRAY[int(match.group(1))])
+    return name
+
+
+def r_uniroot(f, lower, upper, f_lower=None, f_upper=None, tol=np.finfo(float).eps ** 0.25, maxiter=1000):
+    """
+    R's uniroot(f, c(lower, upper), tol = tol)$root, a line-by-line port of
+    R_zeroin2() (Brent's method, R's src/library/stats/src/zeroin.c), so a
+    loose tol stops where R's does. f_lower/f_upper default to f(lower) and
+    f(upper); as uniroot, their signs must differ.
+    """
+    eps = np.finfo(float).eps
+    a, b = float(lower), float(upper)
+    fa = float(f(a)) if f_lower is None else float(f_lower)
+    fb = float(f(b)) if f_upper is None else float(f_upper)
+    if fa * fb > 0:
+        raise ValueError("f() values at end points not of opposite sign")
+    c, fc = a, fa
+    if fa == 0.0:
+        return a
+    if fb == 0.0:
+        return b
+    for _ in range(maxiter + 1):
+        prev_step = b - a
+        if abs(fc) < abs(fb):  # b becomes the best approximation
+            a, b, c = b, c, b
+            fa, fb, fc = fb, fc, fb
+        tol_act = 2 * eps * abs(b) + tol / 2
+        new_step = (c - b) / 2
+        if abs(new_step) <= tol_act or fb == 0.0:
+            return b
+        if abs(prev_step) >= tol_act and abs(fa) > abs(fb):  # try interpolation
+            cb = c - b
+            if a == c:  # linear
+                t1 = fb / fa
+                p = cb * t1
+                q = 1.0 - t1
+            else:  # inverse quadratic
+                q, t1, t2 = fa / fc, fb / fc, fb / fa
+                p = t2 * (cb * q * (q - t1) - (b - a) * (t1 - 1.0))
+                q = (q - 1.0) * (t1 - 1.0) * (t2 - 1.0)
+            if p > 0:
+                q = -q
+            else:
+                p = -p
+            if p < (0.75 * cb * q - abs(tol_act * q) / 2) and p < abs(prev_step * q / 2):
+                new_step = p / q
+        if abs(new_step) < tol_act:
+            new_step = tol_act if new_step > 0 else -tol_act
+        a, fa = b, fb
+        b += new_step
+        fb = float(f(b))
+        if (fb > 0 and fc > 0) or (fb < 0 and fc < 0):
+            c, fc = a, fa
+    return b
+
+
+def r_make_unique(names, sep="."):
+    """
+    R's make.unique(names, sep): a repeated name gets sep and the first count
+    (1, 2, ...) that makes it unique, as rbind() does to row names with
+    sep = "" (E1, E1 -> E1, E11).
+    """
+    names = [str(name) for name in names]
+    used, seen, counts, result = set(names), set(), {}, []
+    for name in names:
+        if name not in seen:
+            seen.add(name)
+            result.append(name)
+            continue
+        count = counts.get(name, 0)
+        while True:
+            count += 1
+            candidate = f"{name}{sep}{count}"
+            if candidate not in used:
+                break
+        counts[name] = count
+        used.add(candidate)
+        result.append(candidate)
+    return result

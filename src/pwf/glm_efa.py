@@ -25,11 +25,13 @@ from plotnine import (
 
 try:
     from ._efa import fa, model_loadings as _model_loadings
+    from ._rcompat import r_make_unique
     from .functions_plot import plot_multiplot, report_pdf
     from .functions_strings import str_proper, call_to_string
     from .explore_assumptions import plot_histogram
 except ImportError:
     from _efa import fa, model_loadings as _model_loadings
+    from _rcompat import r_make_unique
     from functions_plot import plot_multiplot, report_pdf
     from functions_strings import str_proper, call_to_string
     from explore_assumptions import plot_histogram
@@ -213,7 +215,9 @@ def compute_residual_stats(model, data=None):
         correlation/covariance matrix if `data` is given.
     data (array-like, optional): A second matrix to subtract from
         `model` directly (residuals = model - data), instead of using
-        a fitted EFA model's own residual matrix.
+        a fitted EFA model's own residual matrix. As rwf, every element
+        of model - data counts then (both triangles and the diagonal),
+        and the proportion divides by its number of rows.
 
     Returns:
     pandas.DataFrame: 3 rows (RMSR, count, proportion), with 'value',
@@ -224,14 +228,14 @@ def compute_residual_stats(model, data=None):
     >>> compute_residual_stats(model)
     """
     if data is not None:
-        residual_matrix = np.asarray(model, dtype=float) - np.asarray(data, dtype=float)
-    else:
+        residuals = np.atleast_2d(np.asarray(model, dtype=float) - np.asarray(data, dtype=float))
+    else:  # the upper triangle as a one-column matrix
         residual_matrix = model.residual.to_numpy()
-    residuals = residual_matrix[np.triu_indices_from(residual_matrix, k=1)]
+        residuals = residual_matrix[np.triu_indices_from(residual_matrix, k=1)][:, None]
 
     large_residuals = np.abs(residuals) > 0.05
     n_large = int(large_residuals.sum())
-    prop_large = n_large / len(residuals)
+    prop_large = n_large / residuals.shape[0]  # R: nrow(residuals)
     rmsr = float(np.sqrt(np.mean(residuals ** 2)))
 
     return pd.DataFrame({
@@ -313,8 +317,9 @@ def report_efa(model, df, file=None, w=10, h=5, cut=0, base_size=10, scores=Fals
         "plot_loadings_pattern": plot_loadings(model, matrix_type="pattern", base_size=base_size),
     }
     residual_offdiag = model.residual.to_numpy()[np.triu_indices_from(model.residual.to_numpy(), k=1)]
-    plots["plot_residual_histogram"] = plot_histogram(
-        pd.DataFrame({"data": residual_offdiag}), bins=30, title="Histogram of residuals", base_size=base_size)
+    plots["plot_residual_histogram"] = next(iter(plot_histogram(  # rwf: a list holding the one plot
+        pd.DataFrame({"data": residual_offdiag}), bins=30, title="Histogram of residuals",
+        base_size=base_size).values()))
     if file is not None:
         flat_plots = [plots["plot_scree"], plots["plot_loadings_structure"]["plot_barplot"],
                       plots["plot_loadings_pattern"]["plot_barplot"], plots["plot_residual_histogram"]]
@@ -330,6 +335,7 @@ def report_efa(model, df, file=None, w=10, h=5, cut=0, base_size=10, scores=Fals
         pd.concat([pd.DataFrame({"type": "residual correlations"}, index=model.residual.index), model.residual],
                   axis=1),
     ])
+    correlations.index = r_make_unique(correlations.index, sep="")  # R's rbind(): E1, ..., E11, ..., E12, ...
     vaccounted = model.Vaccounted.copy()
     vaccounted.insert(0, "row.names.model.Vaccounted.", vaccounted.index)
     vaccounted.insert(0, "type", "variance accounted")
@@ -351,20 +357,24 @@ def report_efa(model, df, file=None, w=10, h=5, cut=0, base_size=10, scores=Fals
         except ImportError:
             from functions_excel import excel_matrix, excel_critical_value
         with pd.ExcelWriter(f"{file}.xlsx", engine="xlsxwriter") as writer:
-            excel_matrix(correlations.drop(columns="type"), writer, sheet="r")
-            excel_matrix(model.np_obs, writer, sheet="n")
-            excel_critical_value(residual_stats, writer, sheet="residual stats")
+            # rwf's sheets, writers and options
+            excel_matrix(correlations, writer, sheet="r", conditional_formatting=True, numFmt="#0.00")
+            excel_matrix(model.np_obs, writer, sheet="n", conditional_formatting=True, numFmt="#0.00")
+            excel_matrix(residual_stats, writer, sheet="residual stats", conditional_formatting=False)
             excel_critical_value(fit_index, writer, sheet="fit_index")
-            excel_critical_value(loadings, writer, sheet="loadings")
-            excel_critical_value(_LOADING_CRITICAL, writer, sheet="loading critical values")
-            excel_matrix(model.weights, writer, sheet="weights")
+            if len(model.values) > 0:
+                excel_matrix(loadings, writer, sheet="loadings", conditional_formatting=True,
+                             title="structure loadings: loadings after rotation, pattern loadings: loadings before "
+                                   "rotation")
+                excel_matrix(_LOADING_CRITICAL, writer, sheet="loading critical values", conditional_formatting=True)
+                excel_matrix(model.weights, writer, sheet="weights", conditional_formatting=False)
             excel_critical_value(determinant_test, writer, sheet="determinant")
             excel_critical_value(bartlett_test, writer, sheet="bartlett test")
-            excel_critical_value(kmo_test.reset_index(names="variable"), writer, sheet="msa")
-            excel_matrix(model_communality, writer, sheet="communalities")
+            excel_critical_value(kmo_test, writer, sheet="msa")
+            excel_matrix(model_communality, writer, sheet="communalities", conditional_formatting=False)
             if scores:
-                excel_matrix(model.scores, writer, sheet="scores")
-            excel_critical_value(model_call, writer, sheet="call")
+                excel_matrix(model.scores, writer, sheet="scores", conditional_formatting=True)
+            excel_matrix(model_call, writer, sheet="call")
     return result
 ##########################################################################################
 # EXAMPLES

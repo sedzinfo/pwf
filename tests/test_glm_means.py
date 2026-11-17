@@ -6,7 +6,8 @@ from pwf import glm_means
 
 # wilcox.test finds its normal-approximation CI with uniroot(tol = 1e-4); the
 # Python port uses brentq with the same tolerance, so bounds agree to ~1e-4.
-WTEST_TOL = {"CI_l": (0, 1e-3), "CI_u": (0, 1e-3)}
+# the interval comes from R's uniroot(tol = 1e-4) itself (_rcompat.r_uniroot), so it matches to ~1e-12
+WTEST_TOL = {"CI_l": (1e-10, 1e-10), "CI_u": (1e-10, 1e-10)}
 
 
 @pytest.fixture
@@ -100,3 +101,19 @@ def test_report_ttests_writes_excel(df_blood_pressure, tmp_path):
     result = glm_means.report_ttests(df=df_blood_pressure, dv=4, iv=2, file=str(file))
     assert (tmp_path / "ttest.xlsx").exists()
     assert len(result) == 1
+
+
+def test_report_ttests_mu_and_conf_level_match_rwf(df_blood_pressure, reference):
+    result = glm_means.report_ttests(df=df_blood_pressure, dv=[4, 5], iv=[2, 3], mu=2, conf_level=0.9)
+    assert_matches_reference(result, reference("report_ttests_mu_conf"))
+
+
+def test_report_wtests_options_match_rwf(df_blood_pressure, reference):
+    result = glm_means.report_wtests(df=df_blood_pressure, dv=[4, 5], iv=[2, 3], exact=False, correct=False,
+                                     conf_level=0.9)
+    assert_matches_reference(result, reference("report_wtests_asymptotic_uncorrected"), column_tol=WTEST_TOL)
+    result = glm_means.report_wtests(df=df_blood_pressure, dv=4, iv=2, mu=3)
+    assert_matches_reference(result, reference("report_wtests_mu"), column_tol=WTEST_TOL)
+    small = df_blood_pressure.iloc[list(range(12)) + list(range(60, 72))]
+    result = glm_means.report_wtests(df=small, dv=[4, 5], iv=2, exact=True)
+    assert_matches_reference(result, reference("report_wtests_exact"), column_tol=WTEST_TOL)

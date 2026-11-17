@@ -25,11 +25,29 @@ except ImportError:
 ##########################################################################################
 # FLATTEN LIST
 ##########################################################################################
+def _r_list_columns(x):
+    """
+    The columns R's data.frame() makes of a named list: a nested list becomes
+    columns too, keeping its own name when it has one column and named
+    "outer.inner" when it has several (list(d = list(e = 3)) -> e,
+    list(d = list(e = 3, f = 4)) -> d.e, d.f).
+    """
+    columns = {}
+    for name, value in x.items():
+        if isinstance(value, dict):
+            inner = _r_list_columns(value)
+            columns.update(inner if len(inner) == 1 else {f"{name}.{k}": v for k, v in inner.items()})
+        else:
+            columns[name] = value
+    return columns
+
+
 def _as_data_frame(x):
     """R's data.frame(x, stringsAsFactors = FALSE) for one list element."""
     if isinstance(x, pd.DataFrame):
         return x.reset_index(drop=True)
     if isinstance(x, dict):
+        x = _r_list_columns(x)
         if all(np.ndim(v) == 0 for v in x.values()):
             return pd.DataFrame({k: [v] for k, v in x.items()})
         return pd.DataFrame(x)

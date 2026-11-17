@@ -73,3 +73,28 @@ def test_report_regression_writes_files(tmp_path):
     sheets = list(pd.read_excel(f"{file}.xlsx", sheet_name=None))
     assert sheets == ["r", "Coefficients", "ANOVA", "Variance Covariance", "Outliers", "Durbin Watson", "VIF",
                       "Diagnostics", "Call"]
+
+
+MORE_CASES = {"poly": "charges ~ age + I(age**2) + sex", "log": "np.log(charges) ~ age + smoker * sex",
+              "noint": "charges ~ 0 + age + bmi", "na": "charges ~ bmi + children + smoker"}
+
+
+@pytest.mark.parametrize("case", list(MORE_CASES))
+def test_report_regression_more_models_match_rwf(reference, case):
+    # R's spelling of patsy terms (I(age^2), log(charges)); car::vif fails without an intercept or when a
+    # predictor spans terms (age in age and I(age^2)), so rwf has no VIF table there
+    data = _load_data("insurance")
+    if case == "na":
+        data.loc[[4, 49, 499], "bmi"] = np.nan
+        data.loc[[6, 69], "children"] = np.nan
+    result = glm_linear_regression.report_regression(smf.ols(MORE_CASES[case], data=data).fit(),
+                                                     plot_diagnostics=False)
+    for part in ["r", "coeficients", "deviance"]:
+        assert_frame_matches(result[part], reference(f"report_regression_{case}_{part}"), part)
+    anova = result["anova"].rename_axis("term").reset_index()
+    assert_frame_matches(anova, reference(f"report_regression_{case}_anova"), "anova")
+    vif = reference(f"report_regression_{case}_vif")
+    if vif.shape[1] == 0 or (vif.shape == (0, 1)):
+        assert result["vif"].empty
+    else:
+        assert_frame_matches(result["vif"].reset_index(drop=True), vif, "vif")

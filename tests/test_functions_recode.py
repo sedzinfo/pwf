@@ -100,3 +100,9 @@ def test_drop_levels_accepts_column_names():
     by_name = fr.drop_levels(_df_levels(), factor_index=["factor2"], minimum_frequency=3)
     by_index = fr.drop_levels(_df_levels(), factor_index=3, minimum_frequency=3)
     pd.testing.assert_frame_equal(by_name, by_index)
+
+
+def test_flatten_list_nested_matches_rwf(reference):
+    # R's data.frame(): a nested list of one column keeps its name (e), of several is prefixed (d.e, d.f)
+    result = fr.flatten_list({"a": {"c": 2, "d": {"e": 3}}, "b": {"c": 4, "d": {"e": 5, "f": 6}}})
+    assert_matches_reference(result, reference("flatten_list_nested", keep_default_na=False, na_values=["NA"]))

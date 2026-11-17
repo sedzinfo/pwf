@@ -22,169 +22,214 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
 from plotnine import (
-    ggplot, aes, geom_histogram, geom_qq, geom_qq_line, geom_boxplot,
-    theme_bw, theme, labs, facet_wrap, coord_flip, geom_point, geom_text, geom_hline,
+    ggplot, aes, geom_histogram, geom_boxplot, geom_abline, stat_qq, lims,
+    theme_bw, theme, labs, coord_flip, geom_point, geom_text, geom_hline,
 )
 try:
-    from ._rcompat import r_number
+    from ._rcompat import r_color, r_number, r_round
     from .functions_environment import write_txt
     from .functions_excel import excel_critical_value
     from .functions_statistical import compute_standard
-    from .functions_strings import output_separator
+    from .functions_strings import output_separator, str_aes
+    from .functions_plot import report_pdf
 except ImportError:
-    from _rcompat import r_number
+    from _rcompat import r_color, r_number, r_round
     from functions_environment import write_txt
     from functions_excel import excel_critical_value
     from functions_statistical import compute_standard
-    from functions_strings import output_separator
+    from functions_strings import output_separator, str_aes
+    from functions_plot import report_pdf
+##########################################################################################
+# CAPTIONS AND INPUTS (internal, as rwf's plots print them)
+##########################################################################################
+def _r_text(x):
+    """R's paste() of round(x, 2): "NA" for a missing value."""
+    return "NA" if not np.isfinite(x) else r_number(r_round(x, 2))
+
+
+def _summary_caption(values, variable=None):
+    """rwf's caption: Variable (optional), Observations, Mean, SD and Median, each on a new line."""
+    values = np.asarray(values, dtype=float)
+    n = len(values)
+    lines = ([f"Variable={variable}"] if variable is not None else []) + [
+        f"Observations={n}",
+        "Mean=" + (_r_text(np.mean(values)) if n else "NA"),
+        "SD=" + (_r_text(np.std(values, ddof=1)) if n > 1 else "NA"),
+        "Median=" + (_r_text(np.median(values)) if n else "NA")]
+    return "".join("\n" + line for line in lines)
+
+
+def _as_frame(df):
+    """A data frame of the input; a vector is one column named after its Series name or "data"."""
+    if isinstance(df, pd.DataFrame):
+        return df
+    if isinstance(df, pd.Series):
+        return df.to_frame(name=df.name if df.name is not None else "data")
+    return pd.DataFrame({"data": np.asarray(df)})
 ##########################################################################################
 # PLOT HISTOGRAM
 ##########################################################################################
-def plot_histogram(df, base_size=10, title="Histogram", bins=10):
+def plot_histogram(df, bins=30, title="", base_size=10, xlims=None, fill="gray25", color="gray50", ylab="Count",
+                   pb=False):
     """
-    Faceted histogram, one panel per numeric column.
+    One histogram per numeric column, as rwf::plot_histogram, each captioned
+    with its observations, mean, SD and median.
 
     Parameters:
-    df (pandas.DataFrame): Numeric columns to plot.
+    df (pandas.DataFrame, Series or array-like): Data; non-numeric columns are skipped.
+    bins (int, optional): Number of bins. Defaults to 30.
+    title (str, optional): Plot title. Defaults to "".
     base_size (int, optional): Base font size. Defaults to 10.
-    title (str, optional): Plot title. Defaults to "Histogram".
-    bins (int, optional): Number of histogram bins. Defaults to 10.
+    xlims (tuple, optional): x-axis limits. Defaults to None.
+    fill (str, optional): Bar fill. Defaults to "gray25".
+    color (str, optional): Bar outline. Defaults to "gray50".
+    ylab (str, optional): y-axis label. Defaults to "Count".
+    pb (bool, optional): rwf's progress bar; accepted and ignored.
 
     Returns:
-    plotnine.ggplot
+    dict: {column: plotnine.ggplot}. As rwf, a single numeric column is
+    keyed and labelled "".
 
     Examples:
-    >>> import pandas as pd
-    >>> personality = load_dataset("personality")
-    >>> plot_histogram(personality.iloc[:, 1:6])
+    >>> plot_histogram(df_insurance[["age", "bmi"]])
     """
-    df = df.melt()
-    gp = (ggplot(data=df, mapping=aes(x="value"))
-          + geom_histogram(bins=bins, na_rm=True, colour="#FFFFFF")
-          + labs(title=title, y="Frequency", x="")
-          + theme_bw(base_size=base_size)
-          + theme(panel_spacing=0.025)
-          + facet_wrap('~variable', scales='free'))
-    return gp
+    numeric = _as_frame(df).select_dtypes(include=np.number)
+    names = [str(c) for c in numeric.columns] if numeric.shape[1] != 1 else [""]
+    plots = {}
+    for name, column in zip(names, numeric.columns):
+        values = numeric[column]
+        plot = (ggplot(pd.DataFrame({"data": values}), aes(x="data"))
+                + geom_histogram(bins=bins, fill=r_color(fill), color=r_color(color), na_rm=True)
+                + theme_bw(base_size=base_size)
+                + labs(title=title, x=name, y=ylab, caption=_summary_caption(values.dropna())))
+        if xlims is not None:
+            plot = plot + lims(x=xlims)
+        plots[name] = plot
+    return plots
 ##########################################################################################
 # PLOT QQ
 ##########################################################################################
-def plot_qq(df, base_size=10, title="QQ"):
+def plot_qq(df, title="", base_size=10, pb=False):
     """
-    Faceted normal Q-Q plot, one panel per numeric column.
+    One normal QQ plot per numeric column, as rwf::plot_qq: the line runs
+    through the quartiles (R's qqline), and the caption gives the variable,
+    observations, mean, SD and median of its finite values.
 
     Parameters:
-    df (pandas.DataFrame): Numeric columns to plot.
+    df (pandas.DataFrame, Series or array-like): Data; non-numeric columns are skipped.
+    title (str, optional): Plot title. Defaults to "".
     base_size (int, optional): Base font size. Defaults to 10.
-    title (str, optional): Plot title. Defaults to "QQ".
+    pb (bool, optional): rwf's progress bar; accepted and ignored.
 
     Returns:
-    plotnine.ggplot
+    dict: {column: plotnine.ggplot}.
 
     Examples:
-    >>> plot_qq(personality.iloc[:, 1:6])
+    >>> plot_qq(df_insurance[["age", "bmi"]])
     """
-    df = df.melt()
-    gp = (ggplot(data=df)
-          + geom_qq(aes(sample="value"))
-          + geom_qq_line(aes(sample="value"))
-          + labs(title=title)
-          + theme_bw(base_size=base_size)
-          + theme(panel_spacing=0.025)
-          + facet_wrap('~variable', scales='free'))
-    return gp
+    plots = {}
+    for column, series in _as_frame(df).items():
+        if not pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series):
+            continue
+        values = series.to_numpy(dtype=float)
+        values = values[np.isfinite(values)]
+        y, x = np.quantile(values, [0.25, 0.75]), stats.norm.ppf([0.25, 0.75])
+        slope = (y[1] - y[0]) / (x[1] - x[0])
+        plots[str(column)] = (ggplot(pd.DataFrame({"resids": values}), aes(sample="resids"))
+                              + stat_qq(alpha=.1)
+                              + geom_abline(slope=slope, intercept=y[0] - slope * x[0])
+                              + theme_bw(base_size=base_size)
+                              + labs(title=title, caption=_summary_caption(values, variable=column)))
+    return plots
 ##########################################################################################
 # PLOT BOXPLOT
 ##########################################################################################
-def plot_boxplot(df, base_size=10, title="Boxplot"):
+def plot_boxplot(df, title="", base_size=10):
     """
-    Boxplot of every numeric column, flipped horizontal.
+    Horizontal boxplots of the numeric columns, as rwf::plot_boxplot.
 
     Parameters:
-    df (pandas.DataFrame): Data (non-numeric columns are dropped).
+    df (pandas.DataFrame, Series or array-like): Data; non-numeric columns are skipped.
+    title (str, optional): Plot title. Defaults to "".
     base_size (int, optional): Base font size. Defaults to 10.
-    title (str, optional): Plot title. Defaults to "Boxplot".
 
     Returns:
-    plotnine.ggplot
+    plotnine.ggplot, captioned "Observations= n" (the number of rows).
 
     Examples:
-    >>> plot_boxplot(personality)
+    >>> plot_boxplot(df_insurance[["age", "bmi"]])
     """
-    df = df.select_dtypes(include=np.number)
-    df = df.melt()
-    gp = (ggplot(df, aes(x="variable", y="value"))
-          + geom_boxplot()
-          + labs(title=title, x="", y="")
-          + coord_flip()
-          + theme_bw(base_size=base_size)
-          + theme(panel_spacing=0.025))
-    return gp
+    numeric = _as_frame(df).select_dtypes(include=np.number)
+    long = numeric.melt(var_name="variable", value_name="value")
+    long = long[np.isfinite(long["value"].to_numpy(dtype=float))]
+    long["variable"] = pd.Categorical(long["variable"].astype(str), categories=[str(c) for c in numeric.columns])
+    return (ggplot(long, aes(x="variable", y="value"))
+            + geom_boxplot()
+            + labs(title=title, y="", x="", caption=f"Observations= {len(numeric)}")
+            + theme_bw(base_size=base_size)
+            + coord_flip())
 ##########################################################################################
 # PLOT NORMALITY DIAGNOSTICS
 ##########################################################################################
-def plot_normality_diagnostics(df, breaks='sturges', title='', file=None, w=10, h=10):
+def _density_nrd0(values):
+    """R's density(): Gaussian kernel, bw.nrd0 bandwidth, 512 points from min - 3 bw to max + 3 bw."""
+    n = len(values)
+    spread = min(np.std(values, ddof=1), (np.quantile(values, 0.75) - np.quantile(values, 0.25)) / 1.34)
+    if spread <= 0:
+        spread = np.std(values, ddof=1) or abs(values[0]) or 1.0
+    bw = 0.9 * spread * n ** -0.2
+    grid = np.linspace(values.min() - 3 * bw, values.max() + 3 * bw, 512)
+    return grid, stats.norm.pdf((grid[:, None] - values[None, :]) / bw).mean(axis=1) / bw
+
+
+def plot_normality_diagnostics(df, breaks=None, title="", file=None, w=10, h=10, pb=False):
     """
-    4-panel normality diagnostics (histogram, density, boxplot, Q-Q) per
-    numeric column, via matplotlib/seaborn.
+    For each numeric column, a page of four normality plots, as rwf's: a
+    histogram (Sturges' bins by default), the density, a boxplot and a
+    normal QQ plot with R's quartile line, subtitled with the variable,
+    observations, mean, SD and median.
 
     Parameters:
-    df (array-like or pandas.DataFrame): Numeric data. A 1-D array/Series
-        is treated as a single column named "data".
-    breaks (str or int, optional): Histogram bin spec, forwarded to
-        seaborn.histplot's `bins`. Defaults to "sturges".
-    title (str, optional): Figure suptitle. Defaults to "".
-    file (str, optional): If given, saves the figure to this path.
-        Defaults to None.
-    w, h (float, optional): Figure width, and height per row. Defaults to 10, 10.
+    df (pandas.DataFrame, Series or array-like): Data; non-numeric columns are skipped.
+    breaks (int or str, optional): Histogram bins. Defaults to None (Sturges).
+    title (str, optional): Title of every page. Defaults to "".
+    file (str, optional): PDF filename without extension (report_pdf). Defaults to None.
+    w, h (float, optional): Page width and height in inches. Default to 10.
+    pb (bool, optional): rwf's progress bar; accepted and ignored.
 
     Returns:
-    None. Displays (and optionally saves) the figure as a side effect.
+    dict: {column: matplotlib.figure.Figure}; columns with fewer than 3
+    values or no variance are skipped, with a message, as rwf.
 
     Examples:
-    >>> import numpy as np
-    >>> vector = np.random.normal(size=1000)
-    >>> plot_normality_diagnostics(vector, title="Normality Diagnostics", breaks=30)
-    >>> df = pd.DataFrame(np.random.normal(size=(1000, 2)), columns=["A", "B"])
-    >>> plot_normality_diagnostics(df, title="Normality Diagnostics")
+    >>> plot_normality_diagnostics(df_insurance[["age", "bmi"]], title="Normality")
     """
-    data_name = df.columns if isinstance(df, pd.DataFrame) else 'data'
-    df = pd.DataFrame(df)
-    df = df.select_dtypes(include=[np.number])
-    if df.shape[1] == 1:
-        df.columns = [data_name] if not isinstance(data_name, pd.Index) else df.columns
-
-    num_plots = len(df.columns)
-    fig, axes = plt.subplots(num_plots, 4, figsize=(w, h * num_plots), squeeze=False)
-
-    for i, col in enumerate(df.columns):
-        vector = df[col].dropna()
-
-        if len(vector) > 2 and np.var(vector) != 0:
-            sns.histplot(vector, bins=breaks, kde=False, ax=axes[i, 0])
-            axes[i, 0].set_title('Histogram')
-
-            sns.kdeplot(vector, ax=axes[i, 1])
-            axes[i, 1].set_title('Density Function')
-
-            sns.boxplot(x=vector, ax=axes[i, 2])
-            axes[i, 2].set_title('Boxplot')
-
-            stats.probplot(vector, dist="norm", plot=axes[i, 3])
-            axes[i, 3].get_lines()[1].set_color('red')
-            axes[i, 3].set_title('QQ Plot')
-
-            axes[i, 0].set_xlabel('')
-            axes[i, 1].set_xlabel('')
-            axes[i, 2].set_xlabel('')
-
-            fig.suptitle(title, y=1.05)
-            plt.subplots_adjust(hspace=0.4)
-
-            if file:
-                fig.savefig(file)
-        else:
-            print(f"Graph not produced for {col} due to sample size")
+    figures = {}
+    for column, series in _as_frame(df).select_dtypes(include=np.number).items():
+        values = series.dropna().to_numpy(dtype=float)
+        if len(values) <= 2 or np.var(values) == 0:
+            print(f"Graph not produced for {column} due to sample size")
+            continue
+        fig, axes = plt.subplots(2, 2, figsize=(w, h))
+        axes[0, 0].hist(values, bins="sturges" if breaks is None else breaks, color="white", edgecolor="black")
+        axes[0, 0].set_title("Histogram", loc="left")
+        axes[0, 1].plot(*_density_nrd0(values), color="black")
+        axes[0, 1].set_title("Density Function", loc="left")
+        axes[1, 0].boxplot(values)
+        axes[1, 0].set_title("Boxplot", loc="left")
+        stats.probplot(values, dist="norm", fit=False, plot=axes[1, 1])
+        y, x = np.quantile(values, [0.25, 0.75]), stats.norm.ppf([0.25, 0.75])
+        slope = (y[1] - y[0]) / (x[1] - x[0])
+        axes[1, 1].axline((x[0], y[0]), slope=slope, color="black")
+        axes[1, 1].set_title("Normal Q-Q Plot", loc="left")
+        fig.suptitle(title)
+        caption = _summary_caption(values, variable=str_aes(str(column))).lstrip("\n")
+        fig.text(0.01, 0.01, caption, fontsize=8, va="bottom")
+        fig.tight_layout(rect=(0, 0.08, 1, 0.97))
+        figures[str(column)] = fig
+    if file is not None and figures:
+        report_pdf(plotlist=list(figures.values()), file=file, title=title, w=w, h=h, print_plot=False)
+    return figures
 ##########################################################################################
 # OUTLIERS
 ##########################################################################################
@@ -197,59 +242,59 @@ def outlier_summary(vector):
 
     Returns:
     pandas.DataFrame: One row, columns abs_z_1.96, abs_z_2.58, abs_z_3.29
-    (percentage of cases beyond each threshold, as strings with a "%" suffix).
+    (percentage of the non-missing cases beyond each threshold, as rwf's
+    text, e.g. "5.26 %").
 
     Examples:
     >>> import numpy as np
     >>> vector = np.random.normal(size=1000)
     >>> outlier_summary(vector)
     """
-    zvariable = (vector - np.mean(vector)) / np.std(vector)
-    outlier95 = np.abs(zvariable) >= 1.96
-    outlier99 = np.abs(zvariable) >= 2.58
-    outlier999 = np.abs(zvariable) >= 3.29
-    ncases = len(vector[~np.isnan(zvariable)])
-    percent95 = round(100 * len(outlier95[outlier95 == True]) / ncases, 2)
-    percent99 = round(100 * len(outlier99[outlier99 == True]) / ncases, 2)
-    percent999 = round(100 * len(outlier999[outlier999 == True]) / ncases, 2)
-    result = pd.DataFrame({
-        'abs_z_1.96': [f"{percent95}%"],
-        'abs_z_2.58': [f"{percent99}%"],
-        'abs_z_3.29': [f"{percent999}%"]
-    })
-    return result
+    vector = np.asarray(vector, dtype=float)
+    zvariable = (vector - np.nanmean(vector)) / np.nanstd(vector, ddof=1)  # R: mean, sd with na.rm = TRUE
+    ncases = int(np.sum(~np.isnan(zvariable)))
+    # R's paste(round(100 * share, 2), "%"): R's rounding and number text, and a space before "%"
+    percents = {f"abs_z_{cut}": f"{r_number(r_round(100 * np.sum(np.abs(zvariable) >= cut) / ncases, 2))} %"
+                for cut in (1.96, 2.58, 3.29)}
+    return pd.DataFrame({name: [value] for name, value in percents.items()})
 ##########################################################################################
 # REMOVE OUTLIERS
 ##########################################################################################
-def remove_outliers(vector, probs=[0.25, 0.75], na_rm=True, **kwargs):
+def remove_outliers(vector, probs=(0.25, 0.75), na_rm=True, **kwargs):
     """
-    Flag or drop Tukey (IQR-rule) outliers from a numeric vector.
+    Replace Tukey (IQR-rule) outliers of a numeric vector with NaN, as rwf:
+    values more than 1.5 times the distance between the two quantiles
+    below the first or above the second.
 
     Parameters:
     vector (array-like): Numeric values.
-    probs (list of float, optional): Lower/upper quantiles defining the
-        IQR box. Defaults to [0.25, 0.75].
-    na_rm (bool, optional): If True (default), out-of-range values are
-        replaced with NaN (same length as input). If False, they're
-        dropped (shorter output).
+    probs (sequence of float, optional): Lower/upper quantiles defining
+        the box. Defaults to (0.25, 0.75).
+    na_rm (bool, optional): Ignore missing values when computing the
+        quantiles (True, default); as R's quantile(), False raises if any
+        value is missing.
+    **kwargs: R's quantile() arguments; type (1 to 9, default 7) is
+        supported.
 
     Returns:
-    numpy.ndarray
+    numpy.ndarray: Same length as vector, outliers replaced with NaN.
 
     Examples:
     >>> import numpy as np
     >>> vector = np.random.normal(size=1000)
     >>> remove_outliers(vector)
-    >>> remove_outliers(vector, na_rm=False)
     """
-    qnt = np.quantile(vector, probs)
+    vector = np.asarray(vector, dtype=float)
+    if not na_rm and np.isnan(vector).any():
+        raise ValueError("missing values and NaN's not allowed if 'na_rm' is False")
+    methods = {1: "inverted_cdf", 2: "averaged_inverted_cdf", 3: "closest_observation",
+               4: "interpolated_inverted_cdf", 5: "hazen", 6: "weibull", 7: "linear", 8: "median_unbiased",
+               9: "normal_unbiased"}
+    qnt = np.nanquantile(vector, probs, method=methods[kwargs.get("type", 7)])
     H = 1.5 * (qnt[1] - qnt[0])
-    y = np.copy(vector)
-    if na_rm:
-        y[vector < (qnt[0] - H)] = np.nan
-        y[vector > (qnt[1] + H)] = np.nan
-    else:
-        y = vector[(vector >= (qnt[0] - H)) & (vector <= (qnt[1] + H))]
+    y = vector.copy()
+    y[vector < (qnt[0] - H)] = np.nan
+    y[vector > (qnt[1] + H)] = np.nan
     return y
 ##########################################################################################
 # PLOT OUTLIER
@@ -680,26 +725,28 @@ if __name__ == "__main__":
     personality = load_dataset("personality")
 
     print("=" * 80, "\nplot_histogram / plot_qq / plot_boxplot\n", "=" * 80, sep="")
-    plot_histogram(personality.iloc[:, 1:6]).save("plot_histogram_example.png", verbose=False)
-    plot_qq(personality.iloc[:, 1:6]).save("plot_qq_example.png", verbose=False)
+    for name, plot in plot_histogram(personality.iloc[:, 1:6]).items():
+        plot.save(f"plot_histogram_{name}.png", verbose=False)
+    for name, plot in plot_qq(personality.iloc[:, 1:6]).items():
+        plot.save(f"plot_qq_{name}.png", verbose=False)
     plot_boxplot(personality.iloc[:, 1:6]).save("plot_boxplot_example.png", verbose=False)
-    print("saved plot_histogram_example.png, plot_qq_example.png, plot_boxplot_example.png")
+    print("saved plot_histogram_*.png, plot_qq_*.png, plot_boxplot_example.png")
 
     print("\n" + "=" * 80, "\nplot_normality_diagnostics\n", "=" * 80, sep="")
     np.random.seed(0)
     vector = np.random.normal(size=1000)
     plot_normality_diagnostics(vector, title="Normality Diagnostics (single vector)",
-                                breaks=30, file="plot_normality_diagnostics_vector.png")
-    print("saved plot_normality_diagnostics_vector.png")
+                                breaks=30, file="plot_normality_diagnostics_vector")
+    print("saved plot_normality_diagnostics_vector_*.pdf")
 
     df_norm = pd.DataFrame(np.random.normal(size=(1000, 2)), columns=["A", "B"])
     plot_normality_diagnostics(df_norm, title="Normality Diagnostics (2 columns)",
-                                file="plot_normality_diagnostics_df.png")
-    print("saved plot_normality_diagnostics_df.png")
+                                file="plot_normality_diagnostics_df")
+    print("saved plot_normality_diagnostics_df_*.pdf")
 
     print("\n" + "=" * 80, "\nouter_summary / remove_outliers\n", "=" * 80, sep="")
     print(outlier_summary(vector))
     cleaned_na = remove_outliers(vector)
     print(f"remove_outliers (na_rm=True): {np.isnan(cleaned_na).sum()} values replaced with NaN")
-    cleaned_drop = remove_outliers(vector, na_rm=False)
-    print(f"remove_outliers (na_rm=False): {len(vector) - len(cleaned_drop)} values dropped")
+    cleaned_type6 = remove_outliers(vector, type=6)
+    print(f"remove_outliers (quantile type 6): {np.isnan(cleaned_type6).sum()} values replaced with NaN")
