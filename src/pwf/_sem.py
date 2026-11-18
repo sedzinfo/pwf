@@ -17,11 +17,17 @@ Not supported (they raise NotImplementedError): observed exogenous
 regressors, mean structures, missing-data estimation, multiple groups,
 labels and constraints.
 """
+import inspect
 import re
 
 import numpy as np
 import pandas as pd
 from scipy import optimize, stats
+
+try:
+    from ._rcompat import r_deparse_call
+except ImportError:
+    from _rcompat import r_deparse_call
 
 _OPERATORS = ("=~", "~~", "~")
 
@@ -150,7 +156,8 @@ class SEMFit:
                 table.append(Parameter(name, "~~", name, True, 0.0, False))
         for name in latent:
             if (name, "~~", name) not in existing:
-                fixed_one = std_lv and name not in endogenous
+                # lavaan's std.lv fixes every latent (residual) variance to 1, endogenous ones included
+                fixed_one = std_lv
                 table.append(Parameter(name, "~~", name, not fixed_one, 1.0 if fixed_one else 0.0, False))
         exogenous = [n for n in latent if n not in endogenous]
         for i, a in enumerate(exogenous):
@@ -718,6 +725,11 @@ class SEMFit:
                          "sepc.all": np.sign(e) * sepc_all, "sepc.nox": np.sign(e) * sepc_all,
                          "_model": (op, lhs, rhs) in model_rows})
         table = pd.DataFrame(rows)
+        # lavaan's row names: positions in its parameter table, then in the candidates it adds
+        lavaan_order = [key(p.op, p.lhs, p.rhs) for p in self.table]
+        lavaan_order += [key(*r) for r in self._candidates() if key(*r) not in existing]
+        position = {k: i + 1 for i, k in enumerate(lavaan_order)}
+        table.index = [position.get(key(op, lhs, rhs)) for op, lhs, rhs in zip(table["op"], table["lhs"], table["rhs"])]
         if free_remove:
             table = table[~table["_model"]]
         table = table.drop(columns="_model")
@@ -725,7 +737,7 @@ class SEMFit:
             table = table.iloc[np.argsort(-table["mi"].to_numpy(), kind="stable")]
             if minimum_value > 0:
                 table = table[table["mi"] > minimum_value]
-            return table[table["mi"].notna()].reset_index(drop=True)
+            return table[table["mi"].notna()]
         table = table.drop(columns=["sepc.lv", "sepc.nox"])
         table["delta"] = delta
         table["ncp"] = (table["mi"] / (table["epc"] * table["epc"])) * delta ** 2
@@ -743,7 +755,7 @@ class SEMFit:
         table = table.iloc[np.argsort(-table["mi"].to_numpy(), kind="stable")]
         if minimum_value > 0:
             table = table[table["mi"] > minimum_value]
-        return table[table["mi"].notna()].reset_index(drop=True)
+        return table[table["mi"].notna()]  # indexed by lavaan's row numbers, as rwf's sheet shows them
 
     def inspect(self, what="est"):
         """
@@ -839,10 +851,45 @@ def sem(model, data, std_lv=False, missing="listwise", meanstructure=False):
     >>> fit.parameter_estimates()
     >>> sem("E =~ E1 + E2 + E3", df_with_missing_values, missing="ml")
     """
-    return SEMFit(model, data, std_lv=std_lv, missing=missing, meanstructure=meanstructure)
+    fit = SEMFit(model, data, std_lv=std_lv, missing=missing, meanstructure=meanstructure)
+    fit.r_call = _lavaan_call("sem", inspect.currentframe().f_back, model, data, std_lv, missing, meanstructure)
+    return fit
 
 
-cfa = sem
+def cfa(model, data, std_lv=False, missing="listwise", meanstructure=False):
+    """
+    lavaan::cfa: the same fit as sem() (the defaults are the same for these
+    models); only the call text rwf reports says cfa.
+    """
+    fit = SEMFit(model, data, std_lv=std_lv, missing=missing, meanstructure=meanstructure)
+    fit.r_call = _lavaan_call("cfa", inspect.currentframe().f_back, model, data, std_lv, missing, meanstructure)
+    return fit
+
+
+def _lavaan_call(kind, frame, model, data, std_lv, missing, meanstructure):
+    """
+    Lines of lavaan's fit@call as rwf's report_cfa writes them (deparse, spaces removed): the arguments
+    given, then the ones lavaan::sem/cfa add; model and data by the names they have in the caller.
+    """
+    def name_of(value, default):
+        caller = frame
+        while caller is not None:
+            found = [k for k, v in {**caller.f_globals, **caller.f_locals}.items()
+                     if v is value and not k.startswith("_")]
+            if found:
+                return found[0]
+            caller = caller.f_back
+        return default
+
+    arguments = [("model", name_of(model, "model")), ("data", name_of(data, "data"))]
+    arguments += [("std.lv", "TRUE")] if std_lv else []
+    arguments += [("missing", '"ml"')] if missing == "ml" else []
+    arguments += [("meanstructure", "TRUE")] if meanstructure else []
+    arguments += [("model.type", f'"{kind}"'), ("cmd", f'"{kind}"')]
+    arguments += [(name, "TRUE") for name in ["int.ov.free"]] + [("int.lv.free", "FALSE")]
+    arguments += [(name, "TRUE") for name in ["auto.fix.first", "auto.fix.single", "auto.var", "auto.cov.lv.x",
+                                              "auto.cov.y", "auto.th", "auto.delta", "auto.efa"]]
+    return [line.replace(" ", "") for line in r_deparse_call("lavaan::lavaan", arguments)]
 
 
 def simulate_data(model, sample_nobs=500, orthogonal=False, seed=None):

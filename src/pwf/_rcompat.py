@@ -477,3 +477,384 @@ def r_make_unique(names, sep="."):
         used.add(candidate)
         result.append(candidate)
     return result
+
+
+def r_optimize(f, lower, upper, tol=np.finfo(float).eps ** 0.25):
+    """
+    R's optimize(f, c(lower, upper), tol = tol)$minimum, a line-by-line port
+    of Brent_fmin() (R's src/library/stats/src/optimize.c), so a loose tol
+    stops where R's does. As R, a non-finite f is replaced by the largest
+    double.
+    """
+    def value(x):
+        result = float(f(x))
+        return result if np.isfinite(result) else np.finfo(float).max
+
+    c = (3.0 - np.sqrt(5.0)) * 0.5  # squared inverse of the golden ratio
+    eps = np.sqrt(np.finfo(float).eps)
+    a, b = float(lower), float(upper)
+    v = w = x = a + c * (b - a)
+    d = e = 0.0
+    fx = fv = fw = value(x)
+    tol3 = tol / 3.0
+    while True:
+        xm = (a + b) * 0.5
+        tol1 = eps * abs(x) + tol3
+        t2 = tol1 * 2.0
+        if abs(x - xm) <= t2 - (b - a) * 0.5:
+            break
+        p = q = r = 0.0
+        if abs(e) > tol1:  # fit a parabola
+            r = (x - w) * (fx - fv)
+            q = (x - v) * (fx - fw)
+            p = (x - v) * q - (x - w) * r
+            q = (q - r) * 2.0
+            if q > 0.0:
+                p = -p
+            else:
+                q = -q
+            r = e
+            e = d
+        if abs(p) >= abs(q * 0.5 * r) or p <= q * (a - x) or p >= q * (b - x):  # golden-section step
+            e = (b - x) if x < xm else (a - x)
+            d = c * e
+        else:  # parabolic-interpolation step
+            d = p / q
+            u = x + d
+            if u - a < t2 or b - u < t2:
+                d = tol1 if x < xm else -tol1
+        if abs(d) >= tol1:
+            u = x + d
+        elif d > 0.0:
+            u = x + tol1
+        else:
+            u = x - tol1
+        fu = value(u)
+        if fu <= fx:
+            if u < x:
+                b = x
+            else:
+                a = x
+            v, w, x = w, x, u
+            fv, fw, fx = fw, fx, fu
+        else:
+            if u < x:
+                a = u
+            else:
+                b = u
+            if fu <= fw or w == x:
+                v, fv, w, fw = w, fw, u, fu
+            elif fu <= fv or v == x or v == w:
+                v, fv = u, fu
+    return x
+
+
+def _r_dnorm(x, sd):
+    """R's dnorm(x, sd = sd) (dnorm4 in nmath/dnorm.c, with its accurate tail for |x / sd| >= 5)."""
+    one_over_sqrt_2pi = 0.398942280401432677939946059934
+    z = np.abs(np.asarray(x, dtype=float) / sd)
+    result = one_over_sqrt_2pi * np.exp(-0.5 * z * z) / sd
+    tail = z >= 5
+    if tail.any():
+        zt = z[tail]
+        x1 = np.ldexp(np.rint(np.ldexp(zt, 16)), -16)
+        x2 = zt - x1
+        values = one_over_sqrt_2pi / sd * (np.exp(-0.5 * x1 * x1) * np.exp((-0.5 * x2 - x1) * x2))
+        values[zt > np.sqrt(-2 * 0.693147180559945309417232121458 * (-1021 + 1 - 53))] = 0.0
+        result[tail] = values
+    return result
+
+
+def r_bw_nrd0(x):
+    """R's bw.nrd0(x): 0.9 * min(sd, IQR / 1.34) * n^-0.2, IQR from R's type 7 quantiles."""
+    x = np.asarray(x, dtype=float)
+    if len(x) < 2:
+        raise ValueError("need at least 2 data points")
+    ordered = np.sort(x)
+
+    def quantile7(p):  # R's quantile(type = 7), its own formula
+        index = 1 + (len(ordered) - 1) * p
+        lo, hi = int(np.floor(index)), int(np.ceil(index))
+        q = ordered[lo - 1]
+        if index > lo and ordered[hi - 1] != q:
+            h = index - lo
+            q = (1 - h) * q + h * ordered[hi - 1]
+        return q
+
+    hi = float(np.std(x, ddof=1))
+    lo = min(hi, (quantile7(0.75) - quantile7(0.25)) / 1.34)
+    if not lo:
+        lo = hi or abs(x[0]) or 1.0
+    return 0.9 * lo * len(x) ** -0.2
+
+
+def r_density(x, bw="nrd0", adjust=1, n=512, from_=None, to=None, cut=3, ext=4):
+    """
+    R's density(x, bw, adjust, n = n, from, to, cut, ext) with the Gaussian
+    kernel: R's linear binning (BinDist) on its grid, the FFT convolution and
+    linear interpolation onto n points (R >= 4.4 coordinates). Missing values
+    must be removed first (R's na.rm); non-finite values are dropped as R's.
+
+    Returns:
+    tuple: (x, y, bw) as density()'s $x, $y and $bw.
+    """
+    x = np.asarray(x, dtype=float)
+    total = len(x)
+    x = x[np.isfinite(x)]
+    nx = len(x)
+    weights = np.full(nx, 1 / nx)
+    n_user = n
+    n = max(n, 512)
+    if n > 512:
+        n = 2 ** int(np.ceil(np.log2(n)))
+    if isinstance(bw, str):
+        if bw.lower() != "nrd0":
+            raise ValueError("only bw = 'nrd0' (R's default) is supported")
+        bw = r_bw_nrd0(x)
+    bw = adjust * bw
+    if bw <= 0:
+        raise ValueError("'bw' is not positive.")
+    from_ = x.min() - cut * bw if from_ is None else from_
+    to = x.max() + cut * bw if to is None else to
+    lo, up = from_ - ext * bw, to + ext * bw
+    # BinDist (massdist.c): each point's weight split between its two grid neighbours, added in data order
+    delta = (up - lo) / (n - 1)
+    position = (x - lo) / delta
+    ix = np.floor(position).astype(int)
+    fx = position - ix
+    index = np.column_stack([ix, ix + 1]).ravel()
+    mass = np.column_stack([weights * (1 - fx), weights * fx]).ravel()
+    keep = np.column_stack([(ix >= 0) & (ix <= n - 1), (ix >= -1) & (ix <= n - 2)]).ravel()
+    y = np.zeros(2 * n)
+    np.add.at(y, index[keep], mass[keep])
+    y *= nx / total
+    # seq.int(from, to, length.out) is from + i * by with the last point set to `to`: np.linspace, bit for bit
+    kords = np.linspace(0, (2 * n - 1) / (n - 1) * (up - lo), 2 * n)
+    kords[n + 1:] = -kords[n - 1:0:-1]
+    kords = _r_dnorm(kords, bw)
+    # R's fft(z, inverse = TRUE) / length(y) is numpy's normalised ifft
+    kords = np.maximum(0, np.fft.ifft(np.fft.fft(y) * np.conj(np.fft.fft(kords))).real[:n])
+    xords = np.linspace(lo, up, n)
+    grid = np.linspace(from_, to, n_user)
+    # approx(): y[i] + (y[j] - y[i]) * ((v - x[i]) / (x[j] - x[i])), exact at the nodes
+    i = np.clip(np.searchsorted(xords, grid, side="right") - 1, 0, n - 2)
+    j = i + 1
+    values = kords[i] + (kords[j] - kords[i]) * ((grid - xords[i]) / (xords[j] - xords[i]))
+    values = np.where(grid == xords[j], kords[j], np.where(grid == xords[i], kords[i], values))
+    return grid, values, bw
+
+
+def r_pretty(x, n=5, min_n=None, shrink_sml=0.75, high_u_bias=1.5, u5_bias=None, eps_correct=0, f_min=2 ** -20):
+    """
+    R's pretty(x, n, min.n, ...) (R >= 4.2, bounds = TRUE): a port of R_pretty()
+    (src/appl/pretty.c) and pretty.default(), giving R's round breakpoints.
+    """
+    x = np.asarray(x, dtype=float)
+    x = x[np.isfinite(x)]
+    if not len(x):
+        return x
+    n = int(n)
+    min_n = n // 3 if min_n is None else int(min_n)
+    h, h5 = high_u_bias, (0.5 + 1.5 * high_u_bias if u5_bias is None else u5_bias)
+    eps, rounding_eps = np.finfo(float).eps, 1e-10
+    lo = lo_ = float(x.min())
+    up = up_ = float(x.max())
+    dx = up_ - lo_
+    if dx == 0 and up_ == 0:
+        cell, i_small = 1.0, True
+    else:
+        cell = max(abs(lo_), abs(up_))
+        bound = 1 + (1 / (1 + h) if h5 >= 1.5 * h + 0.5 else 1.5 / (1 + h5))
+        bound *= max(1, n) * eps
+        i_small = dx < cell * bound * 3
+    if i_small:
+        if cell > 10:
+            cell = 9 + cell / 10
+        cell *= shrink_sml
+        if min_n > 1:
+            cell /= min_n
+    else:
+        cell = dx
+        if n > 1:
+            cell /= n
+    subsmall = f_min * np.finfo(float).tiny or np.finfo(float).tiny
+    if cell < subsmall:
+        cell = subsmall
+    elif cell > np.finfo(float).max / 1.25:
+        cell = np.finfo(float).max / 1.25
+    base = 10.0 ** np.floor(np.log10(cell))
+    unit = base
+    if 2 * base - cell < h * (cell - unit):
+        unit = 2 * base
+        if 5 * base - cell < h5 * (cell - unit):
+            unit = 5 * base
+            if 10 * base - cell < h * (cell - unit):
+                unit = 10 * base
+    ns = np.floor(lo_ / unit + rounding_eps)
+    nu = np.ceil(up_ / unit - rounding_eps)
+    if eps_correct and (eps_correct > 1 or not i_small):
+        lo = lo_ * (1 - eps) if lo_ != 0 else -np.finfo(float).tiny
+        up = up_ * (1 + eps) if up_ != 0 else np.finfo(float).tiny
+    while ns * unit > lo + rounding_eps * unit:
+        ns -= 1
+    while not np.isfinite(ns * unit):
+        ns += 1
+    while nu * unit < up - rounding_eps * unit:
+        nu += 1
+    while not np.isfinite(nu * unit):
+        nu -= 1
+    k = int(0.5 + nu - ns)
+    if k < min_n:  # add divisions to reach min_n; a range ending at 0 keeps 0 as its bound (as R 4.6)
+        k = min_n - k
+        if lo_ == 0 and ns == 0 and up_ != 0:
+            nu += k
+        elif up_ == 0 and nu == 0 and lo_ != 0:
+            ns -= k
+        elif ns >= 0:
+            nu += k // 2
+            ns -= k // 2 + k % 2
+        else:
+            ns -= k // 2
+            nu += k // 2 + k % 2
+        ndiv = min_n
+    else:
+        ndiv = k
+    if ns * unit < lo:
+        lo = ns * unit
+    if nu * unit > up:
+        up = nu * unit
+    s = np.linspace(lo, up, ndiv + 1)  # seq.int(l, u, length.out = n + 1)
+    if not eps_correct and ndiv:
+        s[np.abs(s) < 1e-14 * (up / ndiv - lo / ndiv)] = 0.0
+    return s
+
+
+def r_hist(x, breaks="Sturges"):
+    """
+    R's hist(x, breaks)$breaks and $counts: breaks from pretty() on Sturges'
+    (or Scott's, Freedman-Diaconis') number of classes, a number of classes, or
+    the breakpoints themselves; right-closed classes with R's fuzz.
+
+    Returns:
+    tuple: (breaks, counts) as numpy arrays.
+    """
+    x = np.asarray(x, dtype=float)
+    x = x[np.isfinite(x)]
+    if isinstance(breaks, str):
+        kind = breaks.lower()
+        if kind == "sturges":
+            breaks = int(np.ceil(np.log2(len(x)) + 1))
+        elif kind == "scott":
+            width = 3.5 * np.sqrt(np.var(x, ddof=1)) * len(x) ** (-1 / 3)
+            breaks = max(1, int(np.ceil(np.ptp(x) / width))) if width > 0 else 1
+        elif kind in ("fd", "freedman-diaconis"):
+            rounded = np.array([float(f"{v:.5g}") for v in x])  # signif(x, 5)
+            width = 2 * (np.quantile(rounded, 0.75) - np.quantile(rounded, 0.25))
+            alpha = 1 / 4
+            while width == 0 and (alpha := alpha / 2) >= 1 / 512:
+                width = (np.quantile(rounded, 1 - alpha) - np.quantile(rounded, alpha)) / (1 - 2 * alpha)
+            breaks = max(1, int(np.ceil(np.ptp(x) / (width * len(x) ** (-1 / 3))))) if width > 0 else 1
+        else:
+            raise ValueError("unknown 'breaks' algorithm")
+    breaks = np.atleast_1d(np.asarray(breaks, dtype=float))
+    if len(breaks) == 1:
+        breaks = r_pretty([x.min(), x.max()], n=int(breaks[0]), min_n=1)
+    else:
+        breaks = np.sort(breaks)
+    widths = np.diff(breaks)
+    nb = len(breaks)
+    diddle = 1e-7 * (np.median(widths) if nb > 5 else np.ptp(x) if nb <= 3 else widths[widths > 0].min())
+    fuzzy = breaks + np.r_[-diddle, np.full(nb - 1, diddle)]  # right = TRUE, include.lowest = TRUE
+    inside = (fuzzy[0] <= x) & (x <= fuzzy[-1])
+    bins = np.clip(np.searchsorted(fuzzy, x[inside], side="left") - 1, 0, nb - 2)
+    return breaks, np.bincount(bins, minlength=nb - 1)
+
+
+def r_ppoints(n):
+    """R's ppoints(n): (1:n - a) / (n + 1 - 2a), a = 3/8 for n <= 10, else 1/2."""
+    a = 3 / 8 if n <= 10 else 0.5
+    return (np.arange(1, n + 1) - a) / (n + 1 - 2 * a)
+
+
+def r_boxplot_stats(x, coef=1.5):
+    """
+    R's boxplot.stats(x, coef): Tukey's five numbers (fivenum: hinges, not
+    quantiles), whiskers at the most extreme values within coef * IQR of the
+    hinges, and the values beyond them.
+
+    Returns:
+    dict: stats (whisker, hinge, median, hinge, whisker), n, conf and out.
+    """
+    x = np.asarray(x, dtype=float)
+    x = x[~np.isnan(x)]
+    ordered = np.sort(x)
+    n = len(ordered)
+    n4 = np.floor((n + 3) / 2) / 2
+    d = np.array([1, n4, (n + 1) / 2, n + 1 - n4, n]) - 1
+    five = 0.5 * (ordered[np.floor(d).astype(int)] + ordered[np.ceil(d).astype(int)])
+    iqr = five[3] - five[1]
+    out = (x < five[1] - coef * iqr) | (x > five[3] + coef * iqr)
+    if out.any():
+        five[[0, 4]] = x[~out].min(), x[~out].max()
+    return {"stats": five, "n": n, "conf": five[2] + np.array([-1.58, 1.58]) * iqr / np.sqrt(n), "out": x[out]}
+
+
+def r_call_text(function, arguments, frame=None):
+    """
+    rwf's call text: R's deparse(match.call()) with quotes and spaces removed,
+    built from the arguments that were given, (name, value) pairs in order.
+    None and empty lists are left out; a data frame is written by the name it has in frame's
+    callers ("df" when not found); lists are c(...), dicts list(...).
+    """
+    def name_of(value):
+        caller = frame
+        while caller is not None:
+            found = [k for k, v in {**caller.f_globals, **caller.f_locals}.items()
+                     if v is value and not k.startswith("_")]
+            if found:
+                return found[0]
+            caller = caller.f_back
+        return "df"
+
+    def text(value):
+        if isinstance(value, pd.DataFrame):
+            return name_of(value)
+        if isinstance(value, dict):
+            return "list(" + ",".join(f"{k}={text(v)}" for k, v in value.items()) + ")"
+        if isinstance(value, (list, tuple, np.ndarray, pd.Index, pd.Series)):
+            values = list(value)
+            return text(values[0]) if len(values) == 1 else "c(" + ",".join(text(v) for v in values) + ")"
+        return r_label(value)
+
+    def given(value):
+        return value is not None and not (isinstance(value, (list, tuple, dict)) and len(value) == 0)
+
+    parts = [f"{name}={text(value)}" for name, value in arguments if given(value)]
+    return f"{function}({','.join(parts)})".replace(" ", "").replace('"', "").replace("'", "")
+
+
+def r_deparse_call(function, arguments, cutoff=60):
+    """
+    Lines of R's deparse() of a call function(name = value, ...): after each argument's ", " and after
+    each binary operator of a formula (" ~ ", " + ", ...), deparse ends the line once it is longer than
+    width.cutoff (60) characters; continuation lines are indented by 4 spaces.
+    """
+    lines, line = [], f"{function}("
+
+    def check():
+        nonlocal line
+        if len(line) > cutoff:
+            lines.append(line)
+            line = "    "
+
+    for k, (name, value) in enumerate(arguments):
+        line += f"{name} = "
+        for piece in re.split(r"( [~+\-*/] )", value):
+            line += piece
+            if re.fullmatch(r" [~+\-*/] ", piece):
+                check()
+        if k < len(arguments) - 1:
+            line += ", "
+            check()
+    lines.append(line + ")")
+    return lines

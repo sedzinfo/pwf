@@ -99,3 +99,17 @@ def test_report_alpha_workbook_matches_rwf(reference, tmp_path):
         counts = [len(re.findall(r"<comment ", archive.read(name).decode("utf-8")))
                   for name in sorted(n for n in archive.namelist() if re.search(r"comments\d+\.xml$", n))]
     assert counts == [10, 9, 7]
+
+
+def test_plot_mtmm_matches_rwf(reference):
+    """R's collation for traits and methods (A, b, c; m1, m2, M3), rwf's lower-case names and cell labels."""
+    data = reference("plot_mtmm_data")
+    key = {"b": ["x1", "x2", "x3"], "A": ["x4", "x5", "x6"], "c": ["x7", "x8", "x9"]}
+    p = glm_reliability.plot_mtmm(data, key=key, method="method", subject="id", title="T")
+    levels = reference("plot_mtmm_levels")
+    assert ",".join(p.data["trait_x"].cat.categories) == levels["trait_x"].iloc[0]
+    assert ",".join(p.data["trait_y"].cat.categories) == levels["trait_y"].iloc[0]
+    assert ",".join(p.data["method_x"].cat.categories) == levels["method_x"].iloc[0]
+    expected = reference("plot_mtmm_plot_data", keep_default_na=False)
+    result = p.data.astype({c: str for c in ("trait_x", "method_x", "trait_y", "method_y")})
+    assert_matches_reference(result, expected, rtol=1e-12)

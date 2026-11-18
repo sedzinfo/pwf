@@ -193,3 +193,25 @@ def test_compute_aov_es(load_data, reference, case, ss):
     formula, data = AOV_ES_MODELS[case]
     result = anova.compute_aov_es(smf.ols(formula, data=load_data(data)).fit(), ss=ss)
     assert_matches_reference(result, reference(f"compute_aov_es_{case}_{ss}"))
+
+
+def test_report_factorial_anova_accepts_single_names(df_factorial, reference):
+    # rwf's reference itself passes within = "W1", between = "B1": a string is one name, not its letters
+    result = anova.report_factorial_anova(df=df_factorial, wid="id", dv=["DV1", "DV2"], within="W1", between="B1")
+    assert_matches_reference(result["omnibus"], reference("report_factorial_anova_mixed_omnibus"))
+
+
+def test_report_factorial_anova_call_text_as_rwf(df_factorial, tmp_path):
+    # rwf's call sheet: the call as R deparses it, quotes and spaces removed
+    file = str(tmp_path / "factorial")
+    anova.report_factorial_anova(df=df_factorial, wid="id", dv=["DV1", "DV2"], within="W1", between="B1", file=file)
+    call = pd.read_excel(f"{file}.xlsx", sheet_name="call")["call"].iloc[0]
+    assert call == f"report_factorial_anova(df=df_factorial,dv=c(DV1,DV2),wid=id,within=W1,between=B1,file={file})" \
+        .replace(" ", "")
+
+
+def test_report_factorial_anova_observed_single_name(df_factorial, reference):
+    # observed = "B1" as in rwf's reference: matched as one name (ez's grepl), not as the letters B and 1
+    result = anova.report_factorial_anova(df=df_factorial, wid="id", dv=["DV1", "DV2"], within="W1", between="B1",
+                                          white_adjust=False, observed="B1")
+    assert_matches_reference(result["omnibus"], reference("report_factorial_anova_mixed_observed_omnibus"))

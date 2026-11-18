@@ -93,3 +93,18 @@ def test_compute_residual_stats_of_two_matrices_matches_rwf(reference):
     result = glm_efa.compute_residual_stats(a, b)
     assert_matches_reference(result, reference("compute_residual_stats_matrices", keep_default_na=False,
                                                na_values=["NA"]), rtol=1e-12)
+
+
+@pytest.mark.parametrize("sort", [True, False])
+def test_plot_loadings_matches_rwf(reference, sort):
+    """rwf's variables are text, in alphabetical order on every axis; without sort its rows and factors are sorted."""
+    from conftest import DATA_DIR
+    ocean = pd.read_csv(DATA_DIR / "ocean.csv", sep="	").iloc[:500][ITEMS]
+    model = glm_efa.fa(ocean, nfactors=2, fm="minres")
+    p = glm_efa.plot_loadings(model, matrix_type="structure", sort=sort, title="T")["plot_barplot"]
+    name = str(sort).lower()
+    assert list(p.data["variable"].cat.categories) == reference(f"plot_loadings_axis_{name}")["variable"].tolist()
+    expected = reference(f"plot_loadings_barplot_{name}")
+    result = p.data[["variable", "Factor", "Loading"]].astype({"variable": str, "Factor": str})
+    # loadings are rounded to 2 decimals (rwf::model_loadings); pwf's rotation agrees to about 1e-4
+    assert_matches_reference(result, expected, rtol=0, atol=0.0100001)

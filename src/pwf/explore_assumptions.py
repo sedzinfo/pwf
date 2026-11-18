@@ -25,14 +25,14 @@ from plotnine import (
     theme_bw, theme, labs, coord_flip, geom_point, geom_text, geom_hline,
 )
 try:
-    from ._rcompat import r_color, r_number, r_round
+    from ._rcompat import r_boxplot_stats, r_color, r_density, r_hist, r_number, r_ppoints, r_round
     from .functions_environment import write_txt
     from .functions_excel import excel_critical_value
     from .functions_statistical import compute_standard
     from .functions_strings import output_separator, str_aes
     from .functions_plot import report_pdf
 except ImportError:
-    from _rcompat import r_color, r_number, r_round
+    from _rcompat import r_boxplot_stats, r_color, r_density, r_hist, r_number, r_ppoints, r_round
     from functions_environment import write_txt
     from functions_excel import excel_critical_value
     from functions_statistical import compute_standard
@@ -135,7 +135,7 @@ def plot_qq(df, title="", base_size=10, pb=False):
         y, x = np.quantile(values, [0.25, 0.75]), stats.norm.ppf([0.25, 0.75])
         slope = (y[1] - y[0]) / (x[1] - x[0])
         plots[str(column)] = (ggplot(pd.DataFrame({"resids": values}), aes(sample="resids"))
-                              + stat_qq(alpha=.1)
+                              + stat_qq(alpha=.1, quantiles=r_ppoints(len(values)))  # ggplot2's ppoints(n)
                               + geom_abline(slope=slope, intercept=y[0] - slope * x[0])
                               + theme_bw(base_size=base_size)
                               + labs(title=title, caption=_summary_caption(values, variable=column)))
@@ -170,17 +170,6 @@ def plot_boxplot(df, title="", base_size=10):
 ##########################################################################################
 # PLOT NORMALITY DIAGNOSTICS
 ##########################################################################################
-def _density_nrd0(values):
-    """R's density(): Gaussian kernel, bw.nrd0 bandwidth, 512 points from min - 3 bw to max + 3 bw."""
-    n = len(values)
-    spread = min(np.std(values, ddof=1), (np.quantile(values, 0.75) - np.quantile(values, 0.25)) / 1.34)
-    if spread <= 0:
-        spread = np.std(values, ddof=1) or abs(values[0]) or 1.0
-    bw = 0.9 * spread * n ** -0.2
-    grid = np.linspace(values.min() - 3 * bw, values.max() + 3 * bw, 512)
-    return grid, stats.norm.pdf((grid[:, None] - values[None, :]) / bw).mean(axis=1) / bw
-
-
 def plot_normality_diagnostics(df, breaks=None, title="", file=None, w=10, h=10, pb=False):
     """
     For each numeric column, a page of four normality plots, as rwf's: a
@@ -210,16 +199,31 @@ def plot_normality_diagnostics(df, breaks=None, title="", file=None, w=10, h=10,
             print(f"Graph not produced for {column} due to sample size")
             continue
         fig, axes = plt.subplots(2, 2, figsize=(w, h))
-        axes[0, 0].hist(values, bins="sturges" if breaks is None else breaks, color="white", edgecolor="black")
+        # R's base graphics: hist() (pretty() breaks, right-closed classes), density(), boxplot() (Tukey's
+        # hinges) and qqnorm() (ppoints) with qqline(); par(adj = .01) puts titles and labels on the left
+        edges, counts = r_hist(values, "Sturges" if breaks is None else breaks)
+        axes[0, 0].hist(edges[:-1], bins=edges, weights=counts, color="lightgray", edgecolor="black")
+        axes[0, 0].set_ylabel("Frequency", loc="bottom")
         axes[0, 0].set_title("Histogram", loc="left")
-        axes[0, 1].plot(*_density_nrd0(values), color="black")
+        grid, density, bandwidth = r_density(values)
+        axes[0, 1].plot(grid, density, color="black")
+        axes[0, 1].set_xlabel(f"N = {len(values)}   Bandwidth = {bandwidth:.4g}", loc="left")  # formatC()
+        axes[0, 1].set_ylabel("Density", loc="bottom")
         axes[0, 1].set_title("Density Function", loc="left")
-        axes[1, 0].boxplot(values)
+        box = r_boxplot_stats(values)
+        five = box["stats"]
+        axes[1, 0].bxp([{"whislo": five[0], "q1": five[1], "med": five[2], "q3": five[3], "whishi": five[4],
+                         "fliers": box["out"]}],
+                       flierprops={"marker": "o", "markerfacecolor": "none"},
+                       medianprops={"color": "black", "linewidth": 3})  # R's medlwd = 3
         axes[1, 0].set_title("Boxplot", loc="left")
-        stats.probplot(values, dist="norm", fit=False, plot=axes[1, 1])
+        axes[1, 1].scatter(stats.norm.ppf(r_ppoints(len(values))), np.sort(values),
+                           facecolors="none", edgecolors="black")
         y, x = np.quantile(values, [0.25, 0.75]), stats.norm.ppf([0.25, 0.75])
         slope = (y[1] - y[0]) / (x[1] - x[0])
         axes[1, 1].axline((x[0], y[0]), slope=slope, color="black")
+        axes[1, 1].set_xlabel("Theoretical Quantiles", loc="left")
+        axes[1, 1].set_ylabel("Sample Quantiles", loc="bottom")
         axes[1, 1].set_title("Normal Q-Q Plot", loc="left")
         fig.suptitle(title)
         caption = _summary_caption(values, variable=str_aes(str(column))).lstrip("\n")
@@ -366,9 +370,9 @@ def plot_outlier(df, method="mean", title="", base_size=10, pb=False):
         data = pd.DataFrame({"id": np.array(ids)[keep], "obs": vector[keep], "Outlier": outlier[keep]})
         n_outliers = int(data["Outlier"].sum())
         caption = (f"\nMethod={method}\nObservations={len(data)}"
-                   f"\nMean={r_number(round(float(data['obs'].mean()), 2))}"
-                   f"\nSD={r_number(round(float(data['obs'].std(ddof=1)), 2))}"
-                   f"\nMedian={r_number(round(float(data['obs'].median()), 2))}")
+                   f"\nMean={r_number(r_round(float(data['obs'].mean()), 2))}"
+                   f"\nSD={r_number(r_round(float(data['obs'].std(ddof=1)), 2))}"
+                   f"\nMedian={r_number(r_round(float(data['obs'].median()), 2))}")
         plots[column] = (
             ggplot(data, aes(x="id", y="obs", label="id"))
             + geom_point(aes(colour="Outlier"))

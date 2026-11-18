@@ -43,9 +43,9 @@ from plotnine import (
     scale_x_reverse, scale_linetype_manual, coord_fixed, theme_minimal,
 )
 try:
-    from ._rcompat import r_color_ramp as _r_color_ramp, r_label as _r_label, r_mixedsort_key, r_number, r_round
+    from ._rcompat import r_color_ramp as _r_color_ramp, r_density, r_label as _r_label, r_levels, r_mixedsort_key, r_number, r_round
 except ImportError:
-    from _rcompat import r_color_ramp as _r_color_ramp, r_label as _r_label, r_mixedsort_key, r_number, r_round
+    from _rcompat import r_color_ramp as _r_color_ramp, r_density, r_label as _r_label, r_levels, r_mixedsort_key, r_number, r_round
 ##########################################################################################
 # R HELPERS
 ##########################################################################################
@@ -193,13 +193,27 @@ def plot_separability(observed, predicted, base_size=10, title=""):
     Examples:
     >>> plot_separability(observed=[0, 0, 1, 1, 1], predicted=[0.1, 0.3, 0.6, 0.8, 0.9])
     """
-    observed = [_r_label(v) for v in observed]
-    df = pd.DataFrame({"observed": pd.Categorical(observed, categories=sorted(set(observed), key=_mixedsort_key)),
+    # as.factor(observed): numbers sorted by value (-1, 1, 2, 10), text in R's collation (a10, a2, B1, b2)
+    observed = pd.Series(list(observed))
+    df = pd.DataFrame({"observed": pd.Categorical([_r_label(v) if pd.notna(v) else np.nan for v in observed],
+                                                  categories=[_r_label(v) for v in r_levels(observed)]),
                        "predicted": np.asarray(predicted, dtype=float)})
+    # ggplot2's stat_density: R's density() of each class (bw.nrd0, 512 points) over the range of all
+    # predictions; classes with fewer than two values are dropped. plotnine's own density differs (its
+    # nrd0 divides the IQR by 1.349, not 1.34, and statsmodels interpolates a coarse grid).
+    finite = df[np.isfinite(df["predicted"])]
+    curves = []
+    for level in df["observed"].cat.categories:
+        values = finite.loc[finite["observed"] == level, "predicted"].to_numpy()
+        if len(values) >= 2:
+            x, y, _ = r_density(values, n=512, from_=finite["predicted"].min(), to=finite["predicted"].max())
+            curves.append(pd.DataFrame({"x": x, "density": y, "observed": level}))
+    density = pd.concat(curves, ignore_index=True) if curves else pd.DataFrame(columns=["x", "density", "observed"])
+    density["observed"] = pd.Categorical(density["observed"], categories=df["observed"].cat.categories)
     return (ggplot(df, aes(x="predicted", color="observed"))
-            + geom_density(size=1)
+            + geom_line(aes(x="x", y="density"), data=density, size=1)
             + labs(title=f"Predicted proportion vs Observed category {title}", color="observed",
-                   caption=f"Observations:{len(df)}")
+                   caption=f"Observations:{len(df)}", x="predicted", y="density")
             + theme_bw(base_size=base_size))
 ##########################################################################################
 # CONFUSION PERFORMANCE

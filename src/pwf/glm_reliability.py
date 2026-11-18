@@ -54,9 +54,9 @@ from plotnine import (
 )
 
 try:
-    from ._rcompat import r_label, r_make_names
+    from ._rcompat import _sort_key, r_call_text, r_label, r_make_names, r_round
 except ImportError:
-    from _rcompat import r_label, r_make_names
+    from _rcompat import _sort_key, r_call_text, r_label, r_make_names, r_round
 ##########################################################################################
 # ALPHA (raw Cronbach's alpha from a covariance matrix)
 ##########################################################################################
@@ -169,7 +169,7 @@ def _format_corr_label(v):
     """Round to 2dp, drop trailing zeros the way R's numeric->character conversion would, strip a leading '0.'."""
     if pd.isna(v):
         return ""
-    s = f"{round(v, 2):.2f}".rstrip("0").rstrip(".")
+    s = f"{r_round(v, 2):.2f}".rstrip("0").rstrip(".")  # R's round()
     if s in ("", "-"):
         s = "0"
     return s.replace("0.", ".", 1)
@@ -228,8 +228,10 @@ def plot_mtmm(df, key, method, subject, title=""):
     split2 = corm["Var2"].str.split(".", n=1, expand=True)
     corm["trait_y"], corm["method_y"] = split2[0], split2[1]
 
-    corm["var1_s"] = corm[["Var1", "Var2"]].min(axis=1)
-    corm["var2_s"] = corm[["Var1", "Var2"]].max(axis=1)
+    # R's sort() of each pair, and factor()'s levels below, follow the locale's collation (m1, m2, M3)
+    pairs = [sorted(pair, key=_sort_key) for pair in zip(corm["Var1"], corm["Var2"])]
+    corm["var1_s"] = [pair[0] for pair in pairs]
+    corm["var2_s"] = [pair[1] for pair in pairs]
 
     same_trait = corm["trait_x"] == corm["trait_y"]
     same_method = corm["method_x"] == corm["method_y"]
@@ -240,8 +242,8 @@ def plot_mtmm(df, key, method, subject, title=""):
         default="",
     )
 
-    trait_levels = sorted(corm["trait_x"].unique())
-    method_levels = sorted(corm["method_x"].unique())
+    trait_levels = sorted(corm["trait_x"].unique(), key=_sort_key)
+    method_levels = sorted(corm["method_x"].unique(), key=_sort_key)
     corm["trait_x"] = pd.Categorical(corm["trait_x"], categories=trait_levels)
     corm["method_x"] = pd.Categorical(corm["method_x"], categories=method_levels)
     corm["trait_y"] = pd.Categorical(corm["trait_y"], categories=list(reversed(trait_levels)))
@@ -249,6 +251,7 @@ def plot_mtmm(df, key, method, subject, title=""):
 
     corm = corm.sort_values(["method_x", "trait_x"])
     corm = corm.drop_duplicates(subset=["var1_s", "var2_s"])
+    corm = corm.rename(columns={"Var1": "var1", "Var2": "var2", "var1_s": "var1.s", "var2_s": "var2.s"})  # tolower()
     corm["label"] = corm["value"].apply(_format_corr_label)
 
     return (ggplot(corm)
@@ -389,27 +392,11 @@ _ALPHA_COMMENT = {
 
 
 def _alpha_call(df, key, questions, reverse, mini, maxi, file, cumulative, n_iter):
-    """
-    The "call" sheet's text: rwf deparses its R call (spaces removed); pwf
-    writes the Python call with the arguments that were given, the data frame
-    by the name it has in the caller.
-    """
-    name = "df"
-    frame = inspect.currentframe().f_back.f_back  # past report_alpha
-    try:
-        while frame is not None:
-            found = [k for k, v in {**frame.f_globals, **frame.f_locals}.items() if v is df and not k.startswith("_")]
-            if found:
-                name = found[0]
-                break
-            frame = frame.f_back
-    finally:
-        del frame
-    given = [("key", key), ("questions", questions), ("reverse", reverse), ("mini", mini), ("maxi", maxi),
-             ("file", file), ("cumulative", cumulative or None), ("n_iter", n_iter if n_iter != 1 else None)]
-    arguments = [f"df={name}"] + [f"{k}={v!r}" for k, v in given if v is not None]
-    # rwf strips the quotes and spaces of its call text
-    return f"report_alpha({','.join(arguments)})".replace(" ", "").replace("'", "").replace('"', "")
+    """The "call" sheet's text, as rwf's (its R call, quotes and spaces removed) from the given arguments."""
+    return r_call_text("report_alpha", [
+        ("df", df), ("key", key), ("questions", questions), ("reverse", reverse), ("mini", mini), ("maxi", maxi),
+        ("file", file), ("cumulative", cumulative or None), ("n_iter", n_iter if n_iter != 1 else None)],
+        inspect.currentframe().f_back.f_back)
 ##########################################################################################
 # PSYCH ALPHA (internal, mirrors the bulk of psych::alpha)
 ##########################################################################################
@@ -527,6 +514,7 @@ def report_alpha(df, key=None, questions=None, reverse=None, mini=None, maxi=Non
 
     total_rows, boot_rows, item_rows, drop_rows = [], [], [], []
     for sc, items in key.items():
+        items = [items] if isinstance(items, str) else list(items)  # one item name, not its letters
         if len(items) < 2:
             continue
         temp = df[items].copy()

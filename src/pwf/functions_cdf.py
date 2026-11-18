@@ -18,10 +18,10 @@ from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 import numpy as np
 try:
-    from ._rcompat import r_mixedsort_key as _r_mixedsort_key, r_number as _r_number
+    from ._rcompat import r_mixedsort_key as _r_mixedsort_key, r_number as _r_number, r_round
     from .functions_excel import excel_critical_value
 except ImportError:
-    from _rcompat import r_mixedsort_key as _r_mixedsort_key, r_number as _r_number
+    from _rcompat import r_mixedsort_key as _r_mixedsort_key, r_number as _r_number, r_round
     from functions_excel import excel_critical_value
 ##########################################################################################
 # OBSERVED
@@ -206,7 +206,7 @@ def _cdff_column(s, digits, nuniques):
         finite = len(observed_values)
 
     def rounded(value):
-        return round(float(value), digits) if pd.notna(value) else np.nan
+        return r_round(float(value), digits) if pd.notna(value) else np.nan  # R's round()
 
     mode, r_type, r_class = _R_TYPES[kind]
     result = {
@@ -322,7 +322,8 @@ def _check_dataframe(df, column_fn, name_length, digits, nuniques, parralel, fil
         if os.path.exists(filename):
             os.remove(filename)
         with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
-            excel_critical_value(check, writer, sheet="variables")
+            # rwf writes check_df while its row names are still the variable names (cleared only afterwards)
+            excel_critical_value(check.set_axis([str(c) for c in df.columns], axis=0), writer, sheet="variables")
             excel_critical_value(summary, writer, sheet="summary")
 
     for col in ["NAMES", "MIN", "MAX"]:

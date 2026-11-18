@@ -73,3 +73,39 @@ def test_simulate_data_recovers_model():
 def test_report_cfa_rejects_other_models():
     with pytest.raises(TypeError):
         glm_sem.report_cfa(object())
+
+
+@pytest.mark.parametrize("kind,std_lv,case", [("sem", False, "sem"), ("cfa", False, "cfa"),
+                                              ("cfa", True, "cfa_std_lv")])
+def test_report_cfa_call_matches_rwf(reference, capsys, kind, std_lv, case):
+    # rwf's Call sheet: lavaan's fit@call deparsed (with the arguments lavaan::sem/cfa add), spaces removed;
+    # the model and the data appear under the names they have here (SEM_MODEL, data)
+    data = _load_reference("lavaan_data")
+    fit = getattr(glm_sem, kind)(SEM_MODEL, data, std_lv=std_lv)
+    result = glm_sem.report_cfa(fit)
+    assert result["call"]["call"].tolist() == reference(f"report_cfa_call_{case}")["call"].tolist()
+
+
+def test_report_cfa_modification_rows_match_rwf(reference, capsys):
+    # lavaan numbers modification indices by their place in its parameter table, then its added candidates
+    data = _load_reference("lavaan_data")
+    result = glm_sem.report_cfa(glm_sem.cfa(SEM_MODEL, data, std_lv=True))["modification_indices"]
+    expected = reference("report_cfa_modification_rows")
+    rows = dict(zip(zip(expected["lhs"], expected["op"], expected["rhs"]), expected["row"]))
+    ours = dict(zip(zip(result["lhs"], result["op"], result["rhs"]), result.index))
+    assert ours == rows
+
+
+def test_std_lv_fixes_endogenous_latent_variance(reference):
+    # lavaan's std.lv fixes every latent (residual) variance to 1: with A ~ E + N, pwf left A ~~ A free
+    # (an under-identified model: 40 df instead of 41, missing standard errors)
+    fit = glm_sem.sem(SEM_MODEL, _load_reference("lavaan_data"), std_lv=True)
+    mine = fit.parameter_estimates()
+    expected = reference("lavaan_sem_std_lv_parameters")
+    merged = expected.merge(mine[["lhs", "op", "rhs", "est", "se"]], on=["lhs", "op", "rhs"], suffixes=("", "_pwf"))
+    assert len(merged) == len(expected)
+    np.testing.assert_allclose(merged["est_pwf"], merged["est"], atol=5e-5)
+    np.testing.assert_allclose(merged["se_pwf"], merged["se"], atol=5e-5)
+    fit_expected = reference("lavaan_sem_std_lv_fit").set_index("measure")["value"]
+    assert fit.fit_measures()["df"] == fit_expected["df"]
+    assert fit.fit_measures()["chisq"] == pytest.approx(fit_expected["chisq"], rel=1e-6)

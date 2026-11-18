@@ -89,3 +89,21 @@ def test_recode_scale_dummy_matches_rwf(case, reference):
     data = data if case == "two" else data.iloc[:, :3]
     result = functions_train_test.recode_scale_dummy(data)
     assert_matches_reference(result, reference(f"recode_scale_dummy_{case}"), rtol=1e-12)
+
+
+def test_plot_separability_matches_rwf(reference):
+    """as.factor() levels (-1, 1, 2, 10) and R's density of each class over the range of all predictions."""
+    import numpy as np
+    data = reference("plot_separability_data")
+    p = functions_train_test.plot_separability(data["observed"], data["predicted"], title="T")
+    labels = reference("plot_separability_labels")
+    assert p.labels.get("title", None) == labels["title"].iloc[0]
+    assert p.labels.get("caption", None) == labels["caption"].iloc[0]
+    expected = reference("plot_separability_density", dtype={"observed": str})
+    assert list(p.data["observed"].cat.categories) == list(dict.fromkeys(expected["observed"]))
+    p.draw()
+    density = p.layers[0].data.sort_values(["group", "x"], kind="stable")
+    levels = list(p.data["observed"].cat.categories)
+    assert [levels[g - 1] for g in density["group"]] == expected["observed"].tolist()
+    np.testing.assert_allclose(density["x"], expected["x"], rtol=1e-13)
+    np.testing.assert_allclose(density["y"], expected["density"], rtol=1e-11, atol=1e-14)

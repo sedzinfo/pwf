@@ -44,9 +44,9 @@ from scipy.stats import norm
 from plotnine import ggplot, aes, geom_point, geom_line, theme_bw, labs
 
 try:
-    from ._rcompat import r_make_names, r_optim_bfgs
+    from ._rcompat import r_make_names, r_optim_bfgs, r_number, r_round
 except ImportError:
-    from _rcompat import r_make_names, r_optim_bfgs
+    from _rcompat import r_make_names, r_optim_bfgs, r_number, r_round
 try:
     from ._ordinal import OrdinalSEM
 except ImportError:
@@ -461,6 +461,8 @@ def plot_icc_thurstonian(mydata, title="Item Characteristic Curve"):
     >>> plot_icc_thurstonian(result["icc"])
     """
     melted = mydata.melt(id_vars="eta", var_name="variable", value_name="value")
+    # reshape2::melt's variable is a factor in column order (item1, item2, ..., item10), not sorted as text
+    melted["variable"] = pd.Categorical(melted["variable"], categories=[c for c in mydata.columns if c != "eta"])
     return (ggplot(melted, aes(x="eta", y="value", group="variable", color="variable"))
             + geom_point(alpha=.1)
             + geom_line()
@@ -547,8 +549,11 @@ def compute_ability(response, eta, gamma, lambda_, psi, plot=False, map=None):
         icc_df = icc.copy()
         icc_df.insert(0, "map", plot_display_map)
         icc_df.insert(0, "product", plot_display)
-        title = (f"Item Characteristic Curve ML: {np.round(ability_ml, 2)} "
-                 f"MAP: {np.round(ability_map, 2)} \nResponse: {response.sum()} "
+        def r_text(values):  # R's paste() of round(values, 2)
+            return " ".join(r_number(r_round(v, 2)) for v in np.atleast_1d(values))
+
+        title = (f"Item Characteristic Curve ML: {r_text(ability_ml)} "
+                 f"MAP: {r_text(ability_map)} \nResponse: {response.sum()} "
                  f"Response Length: {len(response)}")
         plot_obj = plot_icc_thurstonian(icc_df, title=title)
     else:

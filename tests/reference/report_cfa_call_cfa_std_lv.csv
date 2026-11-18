@@ -1,0 +1,6 @@
+"call"
+"lavaan::lavaan(model=SEM_MODEL,data=data,std.lv=TRUE,"
+"model.type=""cfa"",cmd=""cfa"",int.ov.free=TRUE,int.lv.free=FALSE,"
+"auto.fix.first=TRUE,auto.fix.single=TRUE,auto.var=TRUE,"
+"auto.cov.lv.x=TRUE,auto.cov.y=TRUE,auto.th=TRUE,"
+"auto.delta=TRUE,auto.efa=TRUE)"

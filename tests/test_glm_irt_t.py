@@ -136,3 +136,10 @@ def test_compute_ability_and_solve_match_rwf(reference):
     solved = glm_irt_t.compute_solve(np.array([[4, 1, 2], [1, 3, 0.5], [2, 0.5, 5]]),
                                      np.array([[1, 4], [2, 5], [3, 6]]))
     np.testing.assert_allclose(solved, reference("compute_solve").to_numpy(), rtol=1e-12)
+
+
+def test_plot_icc_thurstonian_keeps_item_order(reference):
+    """reshape2::melt keeps the columns' order (item1, item2, ..., item10), not text order."""
+    icc = glm_irt_t.compute_icc_thurstonian(eta=np.arange(-3, 4), gamma=[0.5] * 12, lambda_=[1] * 12, psi=[1] * 12)["icc"]
+    p = glm_irt_t.plot_icc_thurstonian(icc)
+    assert list(p.data["variable"].cat.categories) == reference("plot_icc_thurstonian_levels")["level"].tolist()

@@ -5,8 +5,9 @@ Python port of R rwf::GLM_CORRELATION.R.
 tetrachoric, polychoric, polyserial and biserial are native ports of
 the psych functions of the same names (tests/test_glm_correlation.py
 compares them with psych); the bivariate normal probabilities use Genz's
-algorithm (as mnormt::sadmvn) and the likelihood is optimised to tighter
-tolerance than R's optimize, so values agree with psych to about 1e-4.
+algorithm (as mnormt::sadmvn) and the likelihood is maximised with a port
+of R's optimize() (_rcompat.r_optimize), as psych does, so values agree
+with psych to about 1e-11.
 report_choric_serial matches rwf, including its default type
 "tetrachoric".
 
@@ -21,7 +22,6 @@ import warnings
 
 import numpy as np
 import pandas as pd
-import scipy.optimize
 import scipy.special
 import scipy.stats
 from plotnine import (
@@ -30,13 +30,13 @@ from plotnine import (
 )
 
 try:
-    from ._rcompat import r_abbreviate, r_label, r_make_names, r_p_adjust, r_round
+    from ._rcompat import r_abbreviate, r_label, r_make_names, r_optimize, r_p_adjust, r_round
     from .functions import change_data_type
     from .functions_matrix import matrix_triangle
     from .functions_plot import plot_multiplot, report_pdf
     from .glm_linear_regression import plot_scatterplot
 except ImportError:
-    from _rcompat import r_abbreviate, r_label, r_make_names, r_p_adjust, r_round
+    from _rcompat import r_abbreviate, r_label, r_make_names, r_optimize, r_p_adjust, r_round
     from functions import change_data_type
     from functions_matrix import matrix_triangle
     from functions_plot import plot_multiplot, report_pdf
@@ -62,7 +62,8 @@ def plot_corrplot(mydata, title="", base_size=10, fill_limits=(-1, 0, 1)):
     Examples:
     >>> plot_corrplot(df_insurance.select_dtypes("number").corr(), title="Correlation")
     """
-    mydata = pd.DataFrame(mydata).round(2)
+    # R's round(): -0.235 -> -0.23 (pandas' round gives -0.24)
+    mydata = pd.DataFrame(mydata).apply(lambda column: column.map(lambda v: r_round(v, 2)))
     upper_tri = matrix_triangle(mydata.to_numpy(), off_diagonal=np.nan, diagonal=None, type="upper")
     upper_df = pd.DataFrame(upper_tri, index=mydata.index, columns=mydata.columns)
 
@@ -544,8 +545,8 @@ def _ml_correlation(table, row_cuts, column_cuts):
         log_p[~np.isfinite(log_p)] = np.nan
         return -np.nansum(table * log_p)
 
-    result = scipy.optimize.minimize_scalar(objective, bounds=(-1, 1), method="bounded", options={"xatol": 1e-10})
-    return float(result.x)
+    # psych's optimize(polyF, interval = c(-1, 1)) itself: its default tolerance (~1.2e-4) decides where rho stops
+    return float(r_optimize(objective, -1, 1))
 
 
 def _cor_smooth(r, eig_tol=1e-12):
@@ -584,9 +585,9 @@ def tetrachoric(x, correct=0.5, smooth=True):
     The matrix is smoothed (psych::cor.smooth) when it is not positive
     definite and has no missing correlations.
 
-    Differences from psych: the optimum is found to 1e-10, whereas R's
-    optimize stops at about 1e-4, so values agree with psych to about
-    1e-4. The x/y form, weights and the 2 x 2 table input are not ported.
+    rho is found by a port of R's optimize(), as psych does, so values
+    agree with psych to about 1e-11. Not ported: the x/y form, weights and
+    the 2 x 2 table input.
 
     Parameters:
     x (pandas.DataFrame): Dichotomous items (two values each).
@@ -648,9 +649,8 @@ def polychoric(x, smooth=True, global_=True, correct=0.5, max_cat=8):
     table's margins. The matrix is smoothed (psych::cor.smooth) when it
     is not positive definite and has no missing correlations.
 
-    Differences from psych: the optimum is found to 1e-10, whereas R's
-    optimize stops at about 1e-4, so values agree with psych to about
-    1e-4. The x/y form and weights are not ported.
+    rho is found by a port of R's optimize(), as psych does, so values
+    agree with psych to about 1e-11. Not ported: the x/y form and weights.
 
     Parameters:
     x (pandas.DataFrame): Ordinal items with integer categories.
@@ -852,8 +852,8 @@ def report_choric_serial(x, y=None, file=None, w=10, h=10, type="tetrachoric", *
         report_dataframe(result, sheet=type, file=file)
 
     if type in ("tetrachoric", "polychoric"):
-        arguments = ", ".join(f"{key} = {value!r}" for key, value in kwargs.items())
-        result["call"] = f"{type}(x{', ' + arguments if arguments else ''})"
+        # rwf's toString(result$Call): psych's call as R prints its parts, the arguments' values after x
+        result["call"] = ", ".join([f"psych::{type}", "x"] + [r_label(value) for value in kwargs.values()])
         report_pdf(plot_corrplot(result["rho"], title=type), w=w, h=h, file=file, title=type,
                    print_plot=(file is None))
         if file is not None:
@@ -861,10 +861,14 @@ def report_choric_serial(x, y=None, file=None, w=10, h=10, type="tetrachoric", *
             if os.path.exists(filename):
                 os.remove(filename)
             with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
+                # rwf writes data.frame(...) of each table: R's make.names on the column names
+                rho = result["rho"].set_axis(r_make_names(result["rho"].columns), axis=1)
                 tau = result["tau"]
-                excel_matrix(result["rho"], writer, "R", conditional_formatting=True)
-                excel_matrix(result["rho"] * result["rho"], writer, "R Squared", conditional_formatting=True)
-                excel_matrix(tau.to_frame("tau") if isinstance(tau, pd.Series) else tau, writer, "Tau")
+                tau = (tau.to_frame("result.tau") if isinstance(tau, pd.Series)
+                       else tau.set_axis(r_make_names(tau.columns), axis=1))
+                excel_matrix(rho, writer, "R", conditional_formatting=True)
+                excel_matrix(rho * rho, writer, "R Squared", conditional_formatting=True)
+                excel_matrix(tau, writer, "Tau")
                 excel_matrix(pd.DataFrame({"Observations": [result["n_obs"]]}), writer, "Observations")
                 excel_matrix(pd.DataFrame({"call": [result["call"]]}), writer, "Call")
     return result

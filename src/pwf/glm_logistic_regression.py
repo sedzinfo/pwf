@@ -38,16 +38,16 @@ try:
     from .functions_environment import write_txt
     from .functions_plot import report_pdf
     from .functions_train_test import confusion_matrix_percent, plot_separability, result_confusion_performance
-    from .glm_linear_regression import (_data_name, _deparse_formula, _design_info, _r_column_name,
-                                        _r_deparse_call, _r_terms)
+    from ._rcompat import r_deparse_call as _r_deparse_call
+    from .glm_linear_regression import _data_name, _deparse_formula, _design_info, _r_column_name, _r_terms
 except ImportError:
     from explore_descriptives import compute_descriptives
     from functions_strings import output_separator
     from functions_environment import write_txt
     from functions_plot import report_pdf
     from functions_train_test import confusion_matrix_percent, plot_separability, result_confusion_performance
-    from glm_linear_regression import (_data_name, _deparse_formula, _design_info, _r_column_name,
-                                       _r_deparse_call, _r_terms)
+    from _rcompat import r_deparse_call as _r_deparse_call
+    from glm_linear_regression import _data_name, _deparse_formula, _design_info, _r_column_name, _r_terms
 ##########################################################################################
 # LOGISTIC FUNCTION
 ##########################################################################################
@@ -82,9 +82,7 @@ def plot_logistic_model(df, outcome="outcome", title="", base_size=10):
     df (pandas.DataFrame): Must include `outcome` plus one or more
         predictor columns.
     outcome (str, optional): Name of the binary outcome column. Defaults to "outcome".
-    title (str, optional): Unused, kept for R-signature parity (R's
-        version also builds its own fixed title/caption and never uses
-        this parameter).
+    title (str, optional): Appended to the title ("Logistic function <title>"). Defaults to "".
     base_size (int, optional): Base font size. Defaults to 10.
 
     Returns:
@@ -103,8 +101,10 @@ def plot_logistic_model(df, outcome="outcome", title="", base_size=10):
     >>> plot_logistic_model(df=df, base_size=15)
     """
     temp = df.melt(id_vars=outcome, var_name="Predictor", value_name="Value")
+    # reshape2::melt's variable is a factor in column order, not sorted as text
+    temp["Predictor"] = pd.Categorical(temp["Predictor"], categories=[c for c in df.columns if c != outcome])
     return (ggplot(temp, aes(x="Value", y=outcome, color="Predictor"))
-            + labs(x="Observed value", y="Outcome", title="Logistic function",
+            + labs(x="Observed value", y="Outcome", title=f"Logistic function {title}",
                    caption=f"Observations:{len(df)}")
             + geom_smooth(method="glm", method_args={"family": sm.families.Binomial()}, se=False, alpha=0.1)
             + geom_count(alpha=.5)

@@ -27,11 +27,12 @@ import pandas as pd
 import scipy.stats as stats
 import statsmodels.formula.api as smf
 from statsmodels.stats.anova import anova_lm
+import inspect
 import os
 import re
 from itertools import combinations, product
 try:
-    from ._rcompat import r_label, r_levels, r_round, resolve_columns
+    from ._rcompat import r_call_text, r_label, r_levels, r_round, resolve_columns
     from .explore_descriptives import compute_aggregate, compute_descriptives
     from .functions_excel import excel_critical_value
     from .functions_plot import report_pdf
@@ -39,7 +40,7 @@ try:
     from .functions_strings import output_separator
     from .glm_anova_plot import plot_oneway, plot_oneway_diagnostics
 except ImportError:
-    from _rcompat import r_label, r_levels, r_round, resolve_columns
+    from _rcompat import r_call_text, r_label, r_levels, r_round, resolve_columns
     from explore_descriptives import compute_aggregate, compute_descriptives
     from functions_excel import excel_critical_value
     from functions_plot import report_pdf
@@ -931,7 +932,9 @@ def report_factorial_anova(df, dv, wid, within=None, within_full=None, between=N
     Examples:
     >>> report_factorial_anova(df=df, wid="id", dv=["DV1"], within=["W1", "W2"], between=["B1"])
     """
-    within, within_full, between = list(within or []), list(within_full or []), list(between or [])
+    # a single name may be given as a string, as in R (list("W1") would split it into letters)
+    within, within_full, between = ([v] if isinstance(v, str) else list(v or []) for v in (within, within_full, between))
+    observed = [observed] if isinstance(observed, str) else observed  # one name, not its letters
     if within_covariates or between_covariates or diff:
         raise NotImplementedError("within_covariates, between_covariates and diff are not ported")
     if type != 3:
@@ -1009,22 +1012,30 @@ def report_factorial_anova(df, dv, wid, within=None, within_full=None, between=N
         if os.path.exists(filename):
             os.remove(filename)
         with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
+            title = f"Sum of Squares type: {r_label(type)}"  # rwf's paste("Sum of Squares type:", type)
             if "p[GG]" in omnibus.columns:
-                excel_critical_value(omnibus, writer, sheet="ANOVA within", comment=_FACTORIAL_COMMENT,
+                excel_critical_value(omnibus, writer, sheet="ANOVA within", comment=_FACTORIAL_COMMENT, title=title,
                                      critical={"p": "<0.05", "p[M]": "<0.05", "p[GG]": "<0.05", "p[HF]": "<0.05"})
             if "p[L]" in omnibus.columns:
-                excel_critical_value(omnibus, writer, sheet="ANOVA between", comment=_FACTORIAL_COMMENT,
+                excel_critical_value(omnibus, writer, sheet="ANOVA between", comment=_FACTORIAL_COMMENT, title=title,
                                      critical={"p": "<0.05", "p[L]": "<0.05"})
             if "p[GG]" not in omnibus.columns and "p[L]" not in omnibus.columns:
-                excel_critical_value(omnibus, writer, sheet="ANOVA", comment=_FACTORIAL_COMMENT,
+                excel_critical_value(omnibus, writer, sheet="ANOVA", comment=_FACTORIAL_COMMENT, title=title,
                                      critical={"p": "<0.05"})
             excel_critical_value(omnibus_effect_size, writer, sheet="effect size", comment=_FACTORIAL_COMMENT,
                                  critical={"p.value": "<0.05"})
             if len(post_hoc) and post_hoc_test:
                 excel_critical_value(post_hoc, writer, sheet="post hoc", critical={"p.value": "<0.05"})
             excel_critical_value(descriptives, writer, sheet="descriptives")
-            call = (f"report_factorial_anova(dv={dvs},wid={wid},within={within},within_full={within_full},"
-                    f"between={between},type={type},white_adjust={white_adjust})")
+            # rwf's call_string: the call as R deparses it, quotes and spaces removed (defaults left out)
+            call = r_call_text("report_factorial_anova", [
+                ("df", df), ("dv", dv), ("wid", wid), ("within", within), ("within_full", within_full),
+                ("between", between), ("within_covariates", within_covariates),
+                ("between_covariates", between_covariates), ("observed", observed), ("diff", diff),
+                ("reverse_diff", reverse_diff or None), ("type", type if type != 3 else None),
+                ("white.adjust", None if white_adjust else False), ("detailed", None if detailed else False),
+                ("return_aov", None if return_aov else False), ("file", file),
+                ("post_hoc_test", None if post_hoc_test else False)], inspect.currentframe().f_back)
             excel_critical_value(pd.DataFrame({"call": [call]}), writer, sheet="call")
     return result
 ##########################################################################################
@@ -1072,6 +1083,30 @@ def _manova_eigenvalues(hypothesis, error):
     """Eigenvalues of E^-1 H (real, non-negative)."""
     values = np.linalg.eigvals(np.linalg.solve(error, hypothesis)).real
     return np.sort(np.clip(values, 0, None))[::-1]
+
+
+def _r_manova_call(model):
+    """
+    R's deparse of the manova() call the statsmodels model stands for: the
+    outcomes a + b become cbind(a, b), C(x, Sum) becomes x, and data is the
+    name the data frame has in the caller ("data" when it is not found).
+    """
+    lhs, _, rhs = (getattr(model, "formula", "") or "").partition("~")
+    outcomes = ", ".join(v.strip() for v in lhs.split("+"))
+    rhs = re.sub(r"C\(\s*([^,()]+?)\s*(?:,\s*\w+\s*)?\)", r"\1", rhs.strip())
+    rhs = re.sub(r"\s*([+*])\s*", r" \1 ", re.sub(r"\s*:\s*", ":", rhs))
+    frame, name = getattr(getattr(model, "data", None), "frame", None), "data"
+    caller = inspect.currentframe().f_back.f_back  # past report_manova
+    try:
+        while caller is not None and frame is not None:
+            found = [k for k, v in {**caller.f_globals, **caller.f_locals}.items() if v is frame and not k.startswith("_")]
+            if found:
+                name = found[0]
+                break
+            caller = caller.f_back
+    finally:
+        del caller
+    return f"manova(cbind({outcomes}) ~ {rhs}, data = {name})"
 
 
 def report_manova(model, file=None):
@@ -1153,7 +1188,8 @@ def report_manova(model, file=None):
 
     output_separator("Pillai,Wilks,Hotelling-Lawley,Roy Statistics", output=pwhr)
     output_separator("type Three", output=type_three)
-    call = pd.DataFrame({"call": [f"MANOVA.from_formula({getattr(model, 'formula', '')!r})"]})
+    # rwf's data.frame(toString(deparse(model$call))): its column is named after that expression
+    call = pd.DataFrame({"toString.deparse.model.call..": [_r_manova_call(model)]})
     if file is not None:
         filename = f"{file}.xlsx"
         if os.path.exists(filename):

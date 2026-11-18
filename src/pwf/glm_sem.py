@@ -44,7 +44,7 @@ from plotnine import (
 )
 
 try:
-    from ._sem import SEMFit, cfa, sem, simulate_data
+    from ._sem import SEMFit, _lavaan_call, cfa, sem, simulate_data
     from .functions import remove_nc
     from .functions_generate_data import simulate_correlation_from_sample
     from .functions_environment import write_txt
@@ -53,7 +53,7 @@ try:
     from .functions_plot import report_pdf
     from .glm_linear_regression import plot_scatterplot
 except ImportError:
-    from _sem import SEMFit, cfa, sem, simulate_data
+    from _sem import SEMFit, _lavaan_call, cfa, sem, simulate_data
     from functions import remove_nc
     from functions_generate_data import simulate_correlation_from_sample
     from functions_environment import write_txt
@@ -296,6 +296,22 @@ def _summary_text(model, fit_indices):
     return "\n".join(lines)
 
 
+def _exogenous_flags(model, parameters):
+    """
+    lavaan's exo column: 1 for the variances, covariances and means of observed exogenous covariates
+    (fixed.x: observed variables that only predict), 0 otherwise.
+    """
+    table = parameters
+    measured = set(table.loc[table["op"] == "=~", "rhs"])
+    outcomes = set(table.loc[table["op"] == "~", "lhs"])
+    predictors = set(table.loc[table["op"] == "~", "rhs"])
+    latent = set(table.loc[table["op"] == "=~", "lhs"])
+    exogenous = {v for v in predictors - outcomes - measured - latent if v in set(model.observed)}
+    flags = [int((op == "~~" and lhs in exogenous and rhs in exogenous) or (op == "~1" and lhs in exogenous))
+             for lhs, op, rhs in zip(table["lhs"], table["op"], table["rhs"])]
+    return flags
+
+
 def report_cfa(model, file=None, w=10, h=10):
     """
     Full report of a fitted CFA/SEM model (port of rwf::report_cfa): R
@@ -325,14 +341,23 @@ def report_cfa(model, file=None, w=10, h=10):
     r_squared = pd.DataFrame({"r_squared": pd.Series(model.rsquare())})
     fit_indices = pd.DataFrame({"fit": pd.Series(model.fit_measures())})
     parameters = model.parameter_estimates()
+    if "exo" not in parameters.columns:  # rwf's parameterEstimates() has lavaan's exo column after rhs
+        parameters.insert(parameters.columns.get_loc("rhs") + 1, "exo", _exogenous_flags(model, parameters))
     modification_indices = model.modification_indices()
-    sample_covariance = pd.DataFrame(model.sample_cov, index=model.observed, columns=model.observed)
+    # rwf's data.frame(model@SampleStats@cov): a matrix without names, so X1, X2, ... and rows 1, 2, ...
+    observed_names = [f"X{k + 1}" for k in range(len(model.observed))]
+    sample_covariance = pd.DataFrame(np.asarray(model.sample_cov), columns=observed_names)
     unstandardized_estimates = model.inspect("est")
     standardized_estimates = model.inspect("std")
     group = pd.DataFrame()
-    predict = pd.concat([model.data.reset_index(drop=True), model.predict().reset_index(drop=True)], axis=1)
-    call_string = f"sem(model='{model.model_syntax}',std_lv={model.std_lv})".replace(" ", "")
-    call = pd.DataFrame({"call": [call_string]})
+    # rwf's data.frame(model@Data@X, lavaan::predict(model)): the data columns are X1, X2, ... as well
+    data_part = model.data.reset_index(drop=True)
+    data_part.columns = [f"X{k + 1}" for k in range(data_part.shape[1])]
+    predict = pd.concat([data_part, model.predict().reset_index(drop=True)], axis=1)
+    call_lines = getattr(model, "r_call", None) or _lavaan_call("sem", None, model.model_syntax, None, model.std_lv,
+                                                                  "listwise", False)
+    call_string = "\n".join(call_lines)
+    call = pd.DataFrame({"call": call_lines})
     result = {
         "r_squared": r_squared, "fit_indices": fit_indices, "parameters": parameters,
         "modification_indices": modification_indices, "sample_covariance": sample_covariance,
@@ -359,8 +384,8 @@ def report_cfa(model, file=None, w=10, h=10):
         if os.path.exists(filename):
             os.remove(filename)
         with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
-            excel_critical_value(r_squared.reset_index(names="variable"), writer, sheet="R_Squared")
-            excel_critical_value(fit_indices.reset_index(names="index"), writer, sheet="Fit_Indices")
+            excel_critical_value(r_squared, writer, sheet="R_Squared")  # rwf: the names are row names
+            excel_critical_value(fit_indices, writer, sheet="Fit_Indices")
             excel_critical_value(parameters, writer, sheet="Parameters")
             excel_critical_value(modification_indices, writer, sheet="Modification_Indices")
             excel_critical_value(group, writer, sheet="Groups")

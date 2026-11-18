@@ -122,3 +122,21 @@ def test_compute_y_logistic_matches_rwf(reference):
     expected = reference("compute_y_logistic")
     result = glm_logistic_regression.compute_y_logistic(intercept=0.5, coefficient=-1.2, x=expected["x"])
     np.testing.assert_allclose(result, expected["y"], rtol=1e-14)
+
+
+def test_plot_logistic_model_matches_rwf(reference):
+    """rwf's title argument, melt()'s predictor order and the binomial smooth of a predictor without separation."""
+    data = pd.DataFrame({"outcome": [1] * 10 + [0] * 10, "z2": [1] * 11 + [0] * 9, "b1": [1] * 9 + [0] * 11,
+                         "a3": [5.2, 4.1, 6.3, 3.9, 5.5, 7.1, 4.8, 6.0, 5.9, 3.5, 8.2, 9.1, 7.7, 10.4, 8.8, 9.9, 7.2,
+                                11.0, 8.5, 6.6]})
+    p = glm_logistic_regression.plot_logistic_model(data, title="T")
+    labels = reference("plot_logistic_model_labels")
+    assert p.labels.get("title", None) == labels["title"].iloc[0]
+    assert p.labels.get("caption", None) == labels["caption"].iloc[0]
+    assert ",".join(p.data["Predictor"].cat.categories) == labels["predictors"].iloc[0]
+    p.draw()
+    smooth = p.layers[0].data
+    smooth = smooth[smooth["group"] == 3].sort_values("x")
+    expected = reference("plot_logistic_model_smooth_a3")
+    np.testing.assert_allclose(smooth["x"], expected["x"], rtol=1e-12)
+    np.testing.assert_allclose(smooth["y"], expected["y"], rtol=1e-6)  # statsmodels' IRLS stops near R's glm

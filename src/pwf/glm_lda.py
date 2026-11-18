@@ -28,13 +28,13 @@ import pandas as pd
 import patsy
 
 try:
-    from ._rcompat import r_levels, r_label, r_make_names
+    from ._rcompat import r_deparse_call as _r_deparse_call, r_levels, r_label, r_make_names
     from .functions_train_test import _confusion_counts, _percent_table
-    from .glm_linear_regression import _data_name, _deparse_formula, _r_column_name, _r_deparse_call
+    from .glm_linear_regression import _data_name, _deparse_formula, _r_column_name
 except ImportError:
-    from _rcompat import r_levels, r_label, r_make_names
+    from _rcompat import r_deparse_call as _r_deparse_call, r_levels, r_label, r_make_names
     from functions_train_test import _confusion_counts, _percent_table
-    from glm_linear_regression import _data_name, _deparse_formula, _r_column_name, _r_deparse_call
+    from glm_linear_regression import _data_name, _deparse_formula, _r_column_name
 ##########################################################################################
 # LDA (port of MASS::lda, method = "moment")
 ##########################################################################################

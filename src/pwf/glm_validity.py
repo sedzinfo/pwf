@@ -34,6 +34,7 @@ _NAMES_ALL = ["n", "dimension", "variable", "F1", "S2F1", "S2F2", "P2F1", "P2F2"
 _NAMES_NUMERIC = [c for c in _NAMES_ALL if c not in ("dimension", "variable", "index", "index_cfa")]
 _FIT_NAMES = ["RMSEA", "RMSEA.CI.LOWER", "RMSEA.CI.UPPER", "RMSEA_CONF", "RMS", "CFI", "TLI"]
 _COMMENT = {
+    "dimension": "", "variable": "",  # rwf has these two, empty: Excel still marks the headers
     "F1": "Model 1: Factor Loadings for EFA One Factor Model",
     "S2F1": "Model 2: Factor Loadings\nStructure Matrix (item-factor correlations after rotation)\nfor EFA Two Factor Model 1st Factor",
     "S2F2": "Model 2: Factor Loadings\nStructure Matrix (item-factor correlations after rotation)\nfor EFA Two Factor Model 2nd Factor",
@@ -98,14 +99,18 @@ def _bind_columns(frames):
 
 
 def _lower_triangle_long(matrix):
-    """reshape2::melt(matrix_triangle(m, diagonal = NA)): lower-triangle cells, first index fastest."""
-    rows = []
+    """
+    reshape2::melt(matrix_triangle(m, diagonal = NA)): lower-triangle cells, first index fastest, indexed by
+    their row in R's melt of the whole matrix (j * n + i + 1), the row names rwf's sheet keeps after sorting.
+    """
+    rows, index = [], []
     names = list(matrix.columns)
     for j, b in enumerate(names):
         for i, a in enumerate(names):
             if i > j:
                 rows.append({"Var1": a, "Var2": b, "value": matrix.iloc[i, j]})
-    return pd.DataFrame(rows, columns=["Var1", "Var2", "value"])
+                index.append(j * len(names) + i + 1)
+    return pd.DataFrame(rows, columns=["Var1", "Var2", "value"], index=index)
 
 
 def _matrix_triangle(matrix):
@@ -130,7 +135,9 @@ def _cfa_tables(dimension, temp_df, n_rows):
 
     mi = fit.modification_indices(power=False, free_remove=True, minimum_value=10)
     if len(mi):
-        modification = pd.concat([pd.DataFrame({"dimension": [dimension] * len(mi)}), mi], axis=1)
+        # mi is indexed by lavaan's row numbers: line the rows up by position
+        modification = pd.concat([pd.DataFrame({"dimension": [dimension] * len(mi)}), mi.reset_index(drop=True)],
+                                 axis=1)
     else:
         modification = pd.DataFrame({"dimension": [dimension], **{c: [np.nan] for c in mi.columns}})
 

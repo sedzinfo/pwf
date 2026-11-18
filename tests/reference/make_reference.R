@@ -1167,3 +1167,112 @@ for (case in names(regression_more)) {
 # FLATTEN LIST (nested lists, R's data.frame() naming)
 ##########################################################################################
 ref("flatten_list_nested", flatten_list(list(a = list(c = 2, d = list(e = 3)), b = list(c = 4, d = list(e = 5, f = 6)))))
+##########################################################################################
+# LAVAAN CALL TEXT AND MODIFICATION INDEX ROW NUMBERS (rwf::report_cfa)
+##########################################################################################
+SEM_MODEL <- "E =~ E1 + E2 + 0.8*E3 + E4; N =~ N1 + N2 + N3 + N4; A =~ A1 + A2 + A3; A ~ E + N; E1 ~~ E2"
+data <- utils::read.csv(file.path(out_dir, "lavaan_data.csv"))
+# direct calls: lavaan keeps the names the arguments were given with (do.call would pass the values)
+for (fit in list(sem = lavaan::sem(SEM_MODEL, data = data), cfa = lavaan::cfa(SEM_MODEL, data = data))) {
+  invisible(capture.output(suppressWarnings(result <- report_cfa(fit))))
+  ref(paste0("report_cfa_call_", fit@Options$model.type), result$call)
+}
+fit <- lavaan::cfa(SEM_MODEL, data = data, std.lv = TRUE)
+invisible(capture.output(suppressWarnings(result <- report_cfa(fit))))
+ref("report_cfa_call_cfa_std_lv", result$call)
+ref("report_cfa_modification_rows", data.frame(row = as.integer(rownames(result$modification_indices)),
+                                               result$modification_indices[, c("lhs", "op", "rhs")]))
+# std.lv = TRUE with an endogenous latent variable: lavaan fixes its residual variance to 1 too
+fit <- lavaan::sem(SEM_MODEL, data = data, std.lv = TRUE)
+ref("lavaan_sem_std_lv_parameters", lavaan::parameterEstimates(fit)[, c("lhs", "op", "rhs", "est", "se")])
+ref("lavaan_sem_std_lv_fit", data.frame(measure = c("chisq", "df"), value = as.numeric(lavaan::fitMeasures(fit, c("chisq", "df")))))
+##########################################################################################
+# R GRAPHICS HELPERS AND PLOT DATA (density, pretty, hist, boxplot.stats; rwf plot data)
+##########################################################################################
+# self-contained, so the section can be generated alone
+graphics_data_dir <- normalizePath(file.path(out_dir, "..", "..", "src", "pwf", "data"))
+graphics_insurance <- utils::read.csv(file.path(graphics_data_dir, "insurance.csv"), stringsAsFactors = FALSE)
+d <- stats::density(graphics_insurance$bmi)
+ref("r_density_bmi", data.frame(x = d$x, y = d$y, bw = d$bw))
+d <- stats::density(graphics_insurance$age, n = 100, from = 10, to = 70)
+ref("r_density_age_from_to", data.frame(x = d$x, y = d$y, bw = d$bw))
+pretty_ranges <- list(c(0, 1e-13), c(-15, 0), c(18, 64), c(15.96, 53.13), c(1121.8739, 63770.42801), c(-2.3, 7.9),
+                      c(0.001, 0.0011), c(5, 5), c(0, 0), c(-1e6, 3))
+pretty_rows <- list()
+for (i in seq_along(pretty_ranges)) for (n in c(1, 5, 12, 25)) for (min_n in unique(c(0, n %/% 3, n))) {
+  pretty_rows[[length(pretty_rows) + 1]] <- data.frame(case = paste(i, n, min_n), lo = pretty_ranges[[i]][1],
+                                                       hi = pretty_ranges[[i]][2], n = n, min_n = min_n,
+                                                       value = pretty(pretty_ranges[[i]], n = n, min.n = min_n))
+}
+ref("r_pretty", do.call(rbind, pretty_rows))
+hist_rows <- list()
+for (v in c("age", "bmi", "charges", "children")) for (br in list("Sturges", "Scott", "FD", 7)) {
+  h <- graphics::hist(graphics_insurance[[v]], breaks = br, plot = FALSE)
+  hist_rows[[length(hist_rows) + 1]] <- data.frame(variable = v, breaks = as.character(br), left = utils::head(h$breaks, -1),
+                                                   right = h$breaks[-1], count = h$counts)
+}
+ref("r_hist", do.call(rbind, hist_rows))
+box_rows <- list()
+for (v in c("bmi", "charges", "children")) {
+  b <- grDevices::boxplot.stats(graphics_insurance[[v]])
+  box_rows[[v]] <- data.frame(variable = v, statistic = c("whisker_low", "hinge_low", "median", "hinge_high", "whisker_high",
+                                                          "conf_low", "conf_high", "outliers"),
+                              value = c(b$stats, b$conf, length(b$out)))
+}
+ref("r_boxplot_stats", do.call(rbind, box_rows))
+# rwf::plot_qq: ggplot2's stat_qq puts the sorted values at qnorm(ppoints(n))
+p <- plot_qq(graphics_insurance[, "bmi", drop = FALSE])
+ref("plot_qq_bmi_points", ggplot2::ggplot_build(p$bmi)$data[[1]][, c("x", "y")])
+# rwf::plot_separability: as.factor() levels and ggplot2's density of each class
+set.seed(11)
+separability <- data.frame(observed = rep(c(-1, 1, 10, 2), each = 30),
+                           predicted = round(c(stats::rbeta(30, 2, 5), stats::rbeta(30, 5, 2), stats::rbeta(30, 3, 3),
+                                               stats::rbeta(30, 1, 1)), 3))
+ref("plot_separability_data", separability)
+p <- plot_separability(separability$observed, separability$predicted, title = "T")
+b <- ggplot2::ggplot_build(p)$data[[1]]
+ref("plot_separability_density", data.frame(observed = levels(p$data$observed)[b$group], x = b$x, density = b$density))
+ref("plot_separability_labels", data.frame(title = p$labels$title, caption = p$labels$caption))
+# rwf::plot_logistic_model: the title argument, melt()'s predictor order and the binomial smooth of a predictor
+logistic_plot <- data.frame(outcome = c(rep(1, 10), rep(0, 10)), z2 = c(rep(1, 11), rep(0, 9)), b1 = c(rep(1, 9), rep(0, 11)),
+                            a3 = c(5.2, 4.1, 6.3, 3.9, 5.5, 7.1, 4.8, 6.0, 5.9, 3.5, 8.2, 9.1, 7.7, 10.4, 8.8, 9.9, 7.2,
+                                   11.0, 8.5, 6.6))
+p <- plot_logistic_model(logistic_plot, title = "T")
+b <- suppressWarnings(suppressMessages(ggplot2::ggplot_build(p)))$data[[1]]
+ref("plot_logistic_model_labels", data.frame(title = p$labels$title, caption = p$labels$caption,
+                                             predictors = paste(levels(p$data$Predictor), collapse = ",")))
+ref("plot_logistic_model_smooth_a3", b[b$group == 3, c("x", "y")])
+# rwf::plot_icc_thurstonian: items keep their column order (item1, ..., item10, ...)
+icc <- compute_icc_thurstonian(eta = seq(-3, 3, by = 1), gamma = rep(0.5, 12), lambda = rep(1, 12), psi = rep(1, 12))$icc
+ref("plot_icc_thurstonian_levels", data.frame(level = levels(plot_icc_thurstonian(icc)$data$variable)))
+# rwf::plot_loadings: the variables are text, in alphabetical order on the axis; without sort rows and factors sorted
+ocean <- utils::read.delim(file.path(graphics_data_dir, "ocean.csv"), stringsAsFactors = FALSE)
+set.seed(3)  # psych labels the factors after random starts; in this state E1-E5 load on MR1, as in pwf
+model <- psych::fa(ocean[1:500, c(paste0("E", 1:5), paste0("N", 1:5))], nfactors = 2, rotate = "oblimin", fm = "minres")
+for (s in c(TRUE, FALSE)) {
+  p <- plot_loadings(model, matrix_type = "structure", sort = s, title = "T")
+  ref(paste0("plot_loadings_barplot_", tolower(s)), data.frame(p$plot_barplot$data, check.names = FALSE))
+  ref(paste0("plot_loadings_axis_", tolower(s)), data.frame(variable = ggplot2::layer_scales(p$plot_barplot)$x$get_limits()))
+}
+# rwf::plot_mtmm: R's collation for the methods and traits (m1, m2, M3), lower-case names, labels
+set.seed(7)
+mtmm_base <- matrix(stats::rnorm(60 * 9), 60, 9)
+mtmm_method <- function(shift) {
+  d <- as.data.frame(round(mtmm_base + matrix(stats::rnorm(60 * 9, sd = shift), 60, 9) + 3, 1))
+  names(d) <- paste0("x", 1:9)
+  d
+}
+mtmm_data <- rbind(mtmm_method(0.5), mtmm_method(1), mtmm_method(1.5))
+mtmm_data$method <- rep(c("m1", "m2", "M3"), each = 60)
+mtmm_data$id <- rep(1:60, 3)
+mtmm_data[c(5, 70, 150), "x2"] <- NA
+ref("plot_mtmm_data", mtmm_data)
+g <- plot_mtmm(mtmm_data, key = list(b = paste0("x", 1:3), A = paste0("x", 4:6), c = paste0("x", 7:9)),
+               method = "method", subject = "id", title = "T")
+mtmm_plot <- g$data
+mtmm_plot[] <- lapply(mtmm_plot, function(v) if (is.factor(v)) as.character(v) else v)
+mtmm_plot$label <- ggplot2::ggplot_build(g)$data[[2]]$label
+ref("plot_mtmm_plot_data", mtmm_plot)
+ref("plot_mtmm_levels", data.frame(trait_x = paste(levels(g$data$trait_x), collapse = ","),
+                                   trait_y = paste(levels(g$data$trait_y), collapse = ","),
+                                   method_x = paste(levels(g$data$method_x), collapse = ",")))

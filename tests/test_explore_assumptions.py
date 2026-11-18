@@ -116,3 +116,13 @@ def test_explore_plot_captions_match_rwf(load_data, reference):
     expected = reference("explore_plot_captions", dtype=str)
     assert list(captions) == expected["plot"].tolist()
     assert list(captions.values()) == expected["caption"].tolist()
+
+
+def test_plot_qq_points_match_rwf(load_data, reference):
+    """ggplot2's stat_qq puts the sorted values at qnorm(ppoints(n)) (plotnine's default positions differ)."""
+    p = ea.plot_qq(load_data("insurance")[["bmi"]])["bmi"]
+    p.draw()
+    points = p.layers[0].data.sort_values("x")
+    expected = reference("plot_qq_bmi_points")
+    np.testing.assert_allclose(points["x"], expected["x"], rtol=1e-13)
+    np.testing.assert_allclose(points["y"], expected["y"], rtol=1e-13)

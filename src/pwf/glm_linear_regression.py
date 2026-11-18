@@ -227,33 +227,6 @@ def _deparse_formula(formula):
     return "".join(out).strip()
 
 
-def _r_deparse_call(function, arguments, cutoff=60):
-    """
-    Lines of R's deparse() of a call function(name = value, ...): after each argument's ", " and after
-    each binary operator of a formula (" ~ ", " + ", ...), deparse ends the line once it is longer than
-    width.cutoff (60) characters; continuation lines are indented by 4 spaces.
-    """
-    lines, line = [], f"{function}("
-
-    def check():
-        nonlocal line
-        if len(line) > cutoff:
-            lines.append(line)
-            line = "    "
-
-    for k, (name, value) in enumerate(arguments):
-        line += f"{name} = "
-        for piece in re.split(r"( [~+\-*/] )", value):
-            line += piece
-            if re.fullmatch(r" [~+\-*/] ", piece):
-                check()
-        if k < len(arguments) - 1:
-            line += ", "
-            check()
-    lines.append(line + ")")
-    return lines
-
-
 def _data_name(frame):
     """Name of the variable holding the model's data in a calling frame (R's model$call$data), else "data"."""
     caller = inspect.currentframe().f_back.f_back  # skip this helper and report_regression
@@ -591,20 +564,24 @@ def report_regression(model, base_size=10, title="", file=None, w=10, h=10, plot
                           "Std. Error": "Standard Error of Estimates",
                           "2.5 %": "Confidence Intervals", "97.5 %": "Confidence Intervals"},
                 critical={"Pr(>|t|)": "<0.05"})
+            # rwf's sheets: names are row names, R's titles; rwf's Durbin Watson comments are keyed r, dw and p
+            # while its columns are dw.r, dw.dw and dw.p, so only its title shows
             excel_critical_value(
-                result["anova"].reset_index(names="term"), writer, sheet="ANOVA",
+                result["anova"], writer, sheet="ANOVA", title=instruction_anova[2],
                 comment={"F value": instruction_anova[0], "Pr(>F)": instruction_anova[1]},
                 critical={"Pr(>F)": "<0.05"})
-            excel_critical_value(result["variance_covariance"].reset_index(names="term"), writer,
-                                 sheet="Variance Covariance")
-            excel_critical_value(result["outlier_test"].reset_index(names="observation"), writer, sheet="Outliers")
-            excel_critical_value(
-                result["durbin_watson"], writer, sheet="Durbin Watson",
-                comment={"dw.r": instruction_durbin[1], "dw.dw": instruction_durbin[2], "dw.p": instruction_durbin[3]})
+            excel_critical_value(result["variance_covariance"], writer, sheet="Variance Covariance")
+            outliers = result["outlier_test"].copy()
+            if isinstance(model.model.data.row_labels, pd.RangeIndex):
+                outliers.index = outliers.index + 1  # R's row names count from 1
+            excel_critical_value(outliers, writer, sheet="Outliers")
+            excel_critical_value(result["durbin_watson"], writer, sheet="Durbin Watson", title=instruction_durbin[0])
             if len(vif) > 0:
-                excel_critical_value(result["vif"].reset_index(names="predictor"), writer, sheet="VIF",
+                # rwf's VIF table has no row names (car's values come unnamed): its sheet shows 1, 2, ...
+                excel_critical_value(result["vif"].reset_index(drop=True), writer, sheet="VIF",
+                                     title=", ".join(instruction_vif),
                                      comment={"vif": instruction_vif[0], "tolerance": instruction_vif[1],
-                                               "mean_vif": instruction_vif[2]})
+                                              "mean_vif": instruction_vif[2]})
             excel_critical_value(
                 result["diagnostics"], writer, sheet="Diagnostics",
                 comment={"standard_residuals": "Problematic values for standardized residuals > +-1.96",

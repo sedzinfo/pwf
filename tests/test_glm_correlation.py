@@ -13,8 +13,8 @@ from conftest import _load_reference, assert_matches_reference  # noqa: E402
 from pwf import glm_correlation  # noqa: E402
 
 ITEMS = [f"E{i}" for i in range(1, 6)] + [f"N{i}" for i in range(1, 6)]
-# psych finds rho with R's optimize, which stops at a tolerance of about 1e-4
-ATOL = 2e-4
+# psych finds rho with R's optimize(), which pwf runs itself (_rcompat.r_optimize): rho agrees to ~2e-11
+ATOL = 1e-9
 
 
 @pytest.fixture(scope="module")

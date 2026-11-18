@@ -14,6 +14,11 @@ import numpy as np
 import pandas as pd
 from scipy import optimize, stats
 
+try:
+    from ._rcompat import r_round
+except ImportError:
+    from _rcompat import r_round
+
 
 def _smc(r):
     """Squared multiple correlations, 1 - 1 / diag(R^-1)."""
@@ -345,7 +350,7 @@ def model_loadings(model, cut=None, matrix_type="pattern", sort=True):
         cut = critical[np.argmin(np.abs(samples - model.n_obs))]
 
     def table(matrix, label):
-        rounded = matrix.round(2)
+        rounded = matrix.apply(lambda column: column.map(lambda v: r_round(v, 2)))  # R's round()
         if sort:
             rounded = fa_sort(rounded)
         # as R's ifelse(): text when a loading is blanked, otherwise the numbers themselves

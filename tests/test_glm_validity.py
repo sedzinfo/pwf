@@ -56,3 +56,14 @@ def test_input_checks():
     with pytest.raises(ValueError, match="key must be"):
         glm_validity.compute_efa_cfa(pd.DataFrame({"dimension": ["A"], "subquestion_text": ["x"], "key": [2]}),
                                      pd.DataFrame({"x": [1, 2]}))
+
+
+def test_workbook_rows_as_rwf(result):
+    # each modification index row keeps its dimension (the index of fit.modification_indices() is lavaan's row
+    # numbers, so the rows must be lined up by position), and the item correlations keep R's melt row numbers
+    sheets = pd.read_excel(result["file"], sheet_name=None)
+    modification = sheets["CFA_Modification_Indexes"]
+    assert modification[["dimension", "lhs", "op", "rhs", "mi"]].notna().all().all()
+    assert len(modification) == 13
+    correlations = sheets["used_items_item_correlation"]
+    assert correlations.iloc[:3, 0].tolist() == [338, 319, 213]

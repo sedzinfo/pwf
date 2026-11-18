@@ -25,13 +25,13 @@ from plotnine import (
 
 try:
     from ._efa import fa, model_loadings as _model_loadings
-    from ._rcompat import r_make_unique
+    from ._rcompat import _sort_key, r_make_names, r_make_unique, r_round
     from .functions_plot import plot_multiplot, report_pdf
     from .functions_strings import str_proper, call_to_string
     from .explore_assumptions import plot_histogram
 except ImportError:
     from _efa import fa, model_loadings as _model_loadings
-    from _rcompat import r_make_unique
+    from _rcompat import _sort_key, r_make_names, r_make_unique, r_round
     from functions_plot import plot_multiplot, report_pdf
     from functions_strings import str_proper, call_to_string
     from explore_assumptions import plot_histogram
@@ -158,20 +158,33 @@ def plot_loadings(model, matrix_type=None, title="", base_size=10,
         raise ValueError("specify matrix_type either pattern or structure")
 
     load = model_loadings(model, cut=0, matrix_type=matrix_type, sort=sort)
+    if not sort:  # rwf: load[order(row.names(load)), order(names(load))]
+        load = load.iloc[sorted(range(len(load)), key=lambda i: _sort_key(load['variable'].iloc[i]))]
+        load = load[sorted(load.columns, key=_sort_key)]
     factor_names = [c for c in load.columns if c not in ("Matrix", "variable")]
-    variable_order = list(load['variable'])
+    # rwf's variable columns are text, which ggplot puts in alphabetical order on every axis (sort only
+    # changes the order of the data)
+    variable_order = sorted(load['variable'], key=_sort_key)
 
+    # rwf: data.frame(model$r, variable = row.names(model$r)) (make.names on the columns), rows and columns
+    # sorted by name
     correlation_matrix = model.r.copy()
+    correlation_matrix.columns = r_make_names(correlation_matrix.columns)
+    correlation_matrix = correlation_matrix.loc[sorted(correlation_matrix.index, key=_sort_key),
+                                                sorted(correlation_matrix.columns, key=_sort_key)]
+    relation_order = list(correlation_matrix.columns)
     correlation_matrix.insert(0, 'variable', correlation_matrix.index)
 
     loadings_long = load.melt(id_vars='variable', value_vars=factor_names, var_name='Factor', value_name='Loading')
     loadings_long['Loading'] = pd.to_numeric(loadings_long['Loading'], errors='coerce')
     loadings_long['AbsLoading'] = loadings_long['Loading'].abs()
     loadings_long['variable'] = pd.Categorical(loadings_long['variable'], categories=variable_order, ordered=True)
+    loadings_long['Factor'] = pd.Categorical(loadings_long['Factor'], categories=factor_names)  # melt's factor
 
     correlations_long = correlation_matrix.melt(id_vars='variable', var_name='Relation', value_name='Correlation')
-    correlations_long['CorrelationRounded'] = correlations_long['Correlation'].round(2)
+    correlations_long['CorrelationRounded'] = correlations_long['Correlation'].map(lambda v: r_round(v, 2))
     correlations_long['variable'] = pd.Categorical(correlations_long['variable'], categories=variable_order, ordered=True)
+    correlations_long['Relation'] = pd.Categorical(correlations_long['Relation'], categories=relation_order)
 
     correlation_plot = (ggplot(correlations_long, aes('Relation', 'variable', fill='Correlation'))
                          + geom_tile()
@@ -188,7 +201,7 @@ def plot_loadings(model, matrix_type=None, title="", base_size=10,
                          + labs(y="Loading", title=f"{str_proper(matrix_type)} Matrix Loadings")
                          + theme_bw(base_size=base_size)
                          + theme(axis_title_y=element_blank(), axis_title_x=element_blank(),
-                                 axis_text_y=element_blank()))
+                                 axis_ticks_y=element_blank(), axis_text_y=element_blank()))
 
     plot_barplot = (ggplot(loadings_long, aes('variable', 'AbsLoading', fill='Loading'))
                     + facet_wrap('~Factor', nrow=1)

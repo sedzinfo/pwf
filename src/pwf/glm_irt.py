@@ -329,7 +329,9 @@ def report_irt(model, m2=True, file=None):
     opts_unlisted = ro.r["unlist"](model.slots["Options"])
     model_options = pd.DataFrame({"Options": list(opts_unlisted)}, index=list(opts_unlisted.names))
 
-    model_call = _model_call_string(model)
+    # rwf passes model@Call to call_to_string(), which expects a model: both of its lookups give NULL, so
+    # rwf's model_call is the text "NULL" (an rwf bug, kept for parity; _model_call_string has the details)
+    model_call = "NULL"
 
     result = {
         "model_coefficients": model_coefficients,
@@ -349,17 +351,19 @@ def report_irt(model, m2=True, file=None):
         except ImportError:
             from functions_excel import excel_critical_value, excel_matrix
         writer = pd.ExcelWriter(f"{file}.xlsx", engine="xlsxwriter")
-        excel_critical_value(model_coefficients.reset_index(names="item"), writer,
-                              sheet="Coefficients", comment=comment)
-        excel_critical_value(model_coefficients_oblimin.reset_index(names="item"), writer,
-                              sheet="Coefficients Oblimin", comment=comment)
+        # rwf's sheets: the item and option names are row names
+        excel_critical_value(model_coefficients, writer, sheet="Coefficients", comment=comment)
+        excel_critical_value(model_coefficients_oblimin, writer, sheet="Coefficients Oblimin", comment=comment)
         excel_critical_value(item_fit, writer, sheet="item fit", comment=comment)
         excel_critical_value(g2_fit, writer, sheet="G2", comment=comment)
         if isinstance(m2_fit, pd.DataFrame):
-            excel_critical_value(m2_fit, writer, sheet="M2", comment=comment)
-        excel_matrix(q3_matrix, writer, sheet="Q3")
+            excel_critical_value(m2_fit, writer, sheet="M2", comment=comment,
+                                 title="M2 (Maydeu-Olivares & Joe, 2006) statistic\n when all data are dichotomous")
+        excel_matrix(q3_matrix, writer, sheet="Q3", conditional_formatting=True,
+                     title="Test for local independence:\nThere is no consensus about the critical values.\n"
+                           "Critical values may range from absolute of .7 to .1")
         excel_critical_value(exp_residuals, writer, sheet="Residuals")
-        excel_critical_value(model_options.reset_index(names="option"), writer, sheet="Model Options")
+        excel_critical_value(model_options, writer, sheet="Model Options")
         writer._save()
         writer.close()
 
