@@ -35,6 +35,18 @@ def test_compute_moving_average_matches_rwf(reference):
     assert_matches_reference(result, reference("compute_moving_average_lh"), rtol=1e-12)
 
 
+def test_ts_smoothing_lowess_is_r_lowess():
+    """rwf draws lines(lowess(df, f = i)) for each value of seq(start, stop, step); f above 1 is not capped."""
+    import matplotlib.pyplot as plt
+    from pwf._rcompat import r_lowess
+    lh = np.sin(np.linspace(0, 6, 40)) + np.linspace(0, 1, 40)
+    explore_time_series.ts_smoothing(lh, start=0.5, stop=1.5, step=0.5, type="lowess")
+    lines = plt.gca().lines[1:]
+    assert len(lines) == 3
+    for line, f in zip(lines, [0.5, 1.0, 1.5]):
+        np.testing.assert_array_equal(line.get_ydata(), r_lowess(np.arange(1, 41), lh, f=f)[1])
+
+
 def test_ts_smoothing_draws():
     lh = np.sin(np.linspace(0, 6, 40))
     for kind in ["default", "kernel", "lowess", "friedman", "splines", "polynomial", "linear"]:

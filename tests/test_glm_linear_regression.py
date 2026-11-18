@@ -7,7 +7,7 @@ import pandas as pd  # noqa: E402
 import pytest  # noqa: E402
 import statsmodels.formula.api as smf  # noqa: E402
 
-from conftest import _load_data  # noqa: E402
+from conftest import _load_data, _load_reference, assert_autoplot_matches  # noqa: E402
 from pwf import glm_linear_regression  # noqa: E402
 
 CASES = {"simple": "charges ~ age", "mixed": "charges ~ age * bmi + smoker + region",
@@ -98,3 +98,13 @@ def test_report_regression_more_models_match_rwf(reference, case):
         assert result["vif"].empty
     else:
         assert_frame_matches(result["vif"].reset_index(drop=True), vif, "vif")
+
+
+def test_report_regression_diagnostics_match_rwf(reference, monkeypatch, capsys):
+    """autoplot(model, which = 1:6, ncol = 2) + labs(title = title, ...): rwf's default title "" blanks the six titles."""
+    drawn = []
+    monkeypatch.setattr(glm_linear_regression, "report_pdf", lambda *plots, **kwargs: drawn.extend(plots))
+    model = smf.ols("age ~ parity + induced", data=_load_reference("infert")).fit()
+    glm_linear_regression.report_regression(model)
+    assert_autoplot_matches(drawn[0], reference("report_regression_diagnostics_layers", dtype={"label": str}),
+                            reference("report_regression_diagnostics_labels", keep_default_na=False, na_values=[]))

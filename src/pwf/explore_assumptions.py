@@ -25,14 +25,14 @@ from plotnine import (
     theme_bw, theme, labs, coord_flip, geom_point, geom_text, geom_hline,
 )
 try:
-    from ._rcompat import r_boxplot_stats, r_color, r_density, r_hist, r_number, r_ppoints, r_round
+    from ._rcompat import gg_text_size, r_boxplot_stats, r_color, r_density, r_hist, r_number, r_ppoints, r_round
     from .functions_environment import write_txt
     from .functions_excel import excel_critical_value
     from .functions_statistical import compute_standard
     from .functions_strings import output_separator, str_aes
     from .functions_plot import report_pdf
 except ImportError:
-    from _rcompat import r_boxplot_stats, r_color, r_density, r_hist, r_number, r_ppoints, r_round
+    from _rcompat import gg_text_size, r_boxplot_stats, r_color, r_density, r_hist, r_number, r_ppoints, r_round
     from functions_environment import write_txt
     from functions_excel import excel_critical_value
     from functions_statistical import compute_standard
@@ -376,7 +376,7 @@ def plot_outlier(df, method="mean", title="", base_size=10, pb=False):
         plots[column] = (
             ggplot(data, aes(x="id", y="obs", label="id"))
             + geom_point(aes(colour="Outlier"))
-            + geom_text(data=data[data["Outlier"]], size=7, nudge_x=0.6, color="black")
+            + geom_text(data=data[data["Outlier"]], size=gg_text_size(2.7), nudge_x=0.6, color="black")
             + labs(x=f"Observation ID \n Outliers: {n_outliers}", y=str(column), title=str(title), caption=caption)
             + theme_bw(base_size=base_size)
             + theme(legend_position="none")

@@ -177,3 +177,13 @@ def test_compute_power_r_accepts_scipy_spelling():
     assert two_sided["alternative"].unique().tolist() == ["two.sided"]
     with pytest.raises(ValueError):
         glm_correlation.compute_power_r(n=12, r=0.4, alternative="both")
+
+
+def test_plot_corrplot_labels_match_rwf(load_data):
+    """ggplot2 writes the rounded correlations with as.character() (1, 0.3), at rwf's base_size / 4 mm."""
+    data = load_data("insurance")[["age", "bmi", "children", "charges"]]
+    p = glm_correlation.plot_corrplot(data.corr(), title="T")
+    p.draw()
+    # rwf: ggplot_build(plot_corrplot(cor(...)))$data[[2]]$label
+    assert p.layers[1].data["label"].tolist() == ["1", "0.11", "1", "0.04", "0.01", "1", "0.3", "0.2", "0.07", "1"]
+    assert p.layers[1].geom.aes_params["size"] == pytest.approx(10 / 4 * 72.27 / 25.4)

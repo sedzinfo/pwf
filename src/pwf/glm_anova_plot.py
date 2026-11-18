@@ -115,7 +115,7 @@ def _plot_oneway_panel(summary, iv_col, dv_col, base_size, type, order_factor, t
 
     min_y = (data['ymin_err'] if type in _ERROR_BAR_LABELS else data[dv_col]).min()
     ann = pd.DataFrame({iv_col: data[iv_col], 'y': min_y, 'label': "N:" + data['N'].astype(str)})
-    p = p + geom_text(ann, aes(x=iv_col, y='y', label='label'), alpha=.5, size=base_size / 10 * 2,
+    p = p + geom_text(ann, aes(x=iv_col, y='y', label='label'), alpha=.5, size=gg_text_size(base_size / 10 * 2),
                        ha='left', va='top', inherit_aes=False)
     return p
 
@@ -203,7 +203,7 @@ def _plot_interaction_panel(summary, iv1, iv2, dv_col, base_size, type, order_fa
     n_per_iv1 = data.groupby(iv1, observed=True)['N'].sum().reset_index()
     n_per_iv1['y'] = (data['ymin_err'] if type in _ERROR_BAR_LABELS else data[dv_col]).min()
     n_per_iv1['label'] = "N:" + n_per_iv1['N'].astype(str)
-    p = p + geom_text(n_per_iv1, aes(x=iv1, y='y', label='label'), alpha=.5, size=base_size / 10 * 2,
+    p = p + geom_text(n_per_iv1, aes(x=iv1, y='y', label='label'), alpha=.5, size=gg_text_size(base_size / 10 * 2),
                        ha='left', va='top', inherit_aes=False)
     return p
 

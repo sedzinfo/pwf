@@ -8,7 +8,7 @@ import pytest  # noqa: E402
 import statsmodels.api as sm  # noqa: E402
 import statsmodels.formula.api as smf  # noqa: E402
 
-from conftest import _load_reference, assert_matches_reference  # noqa: E402
+from conftest import _load_reference, assert_autoplot_matches, assert_matches_reference  # noqa: E402
 from pwf import glm_logistic_regression  # noqa: E402
 
 # a cut search over few distinct predictions draws one-point lines; R's ggplot warns the same way
@@ -140,3 +140,15 @@ def test_plot_logistic_model_matches_rwf(reference):
     expected = reference("plot_logistic_model_smooth_a3")
     np.testing.assert_allclose(smooth["x"], expected["x"], rtol=1e-12)
     np.testing.assert_allclose(smooth["y"], expected["y"], rtol=1e-6)  # statsmodels' IRLS stops near R's glm
+
+
+def test_report_logistic_diagnostics_match_rwf(reference, monkeypatch, capsys):
+    """autoplot() of the glm: panels 1, 2, 3 and 5 from the linear predictor, deviance and standardized Pearson
+    residuals (R 4.6's rstandard) and the hat values of R's last IRLS iteration; labs(title = title) on each."""
+    drawn = []
+    monkeypatch.setattr(glm_logistic_regression, "report_pdf", lambda *plots, **kwargs: drawn.extend(plots))
+    model = smf.glm("case ~ age + parity + spontaneous", data=_load_reference("infert"),
+                    family=sm.families.Binomial()).fit()
+    glm_logistic_regression.report_logistic(model, title="T")
+    assert_autoplot_matches(drawn[0], reference("report_logistic_diagnostics_layers", dtype={"label": str}),
+                            reference("report_logistic_diagnostics_labels"), rtol=1e-7, atol=1e-9)

@@ -16,7 +16,8 @@ plot_ts, plot_acf and compute_moving_average match rwf
 ts_smoothing draws, as rwf, one curve per smoothing value from start to
 stop (inclusive, R's seq): "default" is R's two-sided filter (missing at
 the ends), "kernel" R's ksmooth with the normal kernel, "lowess"
-Cleveland's lowess as R's. R's supsmu ("friedman") and smooth.spline
+R's lowess (_rcompat.r_lowess, a port of clowess; f is not capped at 1, as
+R's). R's supsmu ("friedman") and smooth.spline
 ("splines") have no Python equivalents; they are approximated by lowess
 and scipy's smoothing spline.
 """
@@ -34,6 +35,11 @@ from plotnine import (
     ggplot, aes, geom_line, geom_point, geom_smooth, geom_hline, facet_grid,
     labs, theme_bw, theme,
 )
+
+try:
+    from ._rcompat import r_lowess
+except ImportError:
+    from _rcompat import r_lowess
 ##########################################################################################
 # TIME INDEX
 ##########################################################################################
@@ -232,8 +238,7 @@ def ts_smoothing(df, start=.01, stop=2, step=.001, title="", type="kernel", freq
             elif type == "kernel" and value > 0:
                 ax.plot(*_ksmooth(t, series, value), color=color, linewidth=1)
             elif type == "lowess" and 0 < value:
-                fitted = sm_lowess(series, t, frac=min(value, 1), it=3, delta=0.01 * np.ptp(t), return_sorted=False)
-                ax.plot(t, fitted, color=color, linewidth=1)
+                ax.plot(*r_lowess(t, series, f=value), color=color, linewidth=1)  # rwf: lines(lowess(df, f = i))
             elif type == "friedman" and 0 < value < 1:
                 ax.plot(t, sm_lowess(series, t, frac=value, return_sorted=False), color=color, linewidth=1)
             elif type == "splines" and value > 0:

@@ -30,13 +30,13 @@ from plotnine import (
 )
 
 try:
-    from ._rcompat import r_abbreviate, r_label, r_make_names, r_optimize, r_p_adjust, r_round
+    from ._rcompat import gg_text_size, r_abbreviate, r_label, r_make_names, r_optimize, r_p_adjust, r_round
     from .functions import change_data_type
     from .functions_matrix import matrix_triangle
     from .functions_plot import plot_multiplot, report_pdf
     from .glm_linear_regression import plot_scatterplot
 except ImportError:
-    from _rcompat import r_abbreviate, r_label, r_make_names, r_optimize, r_p_adjust, r_round
+    from _rcompat import gg_text_size, r_abbreviate, r_label, r_make_names, r_optimize, r_p_adjust, r_round
     from functions import change_data_type
     from functions_matrix import matrix_triangle
     from functions_plot import plot_multiplot, report_pdf
@@ -73,11 +73,12 @@ def plot_corrplot(mydata, title="", base_size=10, fill_limits=(-1, 0, 1)):
               .dropna(subset=['value']))
     melted['Var1'] = pd.Categorical(melted['Var1'], categories=list(mydata.index), ordered=True)
     melted['Var2'] = pd.Categorical(melted['Var2'], categories=list(mydata.columns), ordered=True)
+    melted['label'] = melted['value'].map(r_label)  # ggplot2 writes numeric labels with as.character(): 1, not 1.0
 
     p = (ggplot(melted, aes(x='Var2', y='Var1', fill='value'))
          + geom_tile(color='white')
          + scale_fill_gradient2(midpoint=fill_limits[1], limits=(fill_limits[0], fill_limits[2]))
-         + geom_text(aes(x='Var2', y='Var1', label='value'), color='black', size=base_size / 4)
+         + geom_text(aes(x='Var2', y='Var1', label='label'), color='black', size=gg_text_size(base_size / 4))
          + theme_bw(base_size=base_size)
          + theme(axis_text_x=element_text(rotation=45, hjust=1),
                  axis_title_x=element_blank(),

@@ -45,8 +45,8 @@ from plotnine import (
 )
 
 try:
-    from ._rcompat import (_sort_key, gg_linewidth, gg_text_size, gg_unit_pt, r_curve, r_layout_as_tree,
-                           r_layout_in_circle)
+    from ._rcompat import (gg_linewidth, gg_text_size, gg_unit_pt, r_curve, r_layout_as_tree, r_layout_in_circle,
+                           r_merge_rows)
     from ._sem import SEMFit, _lavaan_call, cfa, sem, simulate_data
     from .functions import remove_nc
     from .functions_generate_data import simulate_correlation_from_sample
@@ -56,8 +56,8 @@ try:
     from .functions_plot import report_pdf
     from .glm_linear_regression import plot_scatterplot
 except ImportError:
-    from _rcompat import (_sort_key, gg_linewidth, gg_text_size, gg_unit_pt, r_curve, r_layout_as_tree,
-                          r_layout_in_circle)
+    from _rcompat import (gg_linewidth, gg_text_size, gg_unit_pt, r_curve, r_layout_as_tree, r_layout_in_circle,
+                          r_merge_rows)
     from _sem import SEMFit, _lavaan_call, cfa, sem, simulate_data
     from functions import remove_nc
     from functions_generate_data import simulate_correlation_from_sample
@@ -74,13 +74,6 @@ __all__ = ["cfa", "sem", "simulate_data", "plot_cfa_gg", "plot_cfa", "report_cfa
 def _check_model(model):
     if not isinstance(model, SEMFit):
         raise TypeError("model must be a fitted model from pwf cfa() or sem() (rwf: a lavaan object)")
-
-
-def _r_merge_order(frame):
-    """Rows in the order of rwf's two merge() calls (by lhs, then by rhs): sorted by rhs, ties by lhs."""
-    order = sorted(range(len(frame)), key=lambda i: _sort_key(frame["lhs"].iloc[i]))
-    order = sorted(order, key=lambda i: _sort_key(frame["rhs"].iloc[i]))
-    return frame.iloc[order].reset_index(drop=True)
 
 
 def _format_f3(values):
@@ -167,13 +160,15 @@ def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_siz
     node_df["ymin"] = node_df["y"] - node_df["hh"]
     node_df["ymax"] = node_df["y"] + node_df["hh"]
 
-    def _attach_coords(edf, xcol, ycol, side):
-        merged = edf.merge(node_df[["name", "x", "y"]], left_on=side, right_on="name")
-        return merged.rename(columns={"x": xcol, "y": ycol}).drop(columns="name")
+    def _attach_coords(edf, xcol, ycol, side):  # rwf's merge(edf, node_df, by.x = side, by.y = "name"), in R's row order
+        rows, nodes = r_merge_rows(edf[side], node_df["name"])
+        merged = edf.iloc[rows].reset_index(drop=True)
+        merged[xcol] = node_df["x"].to_numpy()[nodes]
+        merged[ycol] = node_df["y"].to_numpy()[nodes]
+        return merged
 
     loadings = pe[pe["op"] == "=~"].copy()
-    edge_df = _attach_coords(loadings, "x_from", "y_from", "lhs")
-    edge_df = _r_merge_order(_attach_coords(edge_df, "x_to", "y_to", "rhs"))
+    edge_df = _attach_coords(_attach_coords(loadings, "x_from", "y_from", "lhs"), "x_to", "y_to", "rhs")
     if what == "eq":
         label = edge_df["label"]
         edge_df["display"] = np.where(label.isna() | (label == ""), _format_f3(edge_df["est"]), label)
@@ -185,8 +180,7 @@ def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_siz
     cov_df = pe[(pe["op"] == "~~") & (pe["lhs"] != pe["rhs"]) &
                 pe["lhs"].isin(latent_vars) & pe["rhs"].isin(latent_vars)].copy()
     if len(cov_df) > 0:
-        cov_df = _attach_coords(cov_df, "x_from", "y_from", "lhs")
-        cov_df = _r_merge_order(_attach_coords(cov_df, "x_to", "y_to", "rhs"))
+        cov_df = _attach_coords(_attach_coords(cov_df, "x_from", "y_from", "lhs"), "x_to", "y_to", "rhs")
         # formatC() of the label column (text) leaves it as it is, "" for parameters without a label
         cov_df["display"] = cov_df["label"].fillna("") if what == "eq" else _format_f3(cov_df[edge_col])
         cov_df["mx"] = (cov_df["x_from"] + cov_df["x_to"]) / 2

@@ -25,13 +25,13 @@ from plotnine import (
 
 try:
     from ._efa import fa, model_loadings as _model_loadings
-    from ._rcompat import _sort_key, r_make_names, r_make_unique, r_round
+    from ._rcompat import _sort_key, gg_text_size, r_label, r_make_names, r_make_unique, r_round
     from .functions_plot import plot_multiplot, report_pdf
     from .functions_strings import str_proper, call_to_string
     from .explore_assumptions import plot_histogram
 except ImportError:
     from _efa import fa, model_loadings as _model_loadings
-    from _rcompat import _sort_key, r_make_names, r_make_unique, r_round
+    from _rcompat import _sort_key, gg_text_size, r_label, r_make_names, r_make_unique, r_round
     from functions_plot import plot_multiplot, report_pdf
     from functions_strings import str_proper, call_to_string
     from explore_assumptions import plot_histogram
@@ -95,7 +95,7 @@ def plot_scree(df, base_size=15, title="", color=("#5F2C91", "#5E912C")):
             + labs(x="Index", y="Eigenvalue", title=f"Scree plot {title}")
             + annotate("text", x=eigenvalues_df['x'].max(), y=eigenvalues_df['eigenvalues'].max(),
                        label=f"Top line: Kaiser criterion:{kaiser}\nBottom line: Jolliffe criterion:{jolliffe}",
-                       ha='right', va='top', size=base_size / 4)
+                       ha='right', va='top', size=gg_text_size(base_size / 4))
             + theme(legend_title=element_blank(), legend_position='bottom', axis_title_x=element_blank()))
 ##########################################################################################
 # FACTOR PATTERN STRUCTURE MATRIX
@@ -183,13 +183,15 @@ def plot_loadings(model, matrix_type=None, title="", base_size=10,
 
     correlations_long = correlation_matrix.melt(id_vars='variable', var_name='Relation', value_name='Correlation')
     correlations_long['CorrelationRounded'] = correlations_long['Correlation'].map(lambda v: r_round(v, 2))
+    # ggplot2 writes the numeric label with as.character(): 1 and 0.5, not 1.0 and 0.50
+    correlations_long['label'] = correlations_long['CorrelationRounded'].map(r_label)
     correlations_long['variable'] = pd.Categorical(correlations_long['variable'], categories=variable_order, ordered=True)
     correlations_long['Relation'] = pd.Categorical(correlations_long['Relation'], categories=relation_order)
 
     correlation_plot = (ggplot(correlations_long, aes('Relation', 'variable', fill='Correlation'))
                          + geom_tile()
                          + scale_fill_gradient2(low=color[0], mid=color[1], high=color[2], midpoint=0)
-                         + geom_text(aes(label='CorrelationRounded'), size=base_size / 4)
+                         + geom_text(aes(label='label'), size=gg_text_size(base_size / 4))
                          + labs(y="Loading", title="Correlation Matrix")
                          + theme_bw(base_size=base_size)
                          + theme(axis_title_x=element_blank(), axis_title_y=element_blank(),

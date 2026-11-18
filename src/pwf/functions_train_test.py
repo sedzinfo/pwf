@@ -43,9 +43,9 @@ from plotnine import (
     scale_x_reverse, scale_linetype_manual, coord_fixed, theme_minimal,
 )
 try:
-    from ._rcompat import r_color_ramp as _r_color_ramp, r_density, r_label as _r_label, r_levels, r_mixedsort_key, r_number, r_round
+    from ._rcompat import gg_text_size, r_color_ramp as _r_color_ramp, r_density, r_label as _r_label, r_levels, r_mixedsort_key, r_number, r_round
 except ImportError:
-    from _rcompat import r_color_ramp as _r_color_ramp, r_density, r_label as _r_label, r_levels, r_mixedsort_key, r_number, r_round
+    from _rcompat import gg_text_size, r_color_ramp as _r_color_ramp, r_density, r_label as _r_label, r_levels, r_mixedsort_key, r_number, r_round
 ##########################################################################################
 # R HELPERS
 ##########################################################################################
@@ -165,7 +165,7 @@ def plot_confusion(observed, predicted, base_size=10, title=""):
                f"\nKappa squared:{rounded('kappa_squared')}")
     return (ggplot(melted, aes(x="observed", y="predicted", fill="value"))
             + geom_tile(color="white")
-            + geom_text(aes(label="value"), color="black", size=base_size / 2)
+            + geom_text(aes(label="value"), color="black", size=gg_text_size(base_size / 2))
             + theme_bw(base_size=base_size)
             + theme(axis_ticks_major_x=element_blank(), axis_ticks_major_y=element_blank(),
                     panel_grid_major=element_blank(), panel_grid_minor=element_blank(),
@@ -681,7 +681,7 @@ def plot_confusion_extended(observed, predicted, positive=None, base_size=10, ti
     row_labels = ["", f"Predicted: {negative}", f"Predicted: {positive}"]
     return (ggplot(cells, aes(x="col", y="row"))
             + geom_tile(aes(fill="fill"), color="#fcfcfb", size=2, width=0.96, height=0.96)
-            + geom_text(aes(label="label", color="text_color"), size=base_size * 0.95, fontweight="bold")
+            + geom_text(aes(label="label", color="text_color"), size=gg_text_size(base_size / 3), fontweight="bold")
             + scale_fill_identity()
             + scale_color_identity()
             + scale_x_continuous(breaks=[1, 2, 3], labels=col_labels, expand=(0.02, 0.02))

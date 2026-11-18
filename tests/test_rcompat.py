@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from pwf._rcompat import (r_boxplot_stats, r_curve, r_density, r_hist, r_layout_as_tree, r_layout_in_circle,
-                          r_lowess, r_ppoints, r_pretty, r_qqnorm, r_quantile7)
+                          r_lowess, r_merge_rows, r_ppoints, r_pretty, r_qqnorm, r_quantile7)
 
 
 def test_density_matches_r(reference, load_data):
@@ -100,3 +100,12 @@ def test_qqnorm_and_quantile7_follow_r():
                                                  1.0491313979639711], rtol=1e-14)
     assert np.isnan(x[2]) and np.isnan(y[2])
     np.testing.assert_allclose(r_quantile7([4.0, 1.0, 3.0, 2.0, np.nan], [0.25, 0.75]), [1.75, 3.25], rtol=0)
+
+
+def test_merge_rows_follow_r():
+    """merge(x, y, by.x = "key", by.y = "name"): R's Shell sort leaves the tied "a" rows as 7, 2 (not 2, 7)."""
+    x = ["b", "E3", "a", "N1", "b", "E3", "C", "a", "N1", "e3", "B"]
+    y = ["N1", "a", "E3", "b", "C", "e3"]
+    rows, names = r_merge_rows(x, y)
+    assert rows == [7, 2, 0, 4, 6, 9, 1, 5, 3, 8]  # R: m$row
+    assert names == [1, 1, 3, 3, 4, 5, 2, 2, 0, 0]  # R: m$yrow

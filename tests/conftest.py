@@ -30,6 +30,54 @@ def assert_matches_reference(result, expected, rtol=1e-8, atol=0.0, column_tol=N
         else:
             assert res.astype(str).tolist() == exp.astype(str).tolist(), col
 
+
+_AUTOPLOT_GEOMS = {"geom_point": "GeomPoint", "geom_line": "GeomLine", "geom_hline": "GeomHline", "geom_text": "GeomText",
+                   "geom_abline": "GeomAbline", "geom_linerange": "GeomLinerange"}
+
+
+def autoplot_panels(composition):
+    """The panels of a plotnine composition (ggfortify's ggmultiplot), in order, without spacers."""
+    from plotnine import ggplot
+    if isinstance(composition, ggplot):
+        return [composition] if composition.layers else []
+    return [panel for item in composition.items for panel in autoplot_panels(item)]
+
+
+def assert_autoplot_matches(composition, layers, labels, rtol=1e-8, atol=1e-10):
+    """
+    Panels of pwf's ggfortify::autoplot port against make_reference.R's autoplot_rows(): titles, captions,
+    x ranges and every layer's values (geom_blank layers left out). The Q-Q points are compared as sorted
+    pairs: residuals tied in value take the tied quantiles in an order R's last-bit noise decides.
+    """
+    panels = autoplot_panels(composition)
+    for _, label in labels.iterrows():
+        k = int(label["panel"])
+        panel = panels[k - 1]
+        expected_title = None if pd.isna(label["title"]) else label["title"]
+        assert panel.labels.get("title", None) == expected_title, k
+        assert panel.labels.get("caption", None) == label["caption"], k
+        panel.draw()
+        np.testing.assert_allclose(panel.layout.panel_params[0].x.range, [label["x_min"], label["x_max"]],
+                                   rtol=1e-7, err_msg=f"panel {k} x range")
+        drawn = [layer for layer in panel.layers if type(layer.geom).__name__ != "geom_blank"]
+        expected = layers[(layers["panel"] == k) & (layers["geom"] != "GeomBlank")]
+        assert [_AUTOPLOT_GEOMS[type(layer.geom).__name__] for layer in drawn] == \
+            expected.drop_duplicates("layer")["geom"].tolist(), k
+        for layer, (_, rows) in zip(drawn, expected.groupby("layer", sort=True)):
+            data = layer.data.reset_index(drop=True)
+            assert len(data) == len(rows), k
+            if k == 2 and rows["geom"].iloc[0] == "GeomPoint":
+                got = np.array(sorted(zip(data["x"], data["y"])))
+                want = np.array(sorted(zip(rows["x"], rows["y"])))
+                np.testing.assert_allclose(got, want, rtol=rtol, atol=atol, err_msg=f"panel {k} Q-Q points")
+                continue
+            for column in ["x", "y", "ymax", "slope", "intercept", "yintercept"]:
+                if rows[column].notna().any():
+                    np.testing.assert_allclose(data[column].to_numpy(float), rows[column].to_numpy(float), rtol=rtol,
+                                               atol=atol, err_msg=f"panel {k} {rows['geom'].iloc[0]} {column}")
+            if rows["label"].notna().any():
+                assert data["label"].astype(str).tolist() == rows["label"].astype(str).tolist(), k
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "src" / "pwf" / "data"
 REFERENCE_DIR = pathlib.Path(__file__).resolve().parent / "reference"
