@@ -41,7 +41,12 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
-from plotnine import ggplot, aes, geom_point, geom_line, theme_bw, labs
+from plotnine import ggplot, aes, geom_point, geom_line, labs
+
+try:  # plotnine's theme_bw with ggplot2's left-aligned title
+    from ._rcompat import theme_bw
+except ImportError:
+    from _rcompat import theme_bw
 
 try:
     from ._rcompat import r_make_names, r_optim_bfgs, r_number, r_round

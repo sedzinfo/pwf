@@ -30,7 +30,12 @@ import scipy.linalg
 import scipy.stats
 import statsmodels.api as sm
 from patsy import ModelDesc
-from plotnine import ggplot, aes, geom_smooth, geom_count, theme_bw, labs
+from plotnine import ggplot, aes, geom_smooth, geom_count, labs
+
+try:  # plotnine's theme_bw with ggplot2's left-aligned title
+    from ._rcompat import theme_bw
+except ImportError:
+    from _rcompat import theme_bw
 
 try:
     from .explore_descriptives import compute_descriptives

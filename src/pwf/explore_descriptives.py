@@ -17,8 +17,13 @@ import numpy as np
 import pandas as pd
 from plotnine import (
     ggplot, aes, geom_point, geom_text, geom_rect, geom_col, scale_size_continuous,
-    labs, theme, theme_bw, element_text, element_blank, coord_fixed, coord_flip,
+    labs, theme, element_text, element_blank, coord_fixed, coord_flip,
 )
+
+try:  # plotnine's theme_bw with ggplot2's left-aligned title
+    from ._rcompat import theme_bw
+except ImportError:
+    from _rcompat import theme_bw
 try:
     from ._rcompat import r_label, r_levels, r_make_names, r_recycle, resolve_columns
     from .functions_excel import report_dataframe

@@ -22,8 +22,13 @@ import matplotlib.pyplot as plt
 from scipy import stats
 from plotnine import (
     ggplot, aes, geom_histogram, geom_boxplot, geom_abline, stat_qq, lims,
-    theme_bw, theme, labs, coord_flip, geom_point, geom_text, geom_hline,
+    theme, labs, coord_flip, geom_point, geom_text, geom_hline,
 )
+
+try:  # plotnine's theme_bw with ggplot2's left-aligned title
+    from ._rcompat import theme_bw
+except ImportError:
+    from _rcompat import theme_bw
 try:
     from ._rcompat import gg_text_size, r_boxplot_stats, r_color, r_density, r_hist, r_number, r_ppoints, r_round
     from .functions_environment import write_txt

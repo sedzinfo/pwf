@@ -28,8 +28,13 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 from plotnine import (
-    ggplot, aes, geom_point, geom_line, geom_col, labs, theme_bw, coord_flip, position_dodge,
+    ggplot, aes, geom_point, geom_line, geom_col, labs, coord_flip, position_dodge,
 )
+
+try:  # plotnine's theme_bw with ggplot2's left-aligned title
+    from ._rcompat import theme_bw
+except ImportError:
+    from _rcompat import theme_bw
 try:
     from ._rcompat import gg_linewidth, r_number
     from .functions_excel import excel_confusion_matrix, excel_critical_value

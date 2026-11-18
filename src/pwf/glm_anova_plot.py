@@ -39,9 +39,14 @@ import scipy.stats
 import statsmodels.formula.api as smf
 from plotnine import (
     ggplot, aes, geom_point, geom_line, geom_errorbar, geom_text, labs,
-    theme_bw, scale_x_discrete, coord_flip, position_dodge,
+    scale_x_discrete, coord_flip, position_dodge,
     geom_hline, geom_abline, geom_linerange, expand_limits, theme, element_text,
 )
+
+try:  # plotnine's theme_bw with ggplot2's left-aligned title
+    from ._rcompat import theme_bw
+except ImportError:
+    from _rcompat import theme_bw
 from plotnine.composition import plot_spacer
 
 try:

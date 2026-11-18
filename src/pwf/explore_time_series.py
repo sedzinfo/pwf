@@ -33,8 +33,13 @@ from statsmodels.nonparametric.smoothers_lowess import lowess as sm_lowess
 from scipy.interpolate import UnivariateSpline
 from plotnine import (
     ggplot, aes, geom_line, geom_point, geom_smooth, geom_hline, facet_grid,
-    labs, theme_bw, theme,
+    labs, theme,
 )
+
+try:  # plotnine's theme_bw with ggplot2's left-aligned title
+    from ._rcompat import theme_bw
+except ImportError:
+    from _rcompat import theme_bw
 
 try:
     from ._rcompat import r_lowess

@@ -25,9 +25,14 @@ import pandas as pd
 import scipy.special
 import scipy.stats
 from plotnine import (
-    ggplot, aes, geom_tile, geom_text, scale_fill_gradient2, theme_bw, theme,
+    ggplot, aes, geom_tile, geom_text, scale_fill_gradient2, theme,
     element_text, element_blank, labs, geom_point, geom_line, lims,
 )
+
+try:  # plotnine's theme_bw with ggplot2's left-aligned title
+    from ._rcompat import theme_bw
+except ImportError:
+    from _rcompat import theme_bw
 
 try:
     from ._rcompat import gg_text_size, r_abbreviate, r_label, r_make_names, r_optimize, r_p_adjust, r_round

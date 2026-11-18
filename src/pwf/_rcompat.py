@@ -1389,3 +1389,9 @@ def r_merge_rows(x_keys, y_keys):
         i, j = nnx, nny
     order = sorted(range(len(xi)), key=lambda k: _sort_key(x_keys[xi[k]]))
     return [xi[k] for k in order], [yi[k] for k in order]
+
+
+def theme_bw(base_size=11, base_family=None):
+    """plotnine's theme_bw with ggplot2's left-aligned plot title (plotnine centres titles by default)."""
+    from plotnine import element_text, theme, theme_bw as plotnine_theme_bw
+    return plotnine_theme_bw(base_size=base_size, base_family=base_family) + theme(plot_title=element_text(ha="left"))

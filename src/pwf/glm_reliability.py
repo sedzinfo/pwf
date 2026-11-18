@@ -49,9 +49,14 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from plotnine import (
-    ggplot, aes, geom_tile, geom_text, facet_grid, labs, theme_bw, theme,
+    ggplot, aes, geom_tile, geom_text, facet_grid, labs, theme,
     element_rect, element_blank, element_line, element_text, scale_fill_brewer,
 )
+
+try:  # plotnine's theme_bw with ggplot2's left-aligned title
+    from ._rcompat import theme_bw
+except ImportError:
+    from _rcompat import theme_bw
 
 try:
     from ._rcompat import _sort_key, r_call_text, r_label, r_make_names, r_round

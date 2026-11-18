@@ -38,10 +38,15 @@ import numpy as np
 import pandas as pd
 from plotnine import (
     ggplot, aes, geom_line, geom_abline, geom_tile, geom_text, geom_density, geom_vline,
-    scale_fill_gradient, labs, theme, theme_bw, element_text, element_blank,
+    scale_fill_gradient, labs, theme, element_text, element_blank,
     scale_fill_identity, scale_color_identity, scale_x_continuous, scale_y_continuous,
     scale_x_reverse, scale_linetype_manual, coord_fixed, theme_minimal,
 )
+
+try:  # plotnine's theme_bw with ggplot2's left-aligned title
+    from ._rcompat import theme_bw
+except ImportError:
+    from _rcompat import theme_bw
 try:
     from ._rcompat import gg_text_size, r_color_ramp as _r_color_ramp, r_density, r_label as _r_label, r_levels, r_mixedsort_key, r_number, r_round
 except ImportError:

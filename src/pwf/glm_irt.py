@@ -65,7 +65,12 @@ Deviations/quirks, by design:
 ##########################################################################################
 import numpy as np
 import pandas as pd
-from plotnine import ggplot, aes, geom_line, geom_point, theme_bw, theme, labs, facet_wrap
+from plotnine import ggplot, aes, geom_line, geom_point, theme, labs, facet_wrap
+
+try:  # plotnine's theme_bw with ggplot2's left-aligned title
+    from ._rcompat import theme_bw
+except ImportError:
+    from _rcompat import theme_bw
 
 try:
     from .functions import remove_nc
