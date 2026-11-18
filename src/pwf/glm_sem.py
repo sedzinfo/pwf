@@ -14,13 +14,14 @@ needed. With missing = "ml", lavaan's FIML-corrected ("robust") fit indices,
 the GFI family and CRMR are not ported and come out missing.
 
 Deviations from the R original, by design:
-  - R's igraph-based node layouts (layout_in_circle, layout_as_tree,
-    layout_with_fr) are replaced with networkx (circular_layout,
-    graphviz's "dot" layout for "tree", spring_layout for "spring"); without
-    Graphviz a simple 2-row layout (latents on top, their indicators below)
-    is used for "tree".
-  - ggplot2::geom_curve (latent covariance arcs) has no plotnine
-    equivalent; a quadratic Bezier arc drawn with geom_path is used instead.
+  - plot_cfa_gg's "tree" and "circle" layouts are ports of igraph's
+    layout_as_tree and layout_in_circle (same coordinates as rwf), and its
+    covariance arcs are grid's curve (geom_curve's control points and
+    X-spline) drawn with geom_path. The "spring" layout is networkx's
+    spring_layout with a fixed seed: rwf's igraph layout_with_fr starts from
+    random positions, so rwf draws a different one each time. ggplot2's
+    20 pt plot margin is not set (plotnine margins are fractions of the
+    figure).
   - inspect(fit, "est"/"std") results are dicts of DataFrames (one per
     model matrix), and the text summary written to the log is pwf's own
     layout, not lavaan's summary() print.
@@ -44,6 +45,8 @@ from plotnine import (
 )
 
 try:
+    from ._rcompat import (_sort_key, gg_linewidth, gg_text_size, gg_unit_pt, r_curve, r_layout_as_tree,
+                           r_layout_in_circle)
     from ._sem import SEMFit, _lavaan_call, cfa, sem, simulate_data
     from .functions import remove_nc
     from .functions_generate_data import simulate_correlation_from_sample
@@ -53,6 +56,8 @@ try:
     from .functions_plot import report_pdf
     from .glm_linear_regression import plot_scatterplot
 except ImportError:
+    from _rcompat import (_sort_key, gg_linewidth, gg_text_size, gg_unit_pt, r_curve, r_layout_as_tree,
+                          r_layout_in_circle)
     from _sem import SEMFit, _lavaan_call, cfa, sem, simulate_data
     from functions import remove_nc
     from functions_generate_data import simulate_correlation_from_sample
@@ -66,47 +71,21 @@ __all__ = ["cfa", "sem", "simulate_data", "plot_cfa_gg", "plot_cfa", "report_cfa
 ##########################################################################################
 # GRAPH LAYOUT (internal)
 ##########################################################################################
-def _simple_tree_layout(nodes, latent_vars, edges):
-    """Fallback 2-row layout (latents on top, their own indicators below) when graphviz is unavailable."""
-    latents = [n for n in nodes if n in latent_vars]
-    observed = [n for n in nodes if n not in latent_vars]
-    children_of = {lat: [] for lat in latents}
-    for lhs, rhs in edges:
-        if lhs in children_of:
-            children_of[lhs].append(rhs)
-
-    pos = {}
-    for i, lat in enumerate(latents):
-        pos[lat] = (i * 3.0, 1.0)
-    for lat in latents:
-        children = children_of.get(lat, [])
-        n = max(len(children), 1)
-        start = pos[lat][0] - (n - 1) / 2.0
-        for j, child in enumerate(children):
-            pos[child] = (start + j, 0.0)
-    for k, n in enumerate([o for o in observed if o not in pos]):
-        pos[n] = (len(latents) * 3 + k, 0.0)
-    return pos
-
-
-def _bezier_arc(x0, y0, x1, y1, curvature=0.35, n=30):
-    """Quadratic Bezier arc between two points -- plotnine has no geom_curve."""
-    xm, ym = (x0 + x1) / 2, (y0 + y1) / 2
-    dx, dy = x1 - x0, y1 - y0
-    dist = np.hypot(dx, dy)
-    if dist == 0:
-        return np.full(n, x0), np.full(n, y0)
-    nx_, ny_ = -dy / dist, dx / dist
-    cx, cy = xm + nx_ * curvature * dist, ym + ny_ * curvature * dist
-    t = np.linspace(0, 1, n)
-    xs = (1 - t) ** 2 * x0 + 2 * (1 - t) * t * cx + t ** 2 * x1
-    ys = (1 - t) ** 2 * y0 + 2 * (1 - t) * t * cy + t ** 2 * y1
-    return xs, ys
-
-
 def _check_model(model):
     if not isinstance(model, SEMFit):
         raise TypeError("model must be a fitted model from pwf cfa() or sem() (rwf: a lavaan object)")
+
+
+def _r_merge_order(frame):
+    """Rows in the order of rwf's two merge() calls (by lhs, then by rhs): sorted by rhs, ties by lhs."""
+    order = sorted(range(len(frame)), key=lambda i: _sort_key(frame["lhs"].iloc[i]))
+    order = sorted(order, key=lambda i: _sort_key(frame["rhs"].iloc[i]))
+    return frame.iloc[order].reset_index(drop=True)
+
+
+def _format_f3(values):
+    """R's formatC(x, digits = 3, format = "f"); NA as "NA"."""
+    return [("NA" if pd.isna(v) else f"{float(v):.3f}") for v in values]
 ##########################################################################################
 # MODEL PLOT
 ##########################################################################################
@@ -114,15 +93,21 @@ def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_siz
                 color_latent="#4f8ef7", color_observed="#e8eaf0", **kwargs):
     """
     Path diagram of a fitted CFA/SEM model, drawn with plotnine (port of
-    rwf::plot_cfa_gg).
+    rwf::plot_cfa_gg). Loadings are arrows from each latent variable to its
+    indicators, labelled with their estimates; covariances between latent
+    variables are dashed arcs. Sizes are ggplot2's (text in mm, line widths
+    in ggplot2's unit), converted for plotnine.
 
     Parameters:
     model (SEMFit): A model fitted with cfa() or sem().
     what (str, optional): "std" (standardized), "est" (unstandardized),
-        or "eq" (parameter labels). Defaults to "std".
+        or "eq" (parameter labels). Defaults to "std". As in rwf, "eq" needs
+        a model with parameter labels; pwf's models have none (labels are
+        not supported), so it raises ValueError, as rwf fails on a model
+        without labels.
     layout (str, optional): "tree", "circle", or "spring". Defaults to "tree".
-    label_size (float, optional): Node label size. Defaults to 3.2.
-    edge_label_size (float, optional): Path coefficient label size. Defaults to 2.6.
+    label_size (float, optional): Node label size (ggplot2's mm). Defaults to 3.2.
+    edge_label_size (float, optional): Path coefficient label size (mm). Defaults to 2.6.
     color_latent (str, optional): Fill color for latent variable nodes.
     color_observed (str, optional): Fill color for observed variable nodes.
     **kwargs: Ignored (kept for API compatibility with plot_cfa).
@@ -142,10 +127,11 @@ def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_siz
         raise ValueError('layout must be one of "tree", "circle", "spring"')
 
     pe = model.parameter_estimates()
-    pe = pe[pe["op"] != "r2"]
-    if "label" not in pe.columns:
-        pe["label"] = ""
+    pe = pe[pe["op"] != "r2"].reset_index(drop=True)
     edge_col = {"std": "std.all", "est": "est", "eq": "label"}[what]
+    if what == "eq" and "label" not in pe.columns:
+        # lavaan's parameterEstimates() has no label column without labels, and rwf's ifelse() on it fails
+        raise ValueError('what = "eq" needs a model with parameter labels (rwf fails on a model without them)')
 
     latent_vars = pe.loc[pe["op"] == "=~", "lhs"].unique().tolist()
     observed_vars = pe.loc[pe["op"] == "=~", "rhs"].unique().tolist()
@@ -154,31 +140,26 @@ def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_siz
 
     edge_list = pe[pe["op"].isin(["=~", "~"])][["lhs", "rhs"]]
     edge_list = edge_list[edge_list["lhs"].isin(all_nodes) & edge_list["rhs"].isin(all_nodes)]
-    edges = list(edge_list.itertuples(index=False, name=None))
-
-    g = nx.DiGraph()
-    g.add_nodes_from(all_nodes)
-    g.add_edges_from(edges)
+    index = {name: i for i, name in enumerate(all_nodes)}
+    edges = [(index[a], index[b]) for a, b in edge_list.itertuples(index=False, name=None)]
 
     if layout == "circle":
-        pos = nx.circular_layout(g)
-    elif layout == "spring":
-        pos = nx.spring_layout(g, iterations=1000, seed=1)
+        coords = r_layout_in_circle(len(all_nodes))
+    elif layout == "tree":  # roots: the latent variables
+        coords = r_layout_as_tree(len(all_nodes), edges, [index[n] for n in all_nodes if n in latent_vars])
     else:
-        try:
-            pos = nx.nx_pydot.graphviz_layout(g, prog="dot")
-        except Exception:
-            pos = _simple_tree_layout(all_nodes, latent_vars, edges)
-
-    xs = np.array([pos[n][0] for n in all_nodes], dtype=float)
-    ys = np.array([pos[n][1] for n in all_nodes], dtype=float)
+        g = nx.DiGraph()
+        g.add_nodes_from(range(len(all_nodes)))
+        g.add_edges_from(edges)
+        pos = nx.spring_layout(g, iterations=1000, seed=1)
+        coords = np.array([pos[i] for i in range(len(all_nodes))], dtype=float)
 
     def safe_scale(v):
         rng = v.max() - v.min()
         return np.full(len(v), 5.0) if rng == 0 else (v - v.min()) / rng * 10
 
-    node_df["x"] = safe_scale(xs)
-    node_df["y"] = safe_scale(ys)
+    node_df["x"] = safe_scale(coords[:, 0])
+    node_df["y"] = safe_scale(coords[:, 1])
     node_df["hw"] = np.where(node_df["is_lat"], 0.90, 0.70)
     node_df["hh"] = np.where(node_df["is_lat"], 0.55, 0.42)
     node_df["xmin"] = node_df["x"] - node_df["hw"]
@@ -190,17 +171,14 @@ def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_siz
         merged = edf.merge(node_df[["name", "x", "y"]], left_on=side, right_on="name")
         return merged.rename(columns={"x": xcol, "y": ycol}).drop(columns="name")
 
-    def _display(frame):
-        if what == "eq":
-            label_col = frame["label"] if "label" in frame.columns else pd.Series([""] * len(frame))
-            est_fmt = frame["est"].map(lambda v: f"{v:.3f}")
-            return np.where(label_col.isna() | (label_col == ""), est_fmt, label_col)
-        return frame[edge_col].map(lambda v: f"{v:.3f}")
-
     loadings = pe[pe["op"] == "=~"].copy()
     edge_df = _attach_coords(loadings, "x_from", "y_from", "lhs")
-    edge_df = _attach_coords(edge_df, "x_to", "y_to", "rhs")
-    edge_df["display"] = _display(edge_df)
+    edge_df = _r_merge_order(_attach_coords(edge_df, "x_to", "y_to", "rhs"))
+    if what == "eq":
+        label = edge_df["label"]
+        edge_df["display"] = np.where(label.isna() | (label == ""), _format_f3(edge_df["est"]), label)
+    else:
+        edge_df["display"] = _format_f3(edge_df[edge_col])
     edge_df["mx"] = (edge_df["x_from"] + edge_df["x_to"]) / 2
     edge_df["my"] = (edge_df["y_from"] + edge_df["y_to"]) / 2
 
@@ -208,45 +186,54 @@ def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_siz
                 pe["lhs"].isin(latent_vars) & pe["rhs"].isin(latent_vars)].copy()
     if len(cov_df) > 0:
         cov_df = _attach_coords(cov_df, "x_from", "y_from", "lhs")
-        cov_df = _attach_coords(cov_df, "x_to", "y_to", "rhs")
-        cov_df["display"] = _display(cov_df)
+        cov_df = _r_merge_order(_attach_coords(cov_df, "x_to", "y_to", "rhs"))
+        # formatC() of the label column (text) leaves it as it is, "" for parameters without a label
+        cov_df["display"] = cov_df["label"].fillna("") if what == "eq" else _format_f3(cov_df[edge_col])
         cov_df["mx"] = (cov_df["x_from"] + cov_df["x_to"]) / 2
         cov_df["my"] = (cov_df["y_from"] + cov_df["y_to"]) / 2
 
     plot_title = {"std": "Standardised Estimates", "est": "Unstandardised Estimates",
                   "eq": "Parameters with Equality Constraints"}[what]
+    edge_font = gg_text_size(edge_label_size)
 
     p = (ggplot()
          + geom_segment(data=edge_df, mapping=aes(x="x_from", y="y_from", xend="x_to", yend="y_to"),
-                        colour="#555a6b", size=0.55, arrow=arrow(length=0.02, type="closed", ends="last"))
+                        colour="#555a6b", size=gg_linewidth(0.55),
+                        arrow=arrow(length=gg_unit_pt(6), type="closed", ends="last"))
+         # ggplot2's label.padding = unit(1.5, "pt") and label.r = 0.15 lines; matplotlib pads in font sizes
          + geom_label(data=edge_df, mapping=aes(x="mx", y="my", label="display"),
-                      size=edge_label_size, fill="white", label_size=0, colour="#333745")
+                      size=edge_font, fill="white", label_size=0, colour="#333745",
+                      label_padding=1.5 * 72 / 72.27 / edge_font, label_r=0.18)
          + geom_rect(data=node_df[~node_df["is_lat"]],
                      mapping=aes(xmin="xmin", xmax="xmax", ymin="ymin", ymax="ymax"),
-                     fill=color_observed, colour="#8890a8", size=0.4)
+                     fill=color_observed, colour="#8890a8", size=gg_linewidth(0.4))
          + geom_rect(data=node_df[node_df["is_lat"]],
                      mapping=aes(xmin="xmin", xmax="xmax", ymin="ymin", ymax="ymax"),
-                     fill=color_latent, colour="#2a5cc7", size=0.5)
+                     fill=color_latent, colour="#2a5cc7", size=gg_linewidth(0.5))
          + geom_text(data=node_df[~node_df["is_lat"]], mapping=aes(x="x", y="y", label="name"),
-                     size=label_size, colour="#222533")
+                     size=gg_text_size(label_size), colour="#222533")
          + geom_text(data=node_df[node_df["is_lat"]], mapping=aes(x="x", y="y", label="name"),
-                     size=label_size, colour="white", fontweight="bold")
+                     size=gg_text_size(label_size), colour="white", fontweight="bold")
          + coord_fixed()
          + theme_void(base_size=11)
-         + theme(plot_title=element_text(ha="center", size=12))
-         + labs(title=f"{plot_title} — {layout}"))
+         + theme(plot_title=element_text(ha="center", size=12, margin={"b": 8, "units": "pt"}))
+         + labs(title=f"{plot_title} \u2014 {layout}"))
 
     if len(cov_df) > 0:
-        arc_frames = []
+        arcs = []
         for idx, row in enumerate(cov_df.itertuples()):
-            xs_arc, ys_arc = _bezier_arc(row.x_from, row.y_from, row.x_to, row.y_to)
-            arc_frames.append(pd.DataFrame({"x": xs_arc, "y": ys_arc, "arc_id": idx}))
-        arc_df = pd.concat(arc_frames, ignore_index=True)
+            # geom_curve(curvature = 0.35): ggplot2's angle = 90 and ncp = 5; coord_fixed keeps the shape
+            xs_arc, ys_arc = r_curve(row.x_from, row.y_from, row.x_to, row.y_to, curvature=0.35, angle=90, ncp=5,
+                                     inches_per_unit=0.5)
+            arcs.append(pd.DataFrame({"x": xs_arc, "y": ys_arc, "arc_id": idx}))
+        arc_df = pd.concat(arcs, ignore_index=True)
         p = (p
              + geom_path(data=arc_df, mapping=aes(x="x", y="y", group="arc_id"),
-                         colour="#e87c4f", size=0.5, linetype="dashed")
+                         colour="#e87c4f", size=gg_linewidth(0.5), linetype="dashed",
+                         arrow=arrow(length=gg_unit_pt(5), type="open", ends="both"))
              + geom_label(data=cov_df, mapping=aes(x="mx", y="my", label="display"),
-                          size=edge_label_size, fill="#fff5f0", label_size=0, colour="#993c1d"))
+                          size=edge_font, fill="#fff5f0", label_size=0, colour="#993c1d",
+                          label_padding=0.3, label_r=0.18))
     return p
 ##########################################################################################
 # MODEL PLOT (batch)

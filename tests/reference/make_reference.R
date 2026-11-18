@@ -1276,3 +1276,133 @@ ref("plot_mtmm_plot_data", mtmm_plot)
 ref("plot_mtmm_levels", data.frame(trait_x = paste(levels(g$data$trait_x), collapse = ","),
                                    trait_y = paste(levels(g$data$trait_y), collapse = ","),
                                    method_x = paste(levels(g$data$method_x), collapse = ",")))
+##########################################################################################
+# PATH DIAGRAMS, DIAGNOSTIC PANELS AND IRT CURVES (igraph layouts, grid's curve, lowess; plot data)
+##########################################################################################
+# self-contained, so the section can be generated alone
+plots_data_dir <- normalizePath(file.path(out_dir, "..", "..", "src", "pwf", "data"))
+plots_insurance <- utils::read.csv(file.path(plots_data_dir, "insurance.csv"), stringsAsFactors = FALSE)
+plots_blood_pressure <- utils::read.csv(file.path(plots_data_dir, "blood_pressure.csv"), stringsAsFactors = FALSE)
+# igraph::layout_as_tree (Reingold-Tilford, several roots, unreachable vertices) and layout_in_circle
+set.seed(41)
+tree_rows <- list()
+for (case in 1:60) {
+  n <- sample(2:16, 1)
+  if (case %% 2 == 0) {  # path-diagram shaped: latent variables point at indicators and at each other
+    nl <- sample(1:min(4, n - 1), 1)
+    from <- c(sample(nl, n - nl, replace = TRUE), sample(nl, sample(0:2, 1), replace = TRUE))
+    to <- c((nl + 1):n, sample(nl, length(from) - (n - nl), replace = TRUE))
+    roots <- seq_len(nl)
+  } else {
+    m <- sample(0:(2 * n), 1)
+    from <- sample(n, m, replace = TRUE)
+    to <- sample(n, m, replace = TRUE)
+    roots <- sort(sample(n, sample(1:max(1, n %/% 3), 1)))
+  }
+  g <- igraph::add_edges(igraph::make_empty_graph(n, directed = TRUE), as.vector(rbind(from, to)))
+  l <- igraph::layout_as_tree(g, root = roots, flip.y = TRUE)
+  tree_rows[[case]] <- data.frame(case = case, n = n, edges = paste(paste0(from - 1, ">", to - 1), collapse = ";"),
+                                  roots = paste(roots - 1, collapse = ";"), vertex = seq_len(n) - 1, x = l[, 1], y = l[, 2])
+}
+ref("r_layout_as_tree", do.call(rbind, tree_rows))
+ref("r_layout_in_circle", do.call(rbind, lapply(1:12, function(n) {
+  l <- igraph::layout_in_circle(igraph::make_empty_graph(n))
+  data.frame(n = n, vertex = seq_len(n) - 1, x = l[, 1], y = l[, 2])
+})))
+# grid's curveGrob (ggplot2::geom_curve): the X-spline's points in inches on the 7 x 7 inch pdf(NULL) device
+curve_rows <- list()
+set.seed(43)
+for (case in 1:12) {
+  p <- round(stats::runif(4, 0, 7), 3)
+  if (case == 6) p[3] <- p[1]
+  if (case == 9) p[4] <- p[2]
+  curvature <- c(0.35, -0.35, 0.5, 1, -1.2, 0.1)[(case %% 6) + 1]
+  g <- grid::curveGrob(p[1], p[2], p[3], p[4], default.units = "inches", curvature = curvature, angle = 90, ncp = 5,
+                       square = FALSE, squareShape = 1, inflect = FALSE, open = TRUE)
+  points <- grid::xsplinePoints(grid:::calcCurveGrob(g, FALSE)$children[[1]])
+  curve_rows[[case]] <- data.frame(case = case, x1 = p[1], y1 = p[2], x2 = p[3], y2 = p[4], curvature = curvature,
+                                   x = as.numeric(points$x), y = as.numeric(points$y))
+}
+ref("r_curve_points", do.call(rbind, curve_rows))
+# stats::lowess (clowess): ties, robustness iterations, delta
+set.seed(47)
+lowess_rows <- list()
+for (case in 1:12) {
+  n <- c(1, 2, 3, 7, 12, 30, 60, 120, 200, 45, 80, 25)[case]
+  x <- switch((case %% 4) + 1, stats::rnorm(n), sample(1:3, n, TRUE) + 0, round(stats::runif(n, 0, 10), 1), stats::rexp(n))
+  y <- if (case %% 3 == 0) ifelse(stats::runif(n) < 0.1, 50, stats::rnorm(n)) else x^2 + stats::rnorm(n, sd = 0.3)
+  f <- c(2/3, 0.3, 0.9)[(case %% 3) + 1]
+  iter <- c(3, 0, 1)[(case %% 3) + 1]
+  l <- stats::lowess(x, y, f = f, iter = iter)
+  lowess_rows[[case]] <- data.frame(case = case, f = f, iter = iter, x = x, y = y, lowess_x = l$x, lowess_y = l$y)
+}
+ref("r_lowess", do.call(rbind, lowess_rows))
+# rwf::plot_cfa_gg and plot_cfa: igraph layouts, R's merge() order, formatC labels; "eq" fails without labels
+plots_layer_rows <- function(p) {
+  b <- ggplot2::ggplot_build(p)
+  do.call(rbind, lapply(seq_along(b$data), function(i) {
+    d <- b$data[[i]]
+    data.frame(layer = i, geom = class(p$layers[[i]]$geom)[1],
+               x = if (is.null(d$x)) (d$xmin + d$xmax) / 2 else d$x, y = if (is.null(d$y)) (d$ymin + d$ymax) / 2 else d$y,
+               xend = if (is.null(d$xend)) NA else d$xend, yend = if (is.null(d$yend)) NA else d$yend,
+               label = if (is.null(d$label)) NA else as.character(d$label))
+  }))
+}
+cfa_data <- utils::read.csv(file.path(out_dir, "lavaan_data.csv"))
+cfa_fit <- lavaan::sem("E =~ E1 + E2 + 0.8*E3 + E4; N =~ N1 + N2 + N3 + N4; A =~ A1 + A2 + A3; A ~ E + N; E1 ~~ E2",
+                       data = cfa_data)
+for (layout in c("tree", "circle")) for (what in c("std", "est")) {
+  p <- plot_cfa_gg(cfa_fit, what = what, layout = layout)
+  ref(paste0("plot_cfa_gg_", layout, "_", what), data.frame(title = p$labels$title, plots_layer_rows(p)))
+}
+cross_fit <- lavaan::cfa("b =~ E1 + E2 + E3 + N1; a =~ N1 + N2 + N3 + E3; C =~ A1 + A2 + A3", data = cfa_data)
+ref("plot_cfa_gg_cross_tree_std", data.frame(title = "", plots_layer_rows(plot_cfa_gg(cross_fit, what = "std", layout = "tree"))))
+ref("plot_cfa_keys", data.frame(key = names(suppressMessages(plot_cfa(cfa_fit)))))
+# rwf::plot_oneway_diagnostics and the autoplot() of rwf::report_regression and report_logistic (ggfortify)
+autoplot_rows <- function(mp, name, drop_panels = integer()) {
+  # one row per point of each layer of each panel, and one row of labels (title, caption, x range) per panel
+  layers <- list()
+  labels <- list()
+  for (k in setdiff(seq_along(mp@plots), drop_panels)) {
+    p <- mp@plots[[k]]
+    b <- suppressWarnings(ggplot2::ggplot_build(p))
+    layers[[k]] <- do.call(rbind, lapply(seq_along(b$data), function(i) {
+      d <- b$data[[i]]
+      column <- function(column_name) if (is.null(d[[column_name]])) NA else d[[column_name]]
+      data.frame(panel = k, layer = i, geom = class(p$layers[[i]]$geom)[1], x = column("x"), y = column("y"),
+                 ymax = column("ymax"), slope = column("slope"), intercept = column("intercept"),
+                 yintercept = column("yintercept"), label = if (is.null(d$label)) NA else as.character(d$label))
+    }))
+    labels[[k]] <- data.frame(panel = k, title = if (is.null(p$labels$title)) NA else p$labels$title,
+                              caption = p$labels$caption, x_min = b$layout$panel_params[[1]]$x.range[1],
+                              x_max = b$layout$panel_params[[1]]$x.range[2])
+  }
+  ref(paste0(name, "_layers"), do.call(rbind, layers))
+  ref(paste0(name, "_labels"), do.call(rbind, labels))
+}
+diagnostics <- plot_oneway_diagnostics(plots_insurance, dv = c(3, 7), iv = c(5, 6, 4))
+ref("plot_oneway_diagnostics_keys", data.frame(key = names(diagnostics)))
+autoplot_rows(diagnostics[["smoker_charges"]], "plot_oneway_diagnostics_smoker_charges")
+# equal group sizes: panel 5 plots the residuals against the factor levels (panel 6's lowess over equal leverages
+# depends on the last bits of R's leverages, so it is left out)
+autoplot_rows(plot_oneway_diagnostics(plots_blood_pressure, dv = 4, iv = 3)[[1]], "plot_oneway_diagnostics_balanced",
+              drop_panels = 6)
+infert_data <- utils::read.csv(file.path(out_dir, "infert.csv"))
+model <- stats::lm(age ~ parity + induced, data = infert_data)
+plot <- ggfortify:::autoplot.lm(model, which = 1:6, ncol = 2) +
+  ggplot2::labs(title = "", caption = paste0(deparse(model$terms), "\nobservations=", nrow(model$model))) +
+  ggplot2::theme_bw(base_size = 10)
+autoplot_rows(plot, "report_regression_diagnostics")
+model <- stats::glm(case ~ age + parity + spontaneous, family = binomial, data = infert_data)
+plot <- ggfortify:::autoplot.lm(model) +
+  ggplot2::labs(title = "T", caption = paste0(deparse(model$terms), "\nobservations=", nrow(model$model))) +
+  ggplot2::theme_bw(base_size = 10)
+autoplot_rows(plot, "report_logistic_diagnostics")
+# rwf::plot_irt_onefactor (mirt): factor levels of the series (their colours) and the curves; responses saved
+set.seed(53)
+irt_items <- as.data.frame(psych::sim.rasch(nvar = 11, n = 1000, low = -3, high = 3, d = NULL, a = 1, mu = 0, sd = 1)$items)
+ref("plot_irt_onefactor_items", irt_items)
+p <- plot_irt_onefactor(mirt::mirt(irt_items, 1, verbose = FALSE), title = "T")
+ref("plot_irt_onefactor_data", data.frame(type = p$data$type, theta = p$data$theta,
+                                          variable = as.character(p$data$variable), value = p$data$value))
+ref("plot_irt_onefactor_levels", data.frame(level = levels(p$data$variable), title = p$labels$title))

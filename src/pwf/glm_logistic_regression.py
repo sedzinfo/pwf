@@ -12,8 +12,9 @@ car::vif, psych-style descriptives of the scores, rwf's confusion
 results and R's deparsed call are reproduced too.
 
 Differences from rwf: rwf's report_logistic returns nothing, this returns
-its result list; the diagnostic plot is a 6-panel figure (ggfortify's
-autoplot draws 4); plot_logistic_model fits its curves with statsmodels.
+its result list; plot_logistic_model fits its curves with statsmodels. The
+diagnostic plot is ggfortify's autoplot of the glm (4 panels, ported in
+glm_anova_plot._autoplot_lm) from the values R's glm keeps.
 """
 ##########################################################################################
 # LOAD SYSTEM
@@ -23,7 +24,6 @@ import io
 import os
 import re
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.linalg
@@ -40,6 +40,7 @@ try:
     from .functions_train_test import confusion_matrix_percent, plot_separability, result_confusion_performance
     from ._rcompat import r_deparse_call as _r_deparse_call
     from .glm_linear_regression import _data_name, _deparse_formula, _design_info, _r_column_name, _r_terms
+    from .glm_anova_plot import _autoplot_lm, model_factors, r_row_names
 except ImportError:
     from explore_descriptives import compute_descriptives
     from functions_strings import output_separator
@@ -48,6 +49,7 @@ except ImportError:
     from functions_train_test import confusion_matrix_percent, plot_separability, result_confusion_performance
     from _rcompat import r_deparse_call as _r_deparse_call
     from glm_linear_regression import _data_name, _deparse_formula, _design_info, _r_column_name, _r_terms
+    from glm_anova_plot import _autoplot_lm, model_factors, r_row_names
 ##########################################################################################
 # LOGISTIC FUNCTION
 ##########################################################################################
@@ -139,46 +141,6 @@ def output_compare_model_logistic(model1, model2):
     x2df = int(round(model1.df_resid - model2.df_resid))  # R's df.residual is an integer
     x2p = 1 - scipy.stats.chi2.cdf(x2, x2df)
     return pd.DataFrame({"X.2": [x2], "df": [x2df], "p": [x2p]})
-##########################################################################################
-# GLM DIAGNOSTICS FIGURE (internal, GLM counterpart of glm_anova_plot._lm_diagnostics_figure)
-##########################################################################################
-def _glm_diagnostics_figure(model, base_size, caption):
-    """6-panel GLM diagnostic plot, using Pearson residuals and GLMInfluence."""
-    fitted = model.fittedvalues
-    influence = model.get_influence()
-    standardized_resid = np.asarray(influence.resid_studentized)
-    leverage = influence.hat_matrix_diag
-    cooks_d = influence.cooks_distance[0]
-    sqrt_abs_std_resid = np.sqrt(np.abs(standardized_resid))
-    resid_pearson = np.asarray(model.resid_pearson)
-
-    fig, axes = plt.subplots(3, 2, figsize=(10, 12))
-
-    axes[0, 0].scatter(fitted, resid_pearson, alpha=0.6)
-    axes[0, 0].axhline(0, linestyle="--", color="gray")
-    axes[0, 0].set(xlabel="Fitted values", ylabel="Pearson residuals", title="Residuals vs Fitted")
-
-    (osm, osr), (slope, intercept, _) = scipy.stats.probplot(standardized_resid, dist="norm")
-    axes[0, 1].scatter(osm, osr, alpha=0.6)
-    axes[0, 1].plot(osm, intercept + slope * osm, "r--")
-    axes[0, 1].set(xlabel="Theoretical Quantiles", ylabel="Standardized residuals", title="Normal Q-Q")
-
-    axes[1, 0].scatter(fitted, sqrt_abs_std_resid, alpha=0.6)
-    axes[1, 0].set(xlabel="Fitted values", ylabel="sqrt(|Standardized residuals|)", title="Scale-Location")
-
-    axes[1, 1].vlines(range(len(cooks_d)), 0, cooks_d)
-    axes[1, 1].set(xlabel="Obs. number", ylabel="Cook's distance", title="Cook's Distance")
-
-    axes[2, 0].scatter(leverage, standardized_resid, alpha=0.6)
-    axes[2, 0].axhline(0, linestyle="--", color="gray")
-    axes[2, 0].set(xlabel="Leverage", ylabel="Standardized residuals", title="Residuals vs Leverage")
-
-    axes[2, 1].scatter(leverage, cooks_d, alpha=0.6)
-    axes[2, 1].set(xlabel="Leverage", ylabel="Cook's distance", title="Cook's dist vs Leverage")
-
-    fig.suptitle(caption, fontsize=base_size)
-    fig.tight_layout()
-    return fig
 ##########################################################################################
 # R glm() VIEW OF A STATSMODELS FORMULA GLM (internal)
 ##########################################################################################
@@ -386,8 +348,7 @@ def report_logistic(model, validation_data=None, file=None, title="", w=10, h=10
     default), not probabilities.
 
     Differences from rwf: rwf returns nothing; this returns the result
-    list (and the confusion results). The diagnostic plot is the 6-panel
-    figure of glm_logistic_regression, not ggfortify's 4 panels.
+    list (and the confusion results).
 
     Parameters:
     model (statsmodels GLMResultsWrapper): GLM fitted with statsmodels.formula.api.glm(...).fit()
@@ -491,7 +452,23 @@ def report_logistic(model, validation_data=None, file=None, title="", w=10, h=10
         predicted = np.asarray(model.predict(validation_data, which="linear"), dtype=float)
         observed = validation_data[frame.columns[0]].to_numpy(dtype=float)
     caption = f"{_deparse_formula(model.model.formula)}\nobservations={n_obs}"
-    diagnostics_fig = _glm_diagnostics_figure(model, base_size=base_size, caption=f"{title}\n{caption}" if title else caption)
+    # rwf: autoplot(model) (panels 1, 2, 3 and 5 of a glm, 2 columns) + labs(title = title, caption = ...) +
+    # theme_bw(base_size) + theme(axis.text.x = element_text(angle = 20, hjust = 1))
+    # ggfortify's values from R's glm (influence.glm, rstandard.glm, cooks.distance.glm), as the refit keeps them
+    family = _r_family(model)
+    y, mu = np.asarray(model.model.endog, dtype=float), fit["fitted"]
+    deviance_residuals = np.sqrt(np.maximum(family["dev_resids"](y, mu, fit["prior_weights"]), 0))
+    deviance_residuals = np.where(y > mu, deviance_residuals, -deviance_residuals)
+    pearson = (y - mu) * np.sqrt(fit["prior_weights"]) / np.sqrt(family["family"].variance(mu))
+    hat, dispersion = fit["hat"], fit["dispersion"]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        glm_values = {"is_glm": True, "fitted": fit["linear_predictors"], "resid": deviance_residuals,
+                      "stdresid": pearson / (np.sqrt(dispersion) * np.sqrt(1 - hat)),
+                      "wstdresid": deviance_residuals / (np.sqrt(dispersion) * np.sqrt(1 - hat)), "hat": hat,
+                      "cooksd": (pearson / (1 - hat)) ** 2 * hat / (dispersion * fit["rank"]), "rank": fit["rank"]}
+    diagnostics_fig = _autoplot_lm(glm_values, r_row_names(model.model.data.row_labels), factors=model_factors(model),
+                                   which=(1, 2, 3, 5), ncol=2, base_size=base_size, caption=caption, title=title,
+                                   axis_angle=20)
     confusion_performance = result_confusion_performance(observed=observed, predicted=predicted,
                                                          base_size=base_size, title=title, step=.01)
     separability = plot_separability(observed=observed, predicted=predicted, base_size=base_size, title=title)

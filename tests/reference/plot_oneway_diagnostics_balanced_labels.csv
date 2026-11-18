@@ -1,0 +1,12 @@
+"panel","title","caption","x_min","x_max"
+1,"Residuals vs Fitted","bp_before ~ agegrp
+observations=120",151.13,163.12
+2,"Normal Q-Q","bp_before ~ agegrp
+observations=120",-2.90208300082443,2.90208300082443
+3,"Scale-Location","bp_before ~ agegrp
+observations=120",151.13,163.12
+4,"Cook's distance","bp_before ~ agegrp
+observations=120",-4.95,125.95
+5,"Constant Leverage:
+Residuals vs Factor Levels","bp_before ~ agegrp
+observations=120",0,3.6

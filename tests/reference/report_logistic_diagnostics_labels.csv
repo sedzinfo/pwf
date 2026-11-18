@@ -1,0 +1,9 @@
+"panel","title","caption","x_min","x_max"
+1,"T","case ~ age + parity + spontaneous
+observations=248",-2.81528931367098,1.39214468418695
+2,"T","case ~ age + parity + spontaneous
+observations=248",-3.16318977751789,3.16318977751788
+3,"T","case ~ age + parity + spontaneous
+observations=248",-2.81528931367098,1.39214468418695
+4,"T","case ~ age + parity + spontaneous
+observations=248",-0.00348536539921786,0.073192673383575

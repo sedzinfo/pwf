@@ -30,8 +30,9 @@ report_regression matches rwf (tests/test_glm_linear_regression.py):
     names, Type I ANOVA and lm's effects from the Householder QR.
   - car::outlierTest, car::durbinWatsonTest (bootstrap p value), car::vif
     (type = "predictor") and the standardized coefficients are native.
-  - The diagnostic plot (ggfortify::autoplot(model, which = 1:6)) reuses
-    _lm_diagnostics_figure from glm_anova_plot.py.
+  - The diagnostic plot is ggfortify::autoplot(model, which = 1:6, ncol = 2)
+    ported in glm_anova_plot._autoplot_lm; as in rwf, labs(title = title)
+    replaces the six panel titles (blank with the default title "").
   - R's write_txt(block) evaluates the output_separator() calls lazily;
     here their stdout is captured and passed to write_txt.
 """
@@ -61,7 +62,7 @@ try:
     from .functions_mathematical import rad2deg
     from .functions_environment import write_txt
     from .functions_plot import report_pdf
-    from .glm_anova_plot import _lm_diagnostics_figure
+    from .glm_anova_plot import _autoplot_lm, lm_diagnostics, model_factors, r_row_names
 except ImportError:
     from _rcompat import r_number, r_round
     from functions import comparison_combinations
@@ -70,7 +71,7 @@ except ImportError:
     from functions_mathematical import rad2deg
     from functions_environment import write_txt
     from functions_plot import report_pdf
-    from glm_anova_plot import _lm_diagnostics_figure
+    from glm_anova_plot import _autoplot_lm, lm_diagnostics, model_factors, r_row_names
 ##########################################################################################
 # SCATTERPLOT
 ##########################################################################################
@@ -474,9 +475,14 @@ def report_regression(model, base_size=10, title="", file=None, w=10, h=10, plot
     formula = _deparse_formula(lm["formula"])
 
     if plot_diagnostics:
+        # rwf: autoplot(model, which = 1:6, ncol = 2) + labs(title = title, caption = ...) + theme_bw(base_size) +
+        # theme(axis.text.x = element_text(angle = 20, hjust = 1)); labs(title = title) replaces every panel's title
         caption = f"{formula}\nobservations={int(fit.nobs)}"
-        fig = _lm_diagnostics_figure(fit, base_size=base_size, caption=f"{title}\n{caption}" if title else caption)
-        report_pdf(fig, file=file, title=title, w=w, h=h, print_plot=(file is None))
+        diagnostics_plot = _autoplot_lm(lm_diagnostics(fit), r_row_names(fit.model.data.row_labels),
+                                        factors=model_factors(model),
+                                        which=(1, 2, 3, 4, 5, 6), ncol=2, base_size=base_size, caption=caption,
+                                        title=title, axis_angle=20)
+        report_pdf(diagnostics_plot, file=file, title=title, w=w, h=h, print_plot=(file is None))
 
     outlier_test = _outlier_test(fit)
     dw = _durbin_watson_test(fit)

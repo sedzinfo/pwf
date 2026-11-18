@@ -4,7 +4,8 @@ Python port of R rwf::FUNCTIONS_PLOT.R.
 
 Deviations from the R originals, by design:
   - plot_multiplot composites each plot as a rasterized image into a
-    matplotlib subplot grid, rather than R's grid::viewport() approach
+    matplotlib grid (a plot spans the rows and columns its index fills,
+    as R's viewports), rather than R's grid::viewport() approach
     of drawing each plot object into a page region. Moving Axes between
     matplotlib Figures isn't reliably supported, so rasterizing (still
     "place a fully-rendered object into a page region", just via a
@@ -32,13 +33,27 @@ from matplotlib.backends.backend_pdf import PdfPages
 ##########################################################################################
 # MULTIPLOT
 ##########################################################################################
-def _plot_to_array(p, dpi=150):
-    """Rasterize a plotnine ggplot or matplotlib Figure to an RGB(A) array."""
+def _plot_to_array(p, dpi=150, size=None):
+    """
+    Rasterize a plotnine ggplot or composition, or a matplotlib Figure, to an RGB(A) array, drawn at size
+    (width, height) in inches when given (R draws each plot into its viewport's size).
+    """
+    from plotnine import ggplot
     buf = io.BytesIO()
-    if hasattr(p, "save"):  # plotnine ggplot
-        p.save(buf, format="png", dpi=dpi, verbose=False)
+    if isinstance(p, ggplot):
+        extra = {"width": size[0], "height": size[1]} if size is not None else {}
+        p.save(buf, format="png", dpi=dpi, verbose=False, **extra)
+    elif hasattr(p, "draw") and hasattr(p, "save"):  # plotnine composition
+        figure = p.draw()
+        if size is not None:
+            figure.set_size_inches(*size)
+        figure.savefig(buf, format="png", dpi=dpi)
     elif hasattr(p, "savefig"):  # matplotlib Figure
+        old_size = p.get_size_inches()
+        if size is not None:
+            p.set_size_inches(*size)
         p.savefig(buf, format="png", dpi=dpi)
+        p.set_size_inches(*old_size)
     else:
         raise TypeError(f"Unsupported plot type: {type(p)!r}")
     buf.seek(0)
@@ -49,7 +64,7 @@ def plot_multiplot(*plots, plotlist=None, cols=2, layout=None):
     """
     Arrange multiple plots (plotnine ggplot objects and/or matplotlib
     Figures) in a grid layout, paginated if there are more plots than
-    fit in one layout.
+    fit in one layout (port of rwf::plot_multiplot).
 
     Parameters:
     *plots: Plot objects passed directly.
@@ -58,8 +73,10 @@ def plot_multiplot(*plots, plotlist=None, cols=2, layout=None):
     cols (int, optional): Number of grid columns. Ignored if `layout`
         is given. Defaults to 2.
     layout (array-like, optional): A 2D array where each cell holds the
-        1-based index of the plot to display at that grid position. If
-        None (default), a layout is generated from `cols`.
+        1-based index of the plot to display at that grid position. As in
+        rwf, a plot whose index fills several cells spans their rows and
+        columns, and cells holding 0 or NaN stay empty. If None (default),
+        a layout is generated from `cols`, filled by rows.
 
     Returns:
     The single plot directly if only one was given; otherwise a list of
@@ -72,38 +89,40 @@ def plot_multiplot(*plots, plotlist=None, cols=2, layout=None):
     >>> p1 = ggplot(df, aes('x', 'y')) + geom_point()
     >>> p2 = ggplot(df, aes('x', 'y')) + geom_point()
     >>> pages = plot_multiplot(p1, p2, cols=2)
+    >>> pages = plot_multiplot(p1, p2, p1, layout=[[1, 1], [2, 3]])  # the first plot spans the top row
     """
     all_plots = list(plots) + (list(plotlist) if plotlist else [])
     nplots = len(all_plots)
-    if nplots == 1:
-        return all_plots[0]
-
     if layout is None:
         nrows = math.ceil(nplots / cols)
         layout = np.arange(1, nrows * cols + 1).reshape(nrows, cols)
     else:
-        layout = np.asarray(layout)
+        layout = np.asarray(layout, dtype=float)
+    if nplots == 1:
+        return all_plots[0]
 
-    plots_per_page = int(layout.max())
+    plots_per_page = int(np.nanmax(layout))
     pages_count = math.ceil(nplots / plots_per_page)
     nrows_layout, ncols_layout = layout.shape
 
     pages = []
     counter = 0
     for _ in range(pages_count):
-        fig, axes = plt.subplots(nrows_layout, ncols_layout, squeeze=False,
-                                  figsize=(ncols_layout * 5, nrows_layout * 4))
+        cell_width, cell_height = 5, 4
+        fig = plt.figure(figsize=(ncols_layout * cell_width, nrows_layout * cell_height))
+        # grid.layout(nrow(layout), ncol(layout)): equal cells filling the page
+        grid = fig.add_gridspec(nrows_layout, ncols_layout, left=0, right=1, bottom=0, top=1, wspace=0, hspace=0)
         for i in range(1, plots_per_page + 1):
             positions = np.argwhere(layout == i)
-            ax = None
-            if len(positions) > 0:
-                row, col = positions[0]
-                ax = axes[row, col]
+            if counter < nplots and len(positions) > 0:
+                # viewport(layout.pos.row = rows, layout.pos.col = cols) covers the range of the rows and columns
+                rows, columns = positions[:, 0], positions[:, 1]
+                height = (rows.max() - rows.min() + 1) * cell_height
+                width = (columns.max() - columns.min() + 1) * cell_width
+                ax = fig.add_subplot(grid[rows.min():rows.max() + 1, columns.min():columns.max() + 1])
                 ax.axis("off")
-            if counter < nplots:
-                if ax is not None:
-                    ax.imshow(_plot_to_array(all_plots[counter]))
-                counter += 1
+                ax.imshow(_plot_to_array(all_plots[counter], size=(width, height)), aspect="auto")
+            counter += 1
         pages.append(fig)
     return pages
 ##########################################################################################

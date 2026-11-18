@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
 
-from pwf._rcompat import r_boxplot_stats, r_density, r_hist, r_ppoints, r_pretty
+from pwf._rcompat import (r_boxplot_stats, r_curve, r_density, r_hist, r_layout_as_tree, r_layout_in_circle,
+                          r_lowess, r_ppoints, r_pretty, r_qqnorm, r_quantile7)
 
 
 def test_density_matches_r(reference, load_data):
@@ -50,3 +51,52 @@ def test_boxplot_stats_match_r(reference, load_data):
 def test_ppoints_follow_r():
     np.testing.assert_allclose(r_ppoints(5), (np.arange(1, 6) - 3 / 8) / (5 + 1 - 3 / 4))
     np.testing.assert_allclose(r_ppoints(11), (np.arange(1, 12) - 0.5) / 11)
+
+
+def test_layout_as_tree_matches_igraph(reference):
+    """igraph's Reingold-Tilford layout_as_tree(root = roots, flip.y = TRUE): several roots, cycles, unreachable vertices."""
+    expected = reference("r_layout_as_tree")
+    for case, rows in expected.groupby("case", sort=False):
+        first = rows.iloc[0]
+        # a graph without edges is written as ">" (paste0 of empty vectors)
+        edges = [tuple(map(int, e.split(">"))) for e in str(first["edges"]).split(";") if e != ">"]
+        roots = [int(r) for r in str(first["roots"]).split(";")]
+        layout = r_layout_as_tree(int(first["n"]), edges, roots)
+        np.testing.assert_allclose(layout[:, 0], rows["x"], rtol=0, atol=1e-12, err_msg=str(case))
+        np.testing.assert_allclose(layout[:, 1], rows["y"], rtol=0, atol=1e-12, err_msg=str(case))
+
+
+def test_layout_in_circle_matches_igraph(reference):
+    expected = reference("r_layout_in_circle")
+    for n, rows in expected.groupby("n"):
+        np.testing.assert_allclose(r_layout_in_circle(int(n)), rows[["x", "y"]].to_numpy(), rtol=0, atol=1e-15)
+
+
+def test_curve_matches_grid(reference):
+    """grid's curveGrob (geom_curve): calcControlPoints and the open X-spline, point for point (inches, 1200 ppi steps)."""
+    expected = reference("r_curve_points")
+    for case, rows in expected.groupby("case", sort=False):
+        first = rows.iloc[0]
+        x, y = r_curve(first["x1"], first["y1"], first["x2"], first["y2"], curvature=first["curvature"], angle=90, ncp=5)
+        assert len(x) == len(rows), case
+        np.testing.assert_allclose(x, rows["x"], rtol=0, atol=1e-12, err_msg=str(case))
+        np.testing.assert_allclose(y, rows["y"], rtol=0, atol=1e-12, err_msg=str(case))
+
+
+def test_lowess_matches_r(reference):
+    """R's lowess (clowess): sorted x, ties fitted once, delta skipping and robustness iterations."""
+    expected = reference("r_lowess")
+    for case, rows in expected.groupby("case", sort=False):
+        x, y = r_lowess(rows["x"].to_numpy(), rows["y"].to_numpy(), f=rows["f"].iloc[0], iter=int(rows["iter"].iloc[0]))
+        np.testing.assert_allclose(x, rows["lowess_x"], rtol=1e-15, err_msg=str(case))
+        np.testing.assert_allclose(y, rows["lowess_y"], rtol=1e-13, atol=1e-14, err_msg=str(case))
+
+
+def test_qqnorm_and_quantile7_follow_r():
+    """qqnorm(): ranks with ties in order, NA kept in place; quantile(type = 7): (1 - h) * x[lo] + h * x[hi]."""
+    x, y = r_qqnorm([3.0, 1.0, np.nan, 1.0, 2.0])
+    # R: qqnorm(c(3, 1, NA, 1, 2), plot.it = FALSE)$x
+    np.testing.assert_allclose(x[[1, 3, 4, 0]], [-1.0491313979639711, -0.29930691046566704, 0.29930691046566704,
+                                                 1.0491313979639711], rtol=1e-14)
+    assert np.isnan(x[2]) and np.isnan(y[2])
+    np.testing.assert_allclose(r_quantile7([4.0, 1.0, 3.0, 2.0, np.nan], [0.25, 0.75]), [1.75, 3.25], rtol=0)

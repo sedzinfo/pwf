@@ -45,8 +45,10 @@ Deviations/quirks, by design:
     substring matching, not exact matching. If one item's name is a
     substring of another's (e.g. items named "V1" and "V10"), that
     item's "per-item" information curve silently includes the other
-    item's contribution too. Reproduced here with re.search for parity,
-    not fixed.
+    item's contribution too. Reproduced here with R's own grep() for
+    parity, not fixed. Its series keep rwf's factor levels (information,
+    expected_score, then the items in column order), which set the
+    colours and the legend order.
   - report_irt's model_coefficients_oblimin replicates a specific,
     concrete R mechanism (rwf::flatten_list applied to
     coef(model, rotate="oblimin", simplify=TRUE)'s items/means/cov list)
@@ -61,7 +63,6 @@ Deviations/quirks, by design:
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
-import re
 import numpy as np
 import pandas as pd
 from plotnine import ggplot, aes, geom_line, geom_point, theme_bw, theme, labs, facet_wrap
@@ -199,18 +200,21 @@ def plot_irt_onefactor(model, theta=None, title="", base_size=10):
     >>> plot_irt_onefactor(model=model, base_size=10, title="Normal Test")
     """
     _require_r()
-    if theta is None:
-        theta = np.arange(-6, 6.01, 0.1)
+    if theta is None:  # R's seq(-6, 6, .1): from + (0:n) * by, capped at to
+        theta = np.minimum(-6 + np.arange(121) * 0.1, 6)
     theta = np.asarray(theta, dtype=float)
     theta_r = ro.FloatVector(theta)
 
-    item_names = list(_mirt.extract_mirt(model, "itemnames"))
+    # rwf: names(data.frame(model@Data$data)), and each item's information over grep(name, names) (a regular
+    # expression, so "V1" also selects V10, V11, ...)
+    names_r = ro.r("function(model) names(data.frame(model@Data$data))")(model)
+    item_names = list(names_r)
     n_items = len(item_names)
     all_items_r = ro.IntVector(range(1, n_items + 1))
 
     info_item = {"theta": theta}
     for name in item_names:
-        which = ro.IntVector([j + 1 for j, other in enumerate(item_names) if re.search(re.escape(name), other)])
+        which = _base.grep(name, names_r)
         info_item[name] = np.array(_mirt.testinfo(model, Theta=theta_r, **{"which.items": which}))
     info_item_df = pd.DataFrame(info_item)
     info_item_df.insert(1, "type", "Item Information")
@@ -231,6 +235,8 @@ def plot_irt_onefactor(model, theta=None, title="", base_size=10):
     info_item_melt = info_item_df.melt(id_vars=["theta", "type"], var_name="variable", value_name="value")
     expected_item_melt = expected_item_df.melt(id_vars=["theta", "type"], var_name="variable", value_name="value")
     df_result = pd.concat([df_total_melt, info_item_melt, expected_item_melt], ignore_index=True, sort=False)
+    # melt() makes variable a factor and plyr::rbind.fill joins the levels in order of appearance
+    df_result["variable"] = pd.Categorical(df_result["variable"], categories=list(dict.fromkeys(df_result["variable"])))
 
     return (ggplot(df_result, aes(x="theta", y="value", group="variable", color="variable"))
             + geom_line()

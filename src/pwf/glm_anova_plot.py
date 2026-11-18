@@ -16,31 +16,41 @@ Deviations from the R originals, by design:
   - ggpubr::as_ggplot(gridExtra::arrangeGrob(plot)) is a no-op for a
     single plot (it exists to combine *multiple* grobs) — dropped
     entirely; the plotnine ggplot object is returned directly.
-  - ggfortify::autoplot(model, which=1:6)'s 6-panel lm diagnostic plot
-    is reimplemented from scratch as a matplotlib 3x2 grid, using
-    statsmodels' OLSInfluence for leverage/Cook's distance and
-    scipy.stats.probplot for the Q-Q panel — there's no one-line
-    equivalent in the Python plotting ecosystem.
+  - ggfortify::autoplot(model, which = 1:6, ncol = 2) is ported as
+    _autoplot_lm: the same six plotnine panels (points, R's lowess
+    smoothers, qqnorm and its quartile line, Cook's distance contours,
+    the three most extreme row names, the constant-leverage panel of
+    balanced designs), composed in ncol columns with plotnine's | and /
+    (ggfortify's ggmultiplot). It also draws the diagnostics of
+    report_regression and report_logistic, as rwf's autoplot() calls.
+    Where tied leverages (equal group sizes) make R's lowess depend on the
+    last-bit rounding of its leverages, the smoother over leverage can
+    differ; stringr::str_wrap's line breaks of long factor levels are
+    textwrap's greedy ones.
 """
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
+import re
 import textwrap
 import numpy as np
 import pandas as pd
 import scipy.stats
-import matplotlib.pyplot as plt
 import statsmodels.formula.api as smf
 from plotnine import (
     ggplot, aes, geom_point, geom_line, geom_errorbar, geom_text, labs,
     theme_bw, scale_x_discrete, coord_flip, position_dodge,
+    geom_hline, geom_abline, geom_linerange, expand_limits, theme, element_text,
 )
+from plotnine.composition import plot_spacer
 
 try:
-    from ._rcompat import r_levels, resolve_columns
+    from ._rcompat import (gg_linewidth, gg_text_size, r_levels, r_lowess, r_pretty, r_qqnorm, r_quantile7,
+                           resolve_columns)
     from .functions_strings import str_aes
 except ImportError:
-    from _rcompat import r_levels, resolve_columns
+    from _rcompat import (gg_linewidth, gg_text_size, r_levels, r_lowess, r_pretty, r_qqnorm, r_quantile7,
+                          resolve_columns)
     from functions_strings import str_aes
 
 _ERROR_BAR_LABELS = {'se': 'standard errors', 'ci': 'confidence intervals', 'sd': 'standard deviations'}
@@ -255,81 +265,222 @@ def plot_interaction(df, dv, iv, base_size=20, type="se", order_factor=True, tit
 ##########################################################################################
 # PLOT ANOVA DIAGNOSTICS
 ##########################################################################################
-def _lm_diagnostics_figure(model, base_size, caption):
-    """6-panel lm diagnostic plot, the Python equivalent of ggfortify::autoplot(model, which=1:6)."""
-    fitted = model.fittedvalues
-    influence = model.get_influence()
-    standardized_resid = influence.resid_studentized_internal
-    leverage = influence.hat_matrix_diag
-    cooks_d = influence.cooks_distance[0]
-    sqrt_abs_std_resid = np.sqrt(np.abs(standardized_resid))
+def r_row_names(labels):
+    """
+    R's row names of the rows a model used: a data frame read by R is numbered from 1, so pandas' integer
+    labels (positions from 0) become label + 1; other labels are kept as text.
+    """
+    labels = list(labels)
+    if all(isinstance(v, (int, np.integer)) and not isinstance(v, bool) for v in labels):
+        return [str(int(v) + 1) for v in labels]
+    return [str(v) for v in labels]
 
-    fig, axes = plt.subplots(3, 2, figsize=(10, 12))
 
-    axes[0, 0].scatter(fitted, model.resid, alpha=0.6)
-    axes[0, 0].axhline(0, linestyle='--', color='gray')
-    axes[0, 0].set(xlabel='Fitted values', ylabel='Residuals', title='Residuals vs Fitted')
+def model_factors(results):
+    """
+    The text/categorical variables of a statsmodels formula model's frame (R's model frame columns that are
+    character or factor), for _autoplot_lm's constant-leverage panel; None when there are none.
+    """
+    try:
+        design_info = results.model.data.design_info
+        frame = results.model.data.frame
+    except AttributeError:
+        return None
+    rows = results.model.data.row_labels
+    columns = []
+    for factor, info in design_info.factor_infos.items():
+        if info.type != "categorical":
+            continue
+        code = factor.name()
+        match = re.fullmatch(r"C\(\s*(?:Q\(['\"])?([^,'\")]+)(?:['\"]\))?.*\)", code)
+        name = match.group(1).strip() if match else code
+        if name in frame.columns and name not in columns:
+            columns.append(name)
+    return frame.loc[rows, columns] if columns else None
 
-    (osm, osr), (slope, intercept, _) = scipy.stats.probplot(standardized_resid, dist='norm')
-    axes[0, 1].scatter(osm, osr, alpha=0.6)
-    axes[0, 1].plot(osm, intercept + slope * osm, 'r--')
-    axes[0, 1].set(xlabel='Theoretical Quantiles', ylabel='Standardized residuals', title='Normal Q-Q')
 
-    axes[1, 0].scatter(fitted, sqrt_abs_std_resid, alpha=0.6)
-    axes[1, 0].set(xlabel='Fitted values', ylabel='sqrt(|Standardized residuals|)', title='Scale-Location')
+def lm_diagnostics(fit):
+    """
+    ggfortify's lm_diagnostics() of a statsmodels OLS fit (unweighted): fitted values, residuals, standardized
+    residuals (rstandard; also the .wstdresid of the Q-Q and scale-location panels), leverages, Cook's distances
+    and the rank, as R's lm.influence, rstandard and cooks.distance give them.
+    """
+    hat = np.asarray(fit.get_influence().hat_matrix_diag, dtype=float)
+    resid = np.asarray(fit.resid, dtype=float)
+    s = np.sqrt(fit.ssr / fit.df_resid)
+    rank = int(np.linalg.matrix_rank(np.asarray(fit.model.exog, dtype=float)))
+    stdresid = resid / (s * np.sqrt(1 - hat))
+    return {"is_glm": False, "fitted": np.asarray(fit.fittedvalues, dtype=float), "resid": resid,
+            "stdresid": stdresid, "wstdresid": stdresid, "hat": hat,
+            "cooksd": (resid / (s * (1 - hat))) ** 2 * hat / rank, "rank": rank}
 
-    axes[1, 1].vlines(range(len(cooks_d)), 0, cooks_d)
-    axes[1, 1].set(xlabel='Obs. number', ylabel="Cook's distance", title="Cook's Distance")
 
-    axes[2, 0].scatter(leverage, standardized_resid, alpha=0.6)
-    axes[2, 0].axhline(0, linestyle='--', color='gray')
-    axes[2, 0].set(xlabel='Leverage', ylabel='Standardized residuals', title='Residuals vs Leverage')
+def _autoplot_lm(diagnostics, labels, factors=None, which=(1, 2, 3, 4, 5, 6), ncol=2, label_size=None,
+                 base_size=10, caption=None, title=None, axis_angle=45):
+    """
+    Port of ggfortify::autoplot() of an lm or glm (ggfortify 0.4.25's autoplot.lm, label.n = 3) followed by
+    rwf's + labs(caption = caption) [+ labs(title = title)] + theme_bw(base_size) +
+    theme(axis.text.x = element_text(angle = axis_angle, hjust = 1)), applied to every panel.
 
-    axes[2, 1].scatter(leverage, cooks_d, alpha=0.6)
-    axes[2, 1].set(xlabel='Leverage', ylabel="Cook's distance", title="Cook's dist vs Leverage")
+    Parameters:
+    diagnostics (dict): lm_diagnostics(fit) for an lm; for a glm (is_glm True) its linear predictor (fitted),
+        deviance residuals (resid), standardized Pearson residuals (stdresid, R 4.6's rstandard), deviance
+        residuals / sqrt(dispersion * (1 - hat)) (wstdresid), hat, Cook's distances and rank.
+    labels (list of str): R's row names of the rows the model used (labels of the 3 most extreme points).
+    factors (pandas.DataFrame, optional): The model frame's text/factor columns; with a constant leverage
+        panel 5 plots residuals against their level combinations, as ggfortify's.
+    which (sequence of int): Panels 1 to 6 (Residuals vs Fitted, Normal Q-Q, Scale-Location, Cook's distance,
+        Residuals vs Leverage, Cook's dist vs Leverage).
+    ncol (int): Columns of the composition (ggmultiplot's ncol; rows follow).
+    label_size (float, optional): ggplot2 text size (mm) of the point labels; None is ggplot2's 3.88.
+    title (str, optional): When not None it replaces every panel's title (rwf's labs(title = title), so ""
+        leaves them blank).
 
-    fig.suptitle(caption, fontsize=base_size)
-    fig.tight_layout()
-    return fig
+    Returns:
+    plotnine composition of the panels (a single ggplot for one panel).
+    """
+    is_glm = diagnostics["is_glm"]
+    labels = [str(v) for v in labels]
+    fitted, resid = diagnostics["fitted"], diagnostics["resid"]
+    stdresid, wstdresid = diagnostics["stdresid"], diagnostics["wstdresid"]
+    hat, cooksd, rank = diagnostics["hat"], diagnostics["cooksd"], diagnostics["rank"]
+    n = len(resid)
+    data = pd.DataFrame({".fitted": fitted, ".resid": resid, ".stdresid": stdresid, ".wstdresid": wstdresid,
+                         ".hat": hat, ".cooksd": cooksd, ".index": np.arange(1, n + 1), ".label": labels})
+    data[".sqrtresid"] = np.sqrt(np.abs(wstdresid))
+    data[".qqx"], data[".qqy"] = r_qqnorm(wstdresid)
+    hat_range = (np.nanmin(hat), np.nanmax(hat))
+    constant_leverage = (hat_range[0] == 0 and hat_range[1] == 0) or \
+        hat_range[1] - hat_range[0] < 1e-10 * np.nanmean(hat)
+    if constant_leverage and factors is not None and factors.shape[1] > 0:
+        combination = factors.astype(str).agg(":".join, axis=1).to_numpy()
+        wrapped = ["\n".join(textwrap.wrap(v, width=10, break_long_words=False, break_on_hyphens=False)) or v
+                   for v in combination]
+        data[".nf"] = pd.Categorical(wrapped, categories=r_levels(wrapped))
+    else:
+        constant_leverage = False
+
+    def top(column):  # dplyr::arrange(desc(abs(x))) keeps ties in order; head(3)
+        return data.iloc[np.argsort(-np.abs(data[column].to_numpy()), kind="stable")[:3]]
+
+    r_data, cd_data = top(".resid"), top(".cooksd")
+    fitted_label = "Predicted values" if is_glm else "Fitted values"
+    y23 = "Std. deviance resid." if is_glm else "Standardized residuals"
+    text_size = gg_text_size(3.88 if label_size is None else label_size)
+    ad = {"linetype": "dashed", "size": gg_linewidth(0.2), "colour": "#888888"}
+    point = geom_point(colour="#444444")
+
+    def smoother(x, y):
+        sx, sy = r_lowess(data[x].to_numpy(), data[y].to_numpy())
+        return geom_line(pd.DataFrame({"x": sx, "y": sy}), aes(x="x", y="y"), colour="#0000FF",
+                         linetype="solid", size=gg_linewidth(0.5), inherit_aes=False)
+
+    def text(frame):
+        return geom_text(frame, aes(label=".label"), colour="#000000", size=text_size)
+
+    panels = {}
+    panels[1] = (ggplot(data, aes(x=".fitted", y=".resid")) + point + smoother(".fitted", ".resid")
+                 + geom_hline(yintercept=0, **ad) + text(r_data)
+                 + labs(x=fitted_label, y="Residuals", title="Residuals vs Fitted"))
+    qy = r_quantile7(wstdresid, [0.25, 0.75])
+    qx = scipy.stats.norm.ppf([0.25, 0.75])
+    slope = (qy[1] - qy[0]) / (qx[1] - qx[0])
+    panels[2] = (ggplot(data, aes(x=".qqx", y=".qqy")) + point
+                 + geom_abline(intercept=qy[0] - slope * qx[0], slope=slope, **ad) + text(r_data)
+                 + labs(x="Theoretical Quantiles", y=y23, title="Normal Q-Q"))
+    y3 = r"$\sqrt{|\mathrm{Std.\ deviance\ resid.}|}$" if is_glm else r"$\sqrt{|\mathrm{Standardized\ residuals}|}$"
+    panels[3] = (ggplot(data, aes(x=".fitted", y=".sqrtresid")) + point + smoother(".fitted", ".sqrtresid")
+                 + text(r_data) + labs(x=fitted_label, y=y3, title="Scale-Location"))
+    panels[4] = (ggplot(data, aes(x=".index", y=".cooksd", ymin=0, ymax=".cooksd"))
+                 + geom_linerange(colour="#444444", size=gg_linewidth(0.5)) + text(cd_data)
+                 + labs(x="Obs. Number", y="Cook's distance", title="Cook's distance"))
+    y5 = "Std. Pearson resid." if is_glm else "Standardized Residuals"
+    if constant_leverage:
+        panels[5] = (ggplot(data, aes(x=".nf", y=".stdresid")) + point + geom_hline(yintercept=0, **ad)
+                     + expand_limits(x=0) + text(cd_data)
+                     + labs(x="Factor Level Combination", y=y5,
+                            title="Constant Leverage:\nResiduals vs Factor Levels"))
+    else:
+        panels[5] = (ggplot(data, aes(x=".hat", y=".stdresid")) + point + smoother(".hat", ".stdresid")
+                     + geom_hline(yintercept=0, **ad) + expand_limits(x=0) + text(cd_data)
+                     + labs(x="Leverage", y=y5, title="Residuals vs Leverage"))
+    panel6 = (ggplot(data, aes(x=".hat", y=".cooksd")) + point + smoother(".hat", ".cooksd")
+              + expand_limits(x=0, y=0) + text(cd_data)
+              + labs(x="Leverage", y="Cook's distance", title="Cook's dist vs Leverage"))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        g = np.where(hat >= 1, np.nan, hat / (1 - hat))
+        contours = r_pretty(np.sqrt(rank * cooksd / g), 5)
+    for b in contours:
+        panel6 = panel6 + geom_abline(intercept=0, slope=b ** 2, **ad)
+    panels[6] = panel6
+
+    chosen = []
+    for k in which:
+        panel = panels[k] + labs(caption=caption) if caption is not None else panels[k]
+        if title is not None:
+            panel = panel + labs(title=title)
+        chosen.append(panel + theme_bw(base_size=base_size)
+                      + theme(axis_text_x=element_text(rotation=axis_angle, ha="right"),
+                              plot_title=element_text(ha="left")))  # ggplot2's titles are left-aligned
+    if len(chosen) == 1:
+        return chosen[0]
+    rows = []
+    for start in range(0, len(chosen), ncol):  # ggmultiplot fills its grid by rows
+        row = chosen[start:start + ncol]
+        row = row + [plot_spacer()] * (ncol - len(row))
+        composed = row[0]
+        for panel in row[1:]:
+            composed = composed | panel
+        rows.append(composed)
+    composed = rows[0]
+    for row in rows[1:]:
+        composed = composed / row
+    return composed
 
 
 def plot_oneway_diagnostics(df, dv, iv, base_size=10):
     """
-    For every IV-DV combination, fit dv ~ C(iv) and produce a 6-panel
-    lm diagnostic plot: Residuals vs Fitted, Normal Q-Q, Scale-Location,
-    Cook's Distance, Residuals vs Leverage, Cook's Distance vs Leverage.
+    For every IV-DV combination, fit dv ~ iv (iv as a factor) and draw
+    ggfortify's six lm diagnostic panels (port of rwf::plot_oneway_diagnostics):
+    Residuals vs Fitted, Normal Q-Q, Scale-Location, Cook's distance,
+    Residuals vs Leverage (Residuals vs Factor Levels when every group has
+    the same size) and Cook's dist vs Leverage, in two columns. Smoothers
+    are R's lowess; the three most extreme points carry their row numbers.
 
     Parameters:
     df (pandas.DataFrame)
     dv (list of int or str): Continuous dependent variable column indices/names.
     iv (list of int or str): Categorical independent variable column indices/names.
-    base_size (int, optional): Base font size for the figure suptitle. Defaults to 10.
+    base_size (int, optional): Base font size of theme_bw. Defaults to 10.
 
     Returns:
-    dict: {"iv_dv": matplotlib.figure.Figure or None}. None when the IV
-    has fewer than 2 levels with more than one observation each.
+    dict: {"iv_dv": plotnine composition of the six panels, or None when
+    the IV has fewer than 2 levels with more than one observation each}.
 
     Examples:
-    >>> plot_oneway_diagnostics(df=df_insurance, dv=[6], iv=[1, 4])
+    >>> plot_oneway_diagnostics(df=df_insurance, dv=[7], iv=[5, 6])
     """
-    df = df.copy()
     iv_cols = _resolve_columns(df, iv)
     dv_cols = _resolve_columns(df, dv)
+    frame = df.reset_index(drop=True)  # rows numbered by position, as R's row names
 
     plots = {}
     for dv_col in dv_cols:
         for iv_col in iv_cols:
             key = f"{iv_col}_{dv_col}"
-            subset = df[[dv_col, iv_col]].dropna().copy()
-            counts = subset[iv_col].value_counts()
-            subset = subset[subset[iv_col].isin(counts[counts > 1].index)]
-            subset[iv_col] = subset[iv_col].astype('category')
+            subset = frame[[dv_col, iv_col]].dropna()
+            counts = subset[iv_col].astype(str).value_counts()
+            subset = subset[subset[iv_col].astype(str).isin(counts[counts > 1].index)].copy()
             if subset[iv_col].nunique() <= 1:
                 plots[key] = None
                 continue
-            model = smf.ols(f"{dv_col} ~ C({iv_col})", data=subset).fit()
+            subset[iv_col] = pd.Categorical(subset[iv_col], categories=r_levels(subset[iv_col]))
+            model = smf.ols(f"Q('{dv_col}') ~ C(Q('{iv_col}'))", data=subset).fit()
+            labels = r_row_names(df.index[subset.index])  # R keeps the data frame's row names
             caption = f"{dv_col} ~ {iv_col}\nobservations={int(model.nobs)}"
-            plots[key] = _lm_diagnostics_figure(model, base_size=base_size, caption=caption)
+            plots[key] = _autoplot_lm(lm_diagnostics(model), labels, factors=subset[[iv_col]],
+                                      which=(1, 2, 3, 4, 5, 6), ncol=2, label_size=3, base_size=base_size,
+                                      caption=caption, axis_angle=45)
     return plots
 ##########################################################################################
 # EXAMPLES
@@ -357,5 +508,5 @@ if __name__ == "__main__":
     print("\n" + "=" * 80, "\nplot_oneway_diagnostics\n", "=" * 80, sep="")
     result3 = plot_oneway_diagnostics(df=df_insurance, dv=["charges"], iv=["smoker", "region"])
     print("keys:", list(result3.keys()))
-    result3['smoker_charges'].savefig("plot_diagnostics_smoker_charges.png")
+    result3['smoker_charges'].save("plot_diagnostics_smoker_charges.png", width=10, height=12, verbose=False)
     print("saved plot_diagnostics_smoker_charges.png")

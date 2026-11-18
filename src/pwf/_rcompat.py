@@ -4,6 +4,7 @@ Private helpers that reproduce R behaviour the rwf ports depend on: column
 selection by name or 1-based position, R's as.character() for numbers and
 labels, make.names(), factor levels, and grDevices colour ramps.
 """
+import collections
 import re
 
 import numpy as np
@@ -858,3 +859,477 @@ def r_deparse_call(function, arguments, cutoff=60):
             check()
     lines.append(line + ")")
     return lines
+
+
+# ggplot2 gives text sizes in mm and line widths in its own unit (about 0.75 mm); plotnine takes text sizes in
+# points and multiplies line sizes by sqrt(pi) points
+GG_PT = 72.27 / 25.4  # ggplot2's .pt (points per mm)
+
+
+def gg_text_size(size):
+    """plotnine text size (points) for a ggplot2 text size (mm): size * .pt, the fontsize grid draws with."""
+    return size * GG_PT
+
+
+def gg_linewidth(linewidth):
+    """
+    plotnine line size for a ggplot2 linewidth: ggplot2 draws lwd = linewidth * .pt, R's lwd 1 is 1/96 inch,
+    and plotnine draws size * sqrt(pi) points (1/72 inch).
+    """
+    return linewidth * GG_PT * 72 / 96 / np.sqrt(np.pi)
+
+
+def gg_unit_pt(value):
+    """Inches of grid's unit(value, "pt") (1/72.27 inch), e.g. ggplot2's arrow(length = unit(6, "pt"))."""
+    return value / 72.27
+
+
+def r_layout_in_circle(n):
+    """igraph's layout_in_circle(): vertex i at angle 2 * pi / n * i on the unit circle (cigraph layout_circle)."""
+    phi = 2 * np.pi / n * np.arange(n)
+    return np.column_stack([np.cos(phi), np.sin(phi)])
+
+
+def r_layout_as_tree(n, edges, roots, flip_y=True):
+    """
+    igraph's layout_as_tree(graph, root = roots, mode = "out", flip.y) for a directed graph with vertices
+    0, ..., n - 1 and edges (from, to): a port of the Reingold-Tilford layout in cigraph's
+    layout/reingold_tilford.c (igraph 2.x). With several roots a virtual root above them is added (and removed
+    from the result); vertices it cannot reach get an edge from it; children are taken in vertex order, each
+    subtree is placed one unit from its left neighbour's contour and parents are centred on the mean of their
+    children. Returns an (n, 2) array of x, y.
+    """
+    edges = [(int(a), int(b)) for a, b in edges]
+    roots = [int(r) for r in roots]
+    total = n
+    if len(roots) == 1:
+        real_root = roots[0]
+    else:
+        real_root = total
+        total += 1
+        edges = edges + [(real_root, r) for r in roots]
+
+    def adjacency(edge_list):  # igraph_adjlist_init(mode = OUT, no loops, no multiple edges): sorted neighbours
+        neighbours = [set() for _ in range(total)]
+        for a, b in edge_list:
+            if a != b:
+                neighbours[a].add(b)
+        return [sorted(s) for s in neighbours]
+
+    adjacent = adjacency(edges)
+    visited = [False] * total
+    queue = collections.deque([real_root])
+    while queue:
+        node = queue.popleft()
+        visited[node] = True
+        queue.extend(v for v in adjacent[node] if not visited[v])
+    unreachable = [(real_root, v) for v in range(total) if not visited[v]]
+    if unreachable:
+        adjacent = adjacency(edges + unreachable)
+
+    parent, y = [-1] * total, [0.0] * total
+    parent[real_root] = real_root
+    queue = collections.deque([(real_root, 0)])
+    while queue:  # step 1: levels (y) by breadth-first search, and each vertex's parent
+        node, distance = queue.popleft()
+        for v in adjacent[node]:
+            if parent[v] >= 0:
+                continue
+            y[v] = distance + 1
+            queue.append((v, distance + 1))
+            parent[v] = node
+    children = [[] for _ in range(total)]
+    for v in range(total):
+        if parent[v] >= 0 and parent[v] != v:
+            children[parent[v]].append(v)
+
+    minsep = 1.0
+    offset = [0.0] * total
+    left_contour, right_contour = [-1] * total, [-1] * total
+    to_left_contour, to_right_contour = [0.0] * total, [0.0] * total
+    left_extreme, right_extreme = list(range(total)), list(range(total))
+    to_left_extreme, to_right_extreme = [0.0] * total, [0.0] * total
+
+    def postorder(node):  # step 2: offsets of each subtree from its parent
+        for child in children[node]:
+            postorder(child)
+        if not children[node]:
+            return
+        leftroot, average = -1, 0.0
+        for j, i in enumerate(children[node]):
+            if leftroot >= 0:
+                lnode, rnode = leftroot, i
+                rootsep = offset[leftroot] + minsep
+                loffset = offset[leftroot]
+                roffset = loffset + minsep
+                right_contour[node], to_right_contour[node] = i, rootsep
+                while lnode >= 0 and rnode >= 0:
+                    if right_contour[lnode] >= 0:
+                        loffset += to_right_contour[lnode]
+                        lnode = right_contour[lnode]
+                    else:
+                        if left_contour[rnode] >= 0:
+                            aux = left_extreme[node]
+                            new_offset = (to_right_extreme[node] - to_left_extreme[node]) + minsep \
+                                + to_left_contour[rnode]
+                            left_contour[aux] = right_contour[aux] = left_contour[rnode]
+                            to_left_contour[aux] = to_right_contour[aux] = new_offset
+                            left_extreme[node], right_extreme[node] = left_extreme[i], right_extreme[i]
+                            to_left_extreme[node] = to_left_extreme[i] + rootsep
+                            to_right_extreme[node] = to_right_extreme[i] + rootsep
+                        else:
+                            right_extreme[node] = right_extreme[i]
+                            to_right_extreme[node] = to_right_extreme[i] + rootsep
+                        lnode = -1
+                    if left_contour[rnode] >= 0:
+                        roffset += to_left_contour[rnode]
+                        rnode = left_contour[rnode]
+                    else:
+                        if lnode >= 0:
+                            aux = right_extreme[i]
+                            new_offset = loffset - rootsep - to_right_extreme[i]
+                            left_contour[aux] = right_contour[aux] = lnode
+                            to_left_contour[aux] = to_right_contour[aux] = new_offset
+                        rnode = -1
+                    if lnode >= 0 and rnode >= 0 and roffset - loffset < minsep:
+                        rootsep += minsep - roffset + loffset
+                        roffset = loffset + minsep
+                        to_right_contour[node] = rootsep
+                offset[i] = rootsep
+                to_right_contour[node] = rootsep
+                average = (average * j) / (j + 1) + rootsep / (j + 1)
+                leftroot = i
+            else:
+                leftroot = i
+                left_contour[node] = right_contour[node] = i
+                to_left_contour[node] = to_right_contour[node] = 0.0
+                left_extreme[node], right_extreme[node] = left_extreme[i], right_extreme[i]
+                to_left_extreme[node], to_right_extreme[node] = to_left_extreme[i], to_right_extreme[i]
+                average = offset[i]
+        to_left_contour[node] -= average
+        to_right_contour[node] -= average
+        to_left_extreme[node] -= average
+        to_right_extreme[node] -= average
+        for child in children[node]:
+            offset[child] -= average
+
+    x = [0.0] * total
+
+    def coordinates(node, position):  # step 3: x from the offsets
+        x[node] = position
+        for child in children[node]:
+            coordinates(child, position + offset[child])
+
+    postorder(real_root)
+    coordinates(real_root, offset[real_root])
+    layout = np.column_stack([x[:n], y[:n]]).astype(float)
+    if flip_y and n > 0:
+        layout[:, 1] = layout[:, 1].max() - layout[:, 1]
+    return layout
+
+
+def _r_curve_origin(x1, y1, x2, y2, origin):
+    """grid's calcOrigin(): the centre of the arc's rotation in the 'square' region."""
+    xm, ym = (x1 + x2) / 2, (y1 + y2) / 2
+    slope = (y2 - y1) / (x2 - x1)
+    oslope = -1 / slope
+    tmpox = xm if not np.isfinite(slope) else xm + origin * (x2 - x1) / 2
+    if not np.isfinite(slope):
+        tmpoy = ym + origin * (y2 - y1) / 2
+    elif not np.isfinite(oslope):
+        tmpoy = ym
+    else:
+        tmpoy = ym + origin * (y2 - y1) / 2
+    sintheta = -1
+    return xm - (tmpoy - ym) * sintheta, ym + (tmpox - xm) * sintheta
+
+
+def r_curve_control_points(x1, y1, x2, y2, curvature, angle=90, ncp=5):
+    """
+    grid's calcControlPoints(x1, y1, x2, y2, curvature, angle, ncp) for one curve: the ncp control points
+    curveGrob() (ggplot2's geom_curve) passes to its X-spline, rotated from the start point around an origin
+    that depends on the curvature (positive: a right-hand curve).
+    """
+    x1, y1, x2, y2 = (np.float64(v) for v in (x1, y1, x2, y2))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        xm, ym = (x1 + x2) / 2, (y1 + y2) / 2
+        dx, dy = x2 - x1, y2 - y1
+        angle = angle / 180 * np.pi
+        sina, cosa = np.sin(angle), np.cos(angle)
+        cornerx = xm + (x1 - xm) * cosa - (y1 - ym) * sina
+        cornery = ym + (y1 - ym) * cosa + (x1 - xm) * sina
+        beta = -np.arctan((cornery - y1) / (cornerx - x1))
+        sinb, cosb = np.sin(beta), np.cos(beta)
+        newx2 = x1 + dx * cosb - dy * sinb
+        newy2 = y1 + dy * cosb + dx * sinb
+        scalex = (newy2 - y1) / (newx2 - x1)
+        newx1 = x1 * scalex
+        newx2 = newx2 * scalex
+        ratio = 2 * np.sin(np.arctan(curvature)) ** 2
+        origin = curvature - curvature / ratio
+        direction = 1 if curvature > 0 else -1
+        ox, oy = _r_curve_origin(newx1, y1, newx2, newy2, origin)
+        maxtheta = np.pi + np.sign(origin * direction) * 2 * np.arctan(abs(origin))
+        by = direction * maxtheta / (ncp + 1)
+        steps = int((direction * maxtheta) / by + 1e-10)  # seq(0, dir * maxtheta, by), less its two ends
+        theta = (np.arange(steps + 1) * by)[1:ncp + 1]
+        costheta, sintheta = np.cos(theta), np.sin(theta)
+        cpx = ox + (newx1 - ox) * costheta - (y1 - oy) * sintheta
+        cpy = oy + (y1 - oy) * costheta + (newx1 - ox) * sintheta
+        cpx = cpx / scalex
+        sinnb, cosnb = np.sin(-beta), np.cos(-beta)
+        return x1 + (cpx - x1) * cosnb - (cpy - y1) * sinnb, y1 + (cpy - y1) * cosnb + (cpx - x1) * sinnb
+
+
+def _xspline_f(numerator, denominator):
+    p = 2 * denominator * denominator
+    u = numerator / denominator
+    u2 = u * u
+    return u * u2 * (10 - p + (2 * p - 15) * u + (6 - p) * u2)
+
+
+def _xspline_g(u, q):
+    return u * (q + u * (2 * q + u * (8 - 12 * q + u * (14 * q - 11 + u * (4 - 5 * q)))))
+
+
+def _xspline_h(u, q):
+    u2 = u * u
+    return u * (q + u * (2 * q + u2 * (-2 * q - u * q)))
+
+
+def _xspline_blend(k, t, s1, s2, negative_s2=False):
+    """
+    The four blending weights of X-spline segment k at t (R's xspline.c *_influence functions); a shape
+    below 0 uses the negative influence, as R's (negative_s2 also for s2 = 0, as R's middle point).
+    """
+    if s1 < 0:
+        a0, a2 = _xspline_h(-t, -s1), _xspline_g(t, -s1)
+    else:
+        tk = k + 1 + s1
+        a0 = _xspline_f(t + k + 1 - tk, k - tk) if t + k + 1 < tk else 0.0
+        tk = k + 1 - s1
+        a2 = _xspline_f(t + k + 1 - tk, k + 2 - tk)
+    if s2 < 0 or negative_s2:
+        a1, a3 = _xspline_g(1 - t, -s2), _xspline_h(t - 1, -s2)
+    else:
+        tk = k + 2 + s2
+        a1 = _xspline_f(t + k + 1 - tk, k + 1 - tk)
+        tk = k + 2 - s2
+        a3 = _xspline_f(t + k + 1 - tk, k + 3 - tk) if t + k + 1 > tk else 0.0
+    return a0, a1, a2, a3
+
+
+def _xspline_point(weights, px, py):
+    total = weights[0] + weights[1] + weights[2] + weights[3]
+    return (sum(w * p for w, p in zip(weights, px)) / total, sum(w * p for w, p in zip(weights, py)) / total)
+
+
+def _xspline_step(k, px, py, s1, s2, precision, device_diagonal):
+    """R's step_computing(): the t step for one segment, from its length and bend (in 1200 ppi units)."""
+    if s1 == 0 and s2 == 0:
+        return 1.0
+    xstart, ystart = _xspline_point(_xspline_blend(k, 0.0, s1, s2), px, py) if s1 > 0 else (px[1], py[1])
+    xend, yend = _xspline_point(_xspline_blend(k, 1.0, s1, s2), px, py) if s2 > 0 else (px[2], py[2])
+    xmid, ymid = _xspline_point(_xspline_blend(k, 0.5, s1, s2, negative_s2=s2 <= 0), px, py)
+    xv1, yv1, xv2, yv2 = xstart - xmid, ystart - ymid, xend - xmid, yend - ymid
+    sides = np.sqrt((xv1 * xv1 + yv1 * yv1) * (xv2 * xv2 + yv2 * yv2))
+    angle_cos = 0.0 if sides == 0 else (xv1 * xv2 + yv1 * yv2) / sides
+    distance = min(np.sqrt((xend - xstart) ** 2 + (yend - ystart) ** 2), device_diagonal)
+    steps = np.sqrt(distance) / 2 + int((1 + angle_cos) * 10)
+    step = 1.0 if steps == 0 else precision / steps
+    return 0.2 if step > 0.2 or step == 0 else step
+
+
+def r_xspline(x, y, shape, inches_per_unit=1.0, device_diagonal=np.inf):
+    """
+    The points of grid's open X-spline with repeated end points (xsplineGrob(open = TRUE, repEnds = TRUE)):
+    a port of compute_open_spline() in R's src/main/xspline.c (Blanc and Schlick's X-splines). R samples each
+    segment in steps that depend on its size on the device (1200 points per inch); inches_per_unit converts
+    x and y to inches for that, and device_diagonal (in 1200ths of an inch) caps the length R uses.
+    Returns arrays of x and y in the units of x and y.
+    """
+    scale = 1200 * inches_per_unit
+    xs, ys, ss = np.asarray(x, dtype=float) * scale, np.asarray(y, dtype=float) * scale, list(shape)
+    n = len(xs)
+    if n < 2:
+        raise ValueError("there must be at least two control points")
+    out_x, out_y = [], []
+
+    def add(px_, py_):
+        if out_x and out_x[-1] == px_ and out_y[-1] == py_:
+            return
+        out_x.append(px_)
+        out_y.append(py_)
+
+    def segment(k, px, py, s1, s2):
+        step = _xspline_step(k, px, py, s1, s2, 1.0, device_diagonal)  # GEXspline uses LOW_PRECISION
+        t = 0.0
+        while t < 1:
+            add(*_xspline_point(_xspline_blend(k, t, s1, s2), px, py))
+            t += step
+
+    def control(indices):
+        return [xs[i % n] for i in indices], [ys[i % n] for i in indices], [ss[i % n] for i in indices]
+
+    px, py, ps = control([0, 0, 1, 1 if n == 2 else 2])
+    k = 0
+    while True:
+        segment(k, px, py, ps[1], ps[2])
+        if k + 3 >= n:
+            break
+        px, py, ps = control([k, k + 1, k + 2, k + 3])
+        k += 1
+    px, py, ps = control([n - 2 if n == 2 else n - 3, n - 2, n - 1, n - 1])
+    segment(k, px, py, ps[1], ps[2])
+    add(px[3], py[3])
+    return np.array(out_x) / scale, np.array(out_y) / scale
+
+
+def r_curve(x1, y1, x2, y2, curvature=0.5, angle=90, ncp=5, shape=0.5, inches_per_unit=1.0):
+    """
+    The line ggplot2's geom_curve() draws between two points (grid's curveGrob() with square = FALSE and
+    inflect = FALSE): an X-spline from the start through calcControlPoints()'s control points (shape 0.5)
+    to the end. Computed in the units of the points, which must be equally scaled on both axes (as with
+    coord_fixed()); returns arrays of x and y.
+    """
+    if x1 == x2 and y1 == y2:
+        raise ValueError("end points must not be identical")
+    if curvature == 0 or angle < 1 or angle > 179:
+        return np.array([x1, x2], dtype=float), np.array([y1, y2], dtype=float)
+    cpx, cpy = r_curve_control_points(x1, y1, x2, y2, curvature, angle, ncp)
+    return r_xspline(np.concatenate([[x1], cpx, [x2]]), np.concatenate([[y1], cpy, [y2]]),
+                     [0] + [shape] * ncp + [0], inches_per_unit=inches_per_unit)
+
+
+def _sequential_sum(values):
+    """A C loop's sum (s += v[i], in order): np.cumsum adds sequentially, np.sum pairwise."""
+    return float(np.cumsum(values)[-1]) if len(values) else 0.0
+
+
+def _lowess_fit(x, y, n, xs, nleft, nright, userw, rw):
+    """R's lowest() (stats/src/lowess.c), 0-based: the locally weighted fit at xs, or None when all weights are 0."""
+    span = x[n - 1] - x[0]
+    h = max(xs - x[nleft], x[nright] - xs)
+    h9, h1 = 0.999 * h, 0.001 * h
+    r = np.abs(x[nleft:] - xs)
+    stop = np.flatnonzero((r > h9) & (x[nleft:] > xs))  # pick up all ties on the right
+    nrt = nleft + (stop[0] if len(stop) else n - nleft) - 1
+    r = r[:nrt - nleft + 1]
+    with np.errstate(divide="ignore", invalid="ignore"):  # h = 0 when the window holds ties only
+        q = r / h
+        cube = q * q * q
+        w = np.where(r <= h9, np.where(r <= h1, 1.0, (1.0 - cube) * (1.0 - cube) * (1.0 - cube)), 0.0)
+    if userw:
+        w = np.where(r <= h9, w * rw[nleft:nrt + 1], 0.0)
+    a = _sequential_sum(w)
+    if a <= 0:
+        return None
+    w = w / a
+    xw = x[nleft:nrt + 1]
+    if h > 0:
+        a = _sequential_sum(w * xw)
+        b = xs - a
+        d = xw - a
+        c = _sequential_sum(w * (d * d))
+        if np.sqrt(c) > 0.001 * span:
+            b /= c
+            w = w * (b * (xw - a) + 1.0)
+    return _sequential_sum(w * y[nleft:nrt + 1])
+
+
+def r_lowess(x, y, f=2 / 3, iter=3, delta=None):
+    """
+    R's lowess(x, y, f, iter, delta): a port of clowess() (R's stats/src/lowess.c), Cleveland's robust locally
+    weighted regression. Points closer than delta (default 1% of the range of x) to the last fitted point are
+    interpolated; ties share one fit. Returns (x sorted, fitted y), as lowess()'s list(x, y).
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    if delta is None:
+        delta = 0.01 * (x.max() - x.min())
+    order = np.argsort(x, kind="stable")  # R's order(): ties keep their order
+    x, y = x[order], y[order]
+    n = len(x)
+    ys = np.empty(n)
+    if n < 2:
+        return x, y.copy()
+    ns = max(2, min(n, int(f * n + 1e-7)))
+    rw = np.ones(n)
+    res = np.zeros(n)
+    iteration = 1
+    while iteration <= iter + 1:
+        nleft, nright, last, i = 0, ns - 1, -1, 0
+        while True:
+            if nright < n - 1:
+                d1 = x[i] - x[nleft]
+                d2 = x[nright + 1] - x[i]
+                if d1 > d2:
+                    nleft += 1
+                    nright += 1
+                    continue
+            fitted = _lowess_fit(x, y, n, x[i], nleft, nright, iteration > 1, rw)
+            ys[i] = y[i] if fitted is None else fitted
+            if last < i - 1:
+                denom = x[i] - x[last]
+                for j in range(last + 1, i):
+                    alpha = (x[j] - x[last]) / denom
+                    ys[j] = alpha * ys[i] + (1.0 - alpha) * ys[last]
+            last = i
+            cut = x[last] + delta
+            i = last + 1
+            while i < n:
+                if x[i] > cut:
+                    break
+                if x[i] == x[last]:
+                    ys[i] = ys[last]
+                    last = i
+                i += 1
+            i = max(last + 1, i - 1)
+            if last >= n - 1:
+                break
+        res = y - ys
+        sc = _sequential_sum(np.abs(res)) / n
+        if iteration > iter:
+            break
+        ordered = np.sort(np.abs(res))
+        m1 = n // 2
+        cmad = 3.0 * (ordered[m1] + ordered[n - m1 - 1]) if n % 2 == 0 else 6.0 * ordered[m1]
+        if cmad < 1e-7 * sc:
+            break
+        c9, c1 = 0.999 * cmad, 0.001 * cmad
+        r = np.abs(res)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            q = r / cmad
+            square = 1.0 - q * q
+            rw = np.where(r <= c1, 1.0, np.where(r <= c9, square * square, 0.0))
+        iteration += 1
+    return x, ys
+
+
+def r_qqnorm(y):
+    """R's qqnorm(y, plot.it = FALSE): (qnorm(ppoints(n))[order(order(y))], y), missing values kept as NaN."""
+    from scipy import stats
+    y = np.asarray(y, dtype=float)
+    x = np.full(len(y), np.nan)
+    present = ~np.isnan(y)
+    values = y[present]
+    ranks = np.empty(len(values), dtype=int)
+    ranks[np.argsort(values, kind="stable")] = np.arange(len(values))
+    x[present] = stats.norm.ppf(r_ppoints(len(values)))[ranks]
+    return x, y
+
+
+def r_quantile7(x, probs):
+    """R's quantile(x, probs, type = 7, na.rm = TRUE), with R's own (1 - h) * x[lo] + h * x[hi]."""
+    x = np.sort(np.asarray(x, dtype=float)[~np.isnan(np.asarray(x, dtype=float))])
+    n = len(x)
+    result = []
+    for p in np.atleast_1d(probs):
+        index = 1 + max(n - 1, 0) * p
+        lo, hi = int(np.floor(index)), int(np.ceil(index))
+        q = x[lo - 1]
+        h = index - lo
+        if index > lo and x[hi - 1] != q:
+            q = (1 - h) * q + h * x[hi - 1]
+        result.append(q)
+    return np.array(result)

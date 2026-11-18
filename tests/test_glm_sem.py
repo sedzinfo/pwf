@@ -47,10 +47,59 @@ def test_report_cfa(fit, reference, tmp_path):
                       "Scores", "Call"]
 
 
-def test_plot_cfa(fit):
+def test_plot_cfa_keys_match_rwf(fit, reference, capsys):
+    """rwf's plot_cfa skips the "eq" diagrams of a model without labels (plot_cfa_gg fails on them)."""
     plots = glm_sem.plot_cfa(fit)
-    assert list(plots) == [f"{lay}_{what}" for lay in ["circle", "tree", "spring"]
-                           for what in ["estimates", "standard_estimates", "parameters_wih_equality_constraints"]]
+    assert list(plots) == reference("plot_cfa_keys")["key"].tolist()
+    assert capsys.readouterr().out.count("Skipping") == 3
+
+
+def test_plot_cfa_gg_eq_needs_labels(fit):
+    with pytest.raises(ValueError, match="labels"):
+        glm_sem.plot_cfa_gg(fit, what="eq")
+
+
+_CFA_GEOMS = {"geom_segment": "GeomSegment", "geom_label": "GeomLabel", "geom_rect": "GeomRect",
+              "geom_text": "GeomText", "geom_path": "GeomCurve"}
+
+
+def _assert_cfa_layers_match(p, expected):
+    """plot_cfa_gg's layers as make_reference.R's plots_layer_rows(): rectangles by their centres, arcs by their ends."""
+    p.draw()
+    assert [_CFA_GEOMS[type(layer.geom).__name__] for layer in p.layers] == \
+        expected.drop_duplicates("layer")["geom"].tolist()
+    for i, layer in enumerate(p.layers, start=1):
+        data, rows = layer.data, expected[expected["layer"] == i]
+        if isinstance(layer.geom, glm_sem.geom_rect):
+            data = pd.DataFrame({"x": (data["xmin"] + data["xmax"]) / 2, "y": (data["ymin"] + data["ymax"]) / 2})
+        elif isinstance(layer.geom, glm_sem.geom_path):  # grid's curve, drawn as a path from (x, y) to (xend, yend)
+            ends = data.groupby("group", sort=True)
+            data = pd.DataFrame({"x": ends["x"].first(), "y": ends["y"].first(), "xend": ends["x"].last(),
+                                 "yend": ends["y"].last()})
+        data = data.reset_index(drop=True)
+        assert len(data) == len(rows), i
+        for column in ["x", "y", "xend", "yend"]:
+            if rows[column].notna().any():
+                np.testing.assert_allclose(data[column], rows[column], rtol=0, atol=1e-12, err_msg=f"{i} {column}")
+        if rows["label"].notna().any():
+            assert data["label"].astype(str).tolist() == rows["label"].astype(str).tolist(), i
+
+
+@pytest.mark.parametrize("layout,what", [("tree", "std"), ("tree", "est"), ("circle", "std"), ("circle", "est")])
+def test_plot_cfa_gg_matches_rwf(fit, reference, layout, what):
+    """igraph's tree and circle layouts, R's merge() order of the edges, formatC labels and grid's covariance arc."""
+    expected = reference(f"plot_cfa_gg_{layout}_{what}", keep_default_na=False, na_values=["NA"])
+    p = glm_sem.plot_cfa_gg(fit, what=what, layout=layout)
+    assert p.labels.get("title", None) == expected["title"].iloc[0]
+    _assert_cfa_layers_match(p, expected)
+
+
+def test_plot_cfa_gg_cross_loadings_match_rwf(reference):
+    """A cross-loading indicator: R's merge() orders tied rows by lhs, factors a, b, C in R's collation."""
+    model = glm_sem.cfa("b =~ E1 + E2 + E3 + N1; a =~ N1 + N2 + N3 + E3; C =~ A1 + A2 + A3",
+                        _load_reference("lavaan_data"))
+    expected = reference("plot_cfa_gg_cross_tree_std", keep_default_na=False, na_values=["NA"])
+    _assert_cfa_layers_match(glm_sem.plot_cfa_gg(model, what="std", layout="tree"), expected)
 
 
 @pytest.mark.filterwarnings("ignore:More than 20 figures have been opened")  # one plot per fit index, as in rwf

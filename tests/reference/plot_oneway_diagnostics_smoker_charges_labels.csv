@@ -1,0 +1,13 @@
+"panel","title","caption","x_min","x_max"
+1,"Residuals vs Fitted","charges ~ smoker
+observations=1338",7253.47012117237,33231.0300082167
+2,"Normal Q-Q","charges ~ smoker
+observations=1338",-3.70873764874761,3.7087376487476
+3,"Scale-Location","charges ~ smoker
+observations=1338",7253.47012117237,33231.0300082167
+4,"Cook's distance","charges ~ smoker
+observations=1338",-65.85,1404.85
+5,"Residuals vs Leverage","charges ~ smoker
+observations=1338",-0.000182481751824818,0.00383211678832117
+6,"Cook's dist vs Leverage","charges ~ smoker
+observations=1338",-0.000182481751824818,0.00383211678832117
