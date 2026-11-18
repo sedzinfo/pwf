@@ -1406,3 +1406,22 @@ p <- plot_irt_onefactor(mirt::mirt(irt_items, 1, verbose = FALSE), title = "T")
 ref("plot_irt_onefactor_data", data.frame(type = p$data$type, theta = p$data$theta,
                                           variable = as.character(p$data$variable), value = p$data$value))
 ref("plot_irt_onefactor_levels", data.frame(level = levels(p$data$variable), title = p$labels$title))
+##########################################################################################
+# REPORT XGBOOST WITH EARLY STOPPING (best iteration and score, predictions up to the best iteration)
+##########################################################################################
+# self-contained, so the section can be generated alone; the model is saved as xgboost JSON as above
+early_admission <- utils::read.csv(file.path(out_dir, "..", "..", "src", "pwf", "data", "admission.csv"))
+early_train <- early_admission[1:300, ]
+early_test <- early_admission[301:400, ]
+early_features <- c("gre", "gpa", "rank")
+early_dtrain <- xgboost::xgb.DMatrix(as.matrix(early_train[, early_features]), label = early_train$admit)
+early_dtest <- xgboost::xgb.DMatrix(as.matrix(early_test[, early_features]), label = early_test$admit)
+set.seed(1)
+model <- xgboost::xgb.train(params = list(objective = "binary:logistic", nthread = 1, max_depth = 2, eta = 0.3),
+                            data = early_dtrain, nrounds = 50, evals = list(train = early_dtrain, test = early_dtest),
+                            early_stopping_rounds = 3, verbose = 0)
+xgboost::xgb.save(model, file.path(out_dir, "xgb_early_stop.json"))
+report <- report_xgboost(model = model, validation_data = early_test, label = "admit", file = NULL)
+ref("report_xgboost_early_stop_model_summary", report$result$model_summary)
+ref("report_xgboost_early_stop_validation_metrics", report$result$validation_metrics)
+ref("report_xgboost_early_stop_evaluation_log", report$result$evaluation_log)

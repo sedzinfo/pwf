@@ -137,6 +137,11 @@ def _as_list(text):
     return [text] if isinstance(text, str) else list(text)
 
 
+def _is_na(value):
+    """R's NA among texts: None or a float NaN (pandas' missing value)."""
+    return value is None or (isinstance(value, float) and value != value)
+
+
 def clear_text(text):
     """
     Lower-case text with digits and punctuation replaced by spaces and runs
@@ -146,7 +151,8 @@ def clear_text(text):
     text (str or list of str): Text.
 
     Returns:
-    list of str: One cleaned string per input string.
+    list of str: One cleaned string per input string; a missing value (None
+    or NaN) stays missing, as R's NA.
 
     Examples:
     >>> clear_text(["word_one word_two", "It uses a dictionary of over 200 Latin words."])
@@ -154,6 +160,9 @@ def clear_text(text):
     """
     result = []
     for value in _as_list(text):
+        if _is_na(value):
+            result.append(value)
+            continue
         value = _DIGITS.sub(" ", value)
         value = _PUNCTUATION.sub(" ", value)
         value = _SPACES.sub(" ", value)
@@ -183,7 +192,7 @@ def clear_stopwords(text, stopwords=None):
     stopwords = STOPWORDS_ENGLISH if stopwords is None else list(stopwords)
     pattern = re.compile("|".join(rf"\b{re.escape(word)}\b" for word in stopwords), flags=re.ASCII)
     single_letter = re.compile(r" *\b[^\W\d_]\b *")
-    removed = [single_letter.sub(" ", pattern.sub("", value)) for value in _as_list(text)]
+    removed = [value if _is_na(value) else single_letter.sub(" ", pattern.sub("", value)) for value in _as_list(text)]
     return clear_text(removed)
 ##########################################################################################
 # PART OF SPEECH TAGGING
@@ -238,7 +247,8 @@ def compute_tversky_index(x, y, alpha=0.5, beta=0.5):
     beta (float, optional): Weight of the elements only in y. Defaults to 0.5.
 
     Returns:
-    float: Between 0 (no overlap) and 1 (the same sets).
+    float: Between 0 (no overlap) and 1 (the same sets); NaN for two empty
+    sets (R's 0 / 0).
 
     Examples:
     >>> compute_tversky_index(["a", "b", "c", "d"], ["b", "c", "d", "e"])
@@ -249,7 +259,8 @@ def compute_tversky_index(x, y, alpha=0.5, beta=0.5):
     intersection = len([v for v in _unique(x) if v in y_set])
     x_only = len([v for v in _unique(x) if v not in y_set])
     y_only = len([v for v in _unique(y) if v not in x_set])
-    return intersection / (intersection + alpha * x_only + beta * y_only)
+    with np.errstate(divide="ignore", invalid="ignore"):  # R's division: 0 / 0 is NaN
+        return float(np.float64(intersection) / (intersection + alpha * x_only + beta * y_only))
 
 
 def compute_text_similarity(text1, text2):

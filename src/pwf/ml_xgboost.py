@@ -243,8 +243,8 @@ def report_xgboost(model, validation_data=None, label=None, file="xgboost", w=10
     Report of an xgboost model (port of rwf::report_xgboost): structure of
     the trees, training log, feature importance and, with validation data,
     predictions, validation metrics and (for classification) cut-point
-    performance. With file, the plots go to <file>_<title>.pdf and the
-    tables to <file>.xlsx.
+    performance. With file, the plots go to <file>_<title>.pdf (<file>_.pdf for the
+    default title "", as rwf's report_pdf) and the tables to <file>.xlsx.
 
     Parameters:
     model (xgboost.Booster or XGBModel): The model.
@@ -298,7 +298,9 @@ def report_xgboost(model, validation_data=None, label=None, file="xgboost", w=10
         observed = validation_data[label].to_numpy()
         matrix = xgb.DMatrix(validation_data[feature_names].to_numpy(dtype=float),
                              feature_names=feature_names if booster.feature_names else None)
-        predicted = booster.predict(matrix)
+        # R's predict() stops at the best iteration of a model trained with early stopping; Booster.predict uses all
+        best = int(booster.attr("best_iteration")) if booster.attr("best_iteration") is not None else None
+        predicted = booster.predict(matrix, iteration_range=(0, best + 1) if best is not None else (0, 0))
         plots["regression"] = plot_scatterplot(pd.DataFrame({"observed": observed, "predicted": predicted}))
         numeric = pd.api.types.is_numeric_dtype(validation_data[label]) and len(predicted) == len(observed)
         observed_float = observed.astype(float) if numeric else None
@@ -342,11 +344,16 @@ def report_xgboost(model, validation_data=None, label=None, file="xgboost", w=10
 
     best_iteration = getattr(booster, "best_iteration", None) if "best_iteration" in booster.attributes() else None
     best_score = booster.attributes().get("best_score")
+    if best_score is not None:
+        best_score = r_number(float(f"{float(best_score):.4g}"))  # signif(best_score, 4)
+        if evals_result:  # R names it by the monitored data and metric: the last of each, as early stopping's
+            last_data = list(evals_result)[-1]
+            best_score = f"{last_data}-{list(evals_result[last_data])[-1]}: {best_score}"
     result["model_summary"] = pd.DataFrame({
         "Statistic": ["Objective", "Boosting rounds", "Features", "Best iteration", "Best score"],
         "value": [objective, str(booster.num_boosted_rounds()), str(len(feature_names)),
                   str(best_iteration + 1) if best_iteration is not None else np.nan,
-                  r_number(float(f"{float(best_score):.4g}")) if best_score is not None else np.nan]})
+                  best_score if best_score is not None else np.nan]})
 
     depths = _leaf_depths(booster)
     if len(depths):
@@ -381,7 +388,7 @@ def report_xgboost(model, validation_data=None, label=None, file="xgboost", w=10
                 figures += [v for v in value.values() if hasattr(v, "draw") or hasattr(v, "savefig")]
             elif value is not None:
                 figures.append(value)
-        report_pdf(plotlist=figures, file=file, title=title or None, w=w, h=h, print_plot=False)
+        report_pdf(plotlist=figures, file=file, title=title, w=w, h=h, print_plot=False)  # rwf: <file>_<title>.pdf
     if file is not None:
         filename = f"{file}.xlsx"
         if os.path.exists(filename):
@@ -390,14 +397,14 @@ def report_xgboost(model, validation_data=None, label=None, file="xgboost", w=10
             performance = plots.get("performance")
             if isinstance(performance, dict) and performance.get("confusion_matrix") is not None:
                 excel_confusion_matrix(performance["confusion_matrix"], writer)
-            excel_critical_value(result["model_summary"], writer, sheet="Model Summary")
+            excel_critical_value(result["model_summary"], writer, sheet="Model Summary", numFmt="#0.00")
             if "validation_metrics" in result:
-                excel_critical_value(result["validation_metrics"], writer, sheet="Validation Metrics")
+                excel_critical_value(result["validation_metrics"], writer, sheet="Validation Metrics", numFmt="#0.000")
             if len(importance):
-                excel_critical_value(importance, writer, sheet="Feature Importance")
+                excel_critical_value(importance, writer, sheet="Feature Importance", numFmt="#0.00")
             if len(result["parameters"]):
-                excel_critical_value(result["parameters"], writer, sheet="Hyperparameters")
+                excel_critical_value(result["parameters"], writer, sheet="Hyperparameters", numFmt="#0.00")
             if not fast and len(evaluation_log):
-                excel_critical_value(evaluation_log, writer, sheet="Evaluation Log")
+                excel_critical_value(evaluation_log, writer, sheet="Evaluation Log", numFmt="#0.00")
     return {"plots": plots, "result": result, "observed": observed, "predicted": predicted,
             "feature_names": feature_names}

@@ -28,6 +28,14 @@ def test_clear_text_accepts_one_string():
     assert ml_nlp.clear_text("Hello, World 42!") == ["hello world"]
 
 
+def test_clear_text_keeps_missing_values():
+    """rwf: gsub() and tolower() keep NA: clear_text(c("A b", NA)) is c("a b", NA), clear_stopwords(c("The cat", NA))
+    c("the cat", NA) (stopwords are matched case-sensitively)."""
+    assert ml_nlp.clear_text(["A b", None]) == ["a b", None]
+    result = ml_nlp.clear_stopwords(["The cat", float("nan")])
+    assert result[0] == "the cat" and np.isnan(result[1])
+
+
 def test_compute_text_similarity(nlp_texts, reference):
     expected = reference("compute_text_similarity")
     words = [t.split(" ") for t in nlp_texts]
@@ -61,3 +69,9 @@ def test_tag_pos(nlp_texts, reference):
     agreement = np.mean([a == b for a, b in zip(result["POStags"], expected)])
     assert agreement > 0.9
     assert result["POStagged"].split(" ")[0] == "All/" + result["POStags"][0]
+
+
+def test_compute_tversky_index_of_empty_sets_is_nan():
+    """rwf: compute_tversky_index(character(0), character(0)) is 0 / 0 = NaN (clear_text("123") splits into nothing)."""
+    assert np.isnan(ml_nlp.compute_tversky_index([], []))
+    assert ml_nlp.compute_tversky_index([], ["a", "b"]) == 0
