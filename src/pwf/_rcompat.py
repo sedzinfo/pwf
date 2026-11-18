@@ -1333,3 +1333,59 @@ def r_quantile7(x, probs):
             q = (1 - h) * q + h * x[hi - 1]
         result.append(q)
     return np.array(result)
+
+
+def _r_isort_with_index(x, index):
+    """R's isort_with_index() (src/main/util.c): Shell sort of integer codes, carrying an index (not stable)."""
+    n = len(x)
+    h = 1
+    while h <= n // 9:
+        h = 3 * h + 1
+    while h > 0:
+        for i in range(h, n):
+            v, iv = x[i], index[i]
+            j = i
+            while j >= h and x[j - h] > v:
+                x[j], index[j] = x[j - h], index[j - h]
+                j -= h
+            x[j], index[j] = v, iv
+        h //= 3
+
+
+def r_merge_rows(x_keys, y_keys):
+    """
+    The rows R's merge(x, y, by.x, by.y) pairs for an inner join on one text key, in its result order
+    (sort = TRUE): match codes of the common keys, R's do_merge() pairing after its Shell sort of the codes
+    (so tied rows are not always in their original order), then sort.list() of the keys (stable, by the
+    locale's collation). Returns 0-based (x rows, y rows).
+    """
+    x_keys, y_keys = list(x_keys), list(y_keys)
+    in_y = set(y_keys)
+    first = {}
+    for position, key in enumerate((k for k in x_keys if k in in_y), start=1):  # bxy <- bx[comm > 0]
+        first.setdefault(key, position)
+    xinds, yinds = [first.get(k, 0) for k in x_keys], [first.get(k, 0) for k in y_keys]
+    ix, iy = list(range(1, len(xinds) + 1)), list(range(1, len(yinds) + 1))
+    _r_isort_with_index(xinds, ix)
+    _r_isort_with_index(yinds, iy)
+    nx, ny = len(xinds), len(yinds)
+    i = next((p for p in range(nx) if xinds[p] > 0), nx)
+    j = next((p for p in range(ny) if yinds[p] > 0), ny)
+    xi, yi = [], []
+    while i < nx:
+        code = xinds[i]
+        nnx = i
+        while nnx < nx and xinds[nnx] == code:
+            nnx += 1
+        while j < ny and yinds[j] < code:
+            j += 1
+        nny = j
+        while nny < ny and yinds[nny] == code:
+            nny += 1
+        for i0 in range(i, nnx):
+            for j0 in range(j, nny):
+                xi.append(ix[i0] - 1)
+                yi.append(iy[j0] - 1)
+        i, j = nnx, nny
+    order = sorted(range(len(xi)), key=lambda k: _sort_key(x_keys[xi[k]]))
+    return [xi[k] for k in order], [yi[k] for k in order]
