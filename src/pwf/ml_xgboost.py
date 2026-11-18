@@ -31,14 +31,14 @@ from plotnine import (
     ggplot, aes, geom_point, geom_line, geom_col, labs, theme_bw, coord_flip, position_dodge,
 )
 try:
-    from ._rcompat import r_number
+    from ._rcompat import gg_linewidth, r_number
     from .functions_excel import excel_confusion_matrix, excel_critical_value
     from .functions_plot import report_pdf
     from .functions_strings import str_aes
     from .functions_train_test import result_confusion_performance
     from .glm_linear_regression import plot_scatterplot
 except ImportError:
-    from _rcompat import r_number
+    from _rcompat import gg_linewidth, r_number
     from functions_excel import excel_confusion_matrix, excel_critical_value
     from functions_plot import report_pdf
     from functions_strings import str_aes
@@ -365,7 +365,7 @@ def report_xgboost(model, validation_data=None, label=None, file="xgboost", w=10
         error_df = error_df.rename(columns={"iter": "Iteration"})
         error_df["Metric"] = [str_aes(m) for m in error_df["Metric"]]
         plots["error"] = (ggplot(error_df, aes(y="value", x="Iteration", color="Metric"))
-                          + geom_line(size=base_size / 15)
+                          + geom_line(size=gg_linewidth(base_size / 15))  # ggplot2's linewidth
                           + labs(x="Iteration", y="Metric Value", title=f"Training Log: {title}")
                           + theme_bw(base_size=base_size))
 

@@ -99,3 +99,24 @@ def test_report_xgboost_writes_files(load_data, tmp_path):
     assert sheets == ["Confusion Matrix", "Model Summary", "Validation Metrics", "Feature Importance",
                       "Hyperparameters", "Evaluation Log"]
     assert (tmp_path / "xgb_test.pdf").exists()
+
+
+def test_report_xgboost_early_stopping_matches_rwf(load_data, reference, tmp_path):
+    """A model trained with early stopping (in R, saved as JSON): rwf's best iteration and "data-metric: score",
+    predictions up to the best iteration (R's predict() default), <file>_.pdf for the default title "" and the
+    validation metrics' "#0.000" format."""
+    booster = xgb.Booster(model_file=str(REFERENCE_DIR / "xgb_early_stop.json"))
+    test = load_data("admission").iloc[300:400].reset_index(drop=True)
+    log = reference("report_xgboost_early_stop_evaluation_log")
+    file = str(tmp_path / "xgboost")
+    report = ml_xgboost.report_xgboost(booster, validation_data=test, label="admit", file=file,
+                                       evals_result=evals_from_reference(log))
+    result = report["result"]
+    assert_matches_reference(result["model_summary"],
+                             reference("report_xgboost_early_stop_model_summary", dtype={"value": str}))
+    assert_matches_reference(result["validation_metrics"], reference("report_xgboost_early_stop_validation_metrics"),
+                             rtol=1e-6)  # predictions are float32
+    assert (tmp_path / "xgboost_.pdf").exists()
+    from openpyxl import load_workbook
+    sheet = load_workbook(f"{file}.xlsx")["Validation Metrics"]
+    assert sheet["C3"].number_format == "#0.000"

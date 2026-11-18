@@ -1,0 +1,6 @@
+"Statistic","value"
+"Objective","binary:logistic"
+"Boosting rounds","6"
+"Features","3"
+"Best iteration","3"
+"Best score","test-logloss: 0.631"
