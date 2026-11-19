@@ -1,0 +1,19 @@
+# How to cite this package. GitHub shows it as "Cite this repository"; Zenodo uses it for the DOI of each release.
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "pwf: Python working functions for statistics, psychometrics and machine learning reports"
+abstract: "Python working functions: statistics, psychometrics and machine learning reports, a port of the R package rwf."
+authors:
+  - family-names: "Zacharatos"
+    given-names: "Dimitrios"
+    orcid: "https://orcid.org/0000-0003-1789-8294"
+license: GPL-3.0-or-later
+repository-code: "https://github.com/sedzinfo/pwf"
+keywords:
+  - "statistics"
+  - "psychometrics"
+  - "machine-learning"
+  - "factor-analysis"
+  - "item-response-theory"
+  - "sem"
