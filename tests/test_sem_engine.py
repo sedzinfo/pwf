@@ -133,3 +133,71 @@ def test_fiml_modification_indices(fiml_fit, reference):
 def test_fiml_predict(fiml_fit, reference):
     expected = reference("lavaan_fiml_predict").drop(index=6)  # row 7 in R has no answers
     np.testing.assert_allclose(fiml_fit.predict().to_numpy(), expected.to_numpy(), atol=5e-5)
+
+
+# Same models as labels_cases in tests/reference/make_reference.R: shared labels, == constraints, := definitions
+LABEL_CASES = {
+    "equal": ("E =~ E1 + a*E2 + a*E3 + E4 + E5; N =~ N1 + b*N2 + b*N3 + N4 + N5", {}),
+    "constraint": ("E =~ E1 + l2*E2 + l3*E3 + E4 + E5; N =~ N1 + N2 + N3 + N4 + N5; l2 == l3 + 0.2", {}),
+    "variances": ("E =~ E1 + E2 + E3; E1 ~~ v*E1; E2 ~~ v*E2; E3 ~~ v*E3", {}),
+    "combined": ("E =~ E1 + a*E2 + a*E3 + l4*E4; N =~ N1 + N2 + l3*N3 + N4; A =~ A1 + A2 + A3; def1 := l4*2; "
+                 "N ~ r*E; l4 == -l3 - 0.4; A ~ s*N; ind := r*s; N2 ~~ v*N2; N4 ~~ v*N4", {}),
+    "stdlv": ("E =~ a*E1 + a*E2 + a*E3 + E4 + E5", {"std_lv": True}),
+    "fixed_label": ("E =~ a*E1 + a*E3 + E2 + E4 + E5", {}),  # a label shared with the fixed marker fixes E3 too
+    "fiml": ("E =~ E1 + a*E2 + a*E3 + E4 + E5; N =~ N1 + N2 + N3 + N4 + N5", {"missing": "ml"}),
+}
+# lavaan's optimizer stops a little earlier on constrained models (its chi-square is a hair above pwf's)
+LABEL_TOL = 1e-4
+
+
+@pytest.fixture(scope="module")
+def label_fits(lavaan_data):
+    from conftest import _load_reference
+    fiml_data = _load_reference("lavaan_fiml_data")
+    return {case: _sem.sem(model, fiml_data if kwargs.get("missing") == "ml" else lavaan_data, **kwargs)
+            for case, (model, kwargs) in LABEL_CASES.items()}
+
+
+@pytest.mark.parametrize("case", LABEL_CASES)
+def test_labelled_parameter_estimates_match_lavaan(label_fits, reference, case):
+    """Equal values and standard errors under shared labels and constraints, := rows with delta-method standard
+    errors and standardized values, the label column and lavaan's row numbers (its hidden == rows skipped)."""
+    result = label_fits[case].parameter_estimates()
+    expected = reference(f"labels_{case}_parameters", keep_default_na=False, na_values=["NA"])
+    assert [str(i) for i in result.index] == expected["row"].astype(str).tolist()
+    assert_matches_reference(result, expected.drop(columns="row"), rtol=LABEL_TOL, atol=LABEL_TOL / 10)
+
+
+@pytest.mark.parametrize("case", LABEL_CASES)
+def test_labelled_fit_measures_match_lavaan(label_fits, reference, case):
+    """npar counts the free parameters less the constraints, so df gains one for each."""
+    result = label_fits[case].fit_measures()
+    expected = reference(f"labels_{case}_fit").set_index("measure")["value"]
+    for name in ["npar", "chisq", "df", "pvalue", "cfi", "tli", "rmsea", "srmr", "aic", "bic", "logl"]:
+        assert result[name] == pytest.approx(expected[name], rel=LABEL_TOL, abs=1e-8), name
+
+
+@pytest.mark.parametrize("case", LABEL_CASES)
+def test_labelled_modification_indices_match_lavaan(label_fits, reference, case):
+    """Under the constraints, as lavaan's, for the same rows and with lavaan's row numbers, which count its
+    rows of definitions and constraints."""
+    result = label_fits[case].modification_indices()
+    expected = reference(f"labels_{case}_modindices", keep_default_na=False, na_values=["NA"])
+    assert sorted(str(i) for i in result.index) == sorted(expected["row"].astype(str))
+    got = result.assign(row=[str(i) for i in result.index]).set_index("row")
+    want = expected.assign(row=expected["row"].astype(str)).set_index("row").loc[got.index]
+    assert (got[["lhs", "op", "rhs"]] == want[["lhs", "op", "rhs"]]).all().all()
+    # indices are differences of the score at the optimum, so lavaan's earlier stop shows more here
+    np.testing.assert_allclose(got["mi"], want["mi"], rtol=3e-3, atol=1e-3)
+
+
+def test_definitions_and_constraints_hold(label_fits):
+    """The fitted values keep the constraints exactly, and a := row is its expression of the estimates."""
+    fit = label_fits["combined"]
+    values = {p.label: p.value for p in fit.table if p.label}
+    assert values["l4"] == pytest.approx(-values["l3"] - 0.4, abs=1e-12)
+    loadings = {p.rhs: p.value for p in fit.table if p.op == "=~"}
+    assert loadings["E2"] == loadings["E3"]
+    estimates = fit.parameter_estimates().set_index("lhs")
+    assert estimates.loc["ind", "est"] == pytest.approx(values["r"] * values["s"], rel=1e-12)
+    assert fit.npar == len(fit.free) - 3  # two shared labels and one constraint
