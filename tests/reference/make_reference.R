@@ -1746,3 +1746,63 @@ gradient_bars <- ggplot2::ggplot_build(gradient_loadings$plot_barplot)
 ref("plot_loadings_barplot_fills", data.frame(gradient_loadings$plot_barplot$data[, c("variable", "Factor",
                                                                                       "Loading")],
                                               fill = gradient_bars$data[[1]]$fill))
+##########################################################################################
+# LAVAAN LABELS AND CONSTRAINTS (shared labels, == constraints, := definitions; ML and FIML)
+##########################################################################################
+# self-contained, so the section can be generated alone; the data are the LAVAAN ENGINE section's
+labels_data <- utils::read.csv(file.path(out_dir, "lavaan_data.csv"))
+labels_fiml_data <- utils::read.csv(file.path(out_dir, "lavaan_fiml_data.csv"))
+labels_cases <- list(
+  equal = list(model = "E =~ E1 + a*E2 + a*E3 + E4 + E5; N =~ N1 + b*N2 + b*N3 + N4 + N5"),
+  constraint = list(model = "E =~ E1 + l2*E2 + l3*E3 + E4 + E5; N =~ N1 + N2 + N3 + N4 + N5; l2 == l3 + 0.2"),
+  variances = list(model = "E =~ E1 + E2 + E3; E1 ~~ v*E1; E2 ~~ v*E2; E3 ~~ v*E3"),
+  combined = list(model = paste("E =~ E1 + a*E2 + a*E3 + l4*E4; N =~ N1 + N2 + l3*N3 + N4; A =~ A1 + A2 + A3;",
+                                "def1 := l4*2; N ~ r*E; l4 == -l3 - 0.4; A ~ s*N; ind := r*s; N2 ~~ v*N2;",
+                                "N4 ~~ v*N4")),
+  stdlv = list(model = "E =~ a*E1 + a*E2 + a*E3 + E4 + E5", std.lv = TRUE),
+  fixed_label = list(model = "E =~ a*E1 + a*E3 + E2 + E4 + E5"),  # E3 is fixed at E1's 1 by the label
+  fiml = list(model = "E =~ E1 + a*E2 + a*E3 + E4 + E5; N =~ N1 + N2 + N3 + N4 + N5", missing = "ml"))
+for (case in names(labels_cases)) {
+  k <- labels_cases[[case]]
+  fit <- if (identical(k$missing, "ml")) {
+    lavaan::sem(k$model, data = labels_fiml_data, missing = "ML", meanstructure = TRUE)
+  } else {
+    lavaan::sem(k$model, data = labels_data, std.lv = isTRUE(k$std.lv))
+  }
+  pe <- lavaan::parameterEstimates(fit, standardized = TRUE, rsquare = TRUE)
+  ref(paste0("labels_", case, "_parameters"), data.frame(row = row.names(pe), pe, check.names = FALSE))
+  fm <- lavaan::fitMeasures(fit)
+  ref(paste0("labels_", case, "_fit"), data.frame(measure = names(fm), value = as.numeric(fm)))
+  mi <- suppressWarnings(lavaan::modificationIndices(fit, standardized = TRUE, cov.std = TRUE,
+                                                     information = "expected", power = TRUE, delta = 0.1,
+                                                     alpha = 0.05, high.power = 0.75, sort. = TRUE,
+                                                     minimum.value = 0, free.remove = FALSE, na.remove = TRUE,
+                                                     op = NULL))
+  ref(paste0("labels_", case, "_modindices"), data.frame(row = row.names(mi), mi, check.names = FALSE))
+}
+# rwf's report_cfa asks for the user's == rows too (remove.eq = FALSE, remove.system.eq = TRUE)
+labels_fit <- lavaan::sem(labels_cases$combined$model, data = labels_data)
+labels_report <- lavaan::parameterEstimates(labels_fit, se = TRUE, zstat = TRUE, pvalue = TRUE, ci = TRUE,
+                                            level = 0.95, boot.ci.type = "perc", standardized = TRUE, fmi = FALSE,
+                                            remove.system.eq = TRUE, remove.eq = FALSE, remove.ineq = FALSE,
+                                            remove.def = FALSE, rsquare = TRUE, add.attributes = TRUE)
+ref("labels_combined_report_parameters", data.frame(row = row.names(labels_report), labels_report,
+                                                    check.names = FALSE))
+# rwf's "eq" diagrams, which need labels: a labelled covariance arc and a constraint; plot_cfa's keys
+labels_layer_rows <- function(p) {  # as plots_layer_rows() above
+  b <- ggplot2::ggplot_build(p)
+  do.call(rbind, lapply(seq_along(b$data), function(i) {
+    d <- b$data[[i]]
+    data.frame(layer = i, geom = class(p$layers[[i]]$geom)[1],
+               x = if (is.null(d$x)) (d$xmin + d$xmax) / 2 else d$x, y = if (is.null(d$y)) (d$ymin + d$ymax) / 2 else d$y,
+               xend = if (is.null(d$xend)) NA else d$xend, yend = if (is.null(d$yend)) NA else d$yend,
+               label = if (is.null(d$label)) NA else as.character(d$label))
+  }))
+}
+labels_diagram_fit <- lavaan::sem("E =~ E1 + a*E2 + a*E3 + E4; N =~ N1 + b*N2 + l3*N3 + N4; E ~~ c*N; l3 == b + 0.1",
+                                  data = labels_data)
+for (layout in c("tree", "circle")) {
+  p <- plot_cfa_gg(labels_diagram_fit, what = "eq", layout = layout)
+  ref(paste0("labels_plot_cfa_gg_", layout, "_eq"), data.frame(title = p$labels$title, labels_layer_rows(p)))
+}
+ref("labels_plot_cfa_keys", data.frame(key = names(suppressMessages(plot_cfa(labels_diagram_fit)))))

@@ -46,9 +46,15 @@ def test_fit_measures_match_lavaan(lavaan_data, reference, case):
 
 def test_parse_rejects_unsupported(lavaan_data):
     with pytest.raises(NotImplementedError):
-        _sem.sem("E =~ a*E1 + E2 + E3", lavaan_data)
-    with pytest.raises(NotImplementedError):
         _sem.sem("E =~ E1 + E2 + E3; E ~ N1", lavaan_data)
+    with pytest.raises(NotImplementedError, match="inequality"):
+        _sem.sem("E =~ E1 + a*E2 + E3; a > 0", lavaan_data)
+    with pytest.raises(NotImplementedError, match="not linear"):
+        _sem.sem("E =~ E1 + a*E2 + b*E3; a == b*b", lavaan_data)
+    with pytest.raises(ValueError, match="not the label of a free parameter"):
+        _sem.sem("E =~ E1 + a*E2 + E3; z == 1", lavaan_data)
+    with pytest.raises(ValueError, match="already a label"):
+        _sem.sem("E =~ E1 + a*E2 + E3; a := 2", lavaan_data)
 
 
 def test_listwise_deletion(lavaan_data):

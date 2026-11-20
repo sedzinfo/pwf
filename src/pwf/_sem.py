@@ -191,39 +191,56 @@ def _em_saturated(x, patterns, tol=1e-12, max_iter=100000):
 
 
 class Parameter:
-    def __init__(self, lhs, op, rhs, free, value, user):
+    def __init__(self, lhs, op, rhs, free, value, user, label="", start=None):
         self.lhs, self.op, self.rhs, self.free, self.value, self.user = lhs, op, rhs, free, value, user
+        self.label, self.start = label, start
 
 
 class SEMFit:
     """A fitted model: parameter table, implied covariance, sample statistics and helpers."""
 
     def __init__(self, model, data, std_lv=False, missing="listwise", meanstructure=False):
-        statements = _parse(model)
+        statements, extras = _parse(model)
         self.model_syntax = model
         self.std_lv = std_lv
-        latent = list(dict.fromkeys(s[0] for s in statements if s[1] == "=~"))
-        names = list(dict.fromkeys(n for s in statements for n in (s[0], s[2])))
+        latent = list(dict.fromkeys(s["lhs"] for s in statements if s["op"] == "=~"))
+        names = list(dict.fromkeys(n for s in statements for n in (s["lhs"], s["rhs"])))
         observed = [n for n in names if n not in latent]
         # lavaan orders observed variables by first appearance as indicators, then elsewhere
-        indicators = [s[2] for s in statements if s[1] == "=~"]
+        indicators = [s["rhs"] for s in statements if s["op"] == "=~"]
         observed = list(dict.fromkeys(indicators + observed))
-        regressions = [s for s in statements if s[1] == "~"]
-        for lhs, _, rhs, _, _ in regressions:
-            if lhs not in latent or rhs not in latent:
+        regressions = [s for s in statements if s["op"] == "~"]
+        for s in regressions:
+            if s["lhs"] not in latent or s["rhs"] not in latent:
                 raise NotImplementedError("regressions are supported among latent variables only")
         self.latent, self.observed = latent, observed
-        endogenous = list(dict.fromkeys(s[0] for s in regressions))
+        endogenous = list(dict.fromkeys(s["lhs"] for s in regressions))
         self.endogenous = endogenous
 
         table = []
         first_indicator = {}
-        for lhs, op, rhs, fixed, free in statements:
-            if op == "=~" and lhs not in first_indicator:
-                first_indicator[lhs] = rhs
-                if fixed is None and not free and not std_lv:
+        for s in statements:
+            fixed = s["fixed"]
+            if s["op"] == "=~" and s["lhs"] not in first_indicator:
+                first_indicator[s["lhs"]] = s["rhs"]
+                if fixed is None and not s["free"] and not std_lv:
                     fixed = 1.0
-            table.append(Parameter(lhs, op, rhs, fixed is None, 0.0 if fixed is None else fixed, True))
+            table.append(Parameter(s["lhs"], s["op"], s["rhs"], fixed is None, 0.0 if fixed is None else fixed, True,
+                                   s["label"], s["start"]))
+        # lavaan: a label shared with a fixed parameter fixes every parameter with that label at its value
+        fixed_labels = {}
+        for prm in table:
+            if prm.label and not prm.free:
+                fixed_labels.setdefault(prm.label, prm.value)
+        for prm in table:
+            if prm.free and prm.label in fixed_labels:
+                prm.free, prm.value = False, fixed_labels[prm.label]
+        labels = {prm.label for prm in table if prm.label}
+        defined = [extra["lhs"] for extra in extras if extra["op"] == ":="]
+        clash = [name for name in defined if name in labels or defined.count(name) > 1]
+        if clash:
+            raise ValueError(f"the defined parameter {clash[0]!r} is already a label or defined twice")
+        self._extras = extras
         existing = {(p.lhs, p.op, p.rhs) for p in table} | {(p.rhs, p.op, p.lhs) for p in table if p.op == "~~"}
         for name in observed:
             if (name, "~~", name) not in existing:
@@ -259,6 +276,7 @@ class SEMFit:
         self.p, self.m = len(observed), len(latent)
         self._index = {"ov": {v: i for i, v in enumerate(observed)}, "lv": {v: i for i, v in enumerate(latent)}}
         self.free = [p for p in table if p.free]
+        self._setup_constraints()
         x = values.to_numpy(dtype=float)
         if missing == "listwise":
             centred = x - x.mean(axis=0)
@@ -268,6 +286,71 @@ class SEMFit:
             self.sample_mean, self.sample_cov = _em_saturated(x, self._patterns)
         self._start()
         self._estimate()
+
+    # ------------------------------------------------------------------ labels and constraints
+    def _setup_constraints(self):
+        """
+        The free parameters as functions of the parameters the optimizer moves, values = offset + jac @ theta:
+        parameters sharing a label share one value, and the linear equality constraints restrict those values
+        to an affine subspace of which theta are the coordinates (lavaan's reparameterisation of linear
+        equality constraints). Without labels and constraints theta are the free parameters themselves.
+        """
+        keys, slot_of = {}, []
+        for k, prm in enumerate(self.free):
+            key = prm.label or f"#{k}"
+            keys.setdefault(key, len(keys))
+            slot_of.append(keys[key])
+        slots = np.zeros((len(self.free), len(keys)))
+        slots[np.arange(len(self.free)), slot_of] = 1.0
+        linear = [extra["linear"] for extra in self._extras if extra["op"] == "=="]
+        if linear:
+            a = np.zeros((len(linear), len(keys)))
+            c = np.zeros(len(linear))
+            for i, (coefficients, constant) in enumerate(linear):
+                for label, value in coefficients.items():
+                    if label not in keys:
+                        raise ValueError(f"a constraint names {label!r}, which is not the label of a free parameter")
+                    a[i, keys[label]] += value
+                c[i] = constant
+            _, singular, vt = np.linalg.svd(a)
+            rank = int(np.sum(singular > 1e-10 * max(singular.max(), 1.0)))
+            p0 = np.linalg.pinv(a) @ c
+            if not np.allclose(a @ p0, c, rtol=0, atol=1e-10):
+                raise ValueError("the equality constraints contradict each other")
+            k = vt[rank:].T
+        else:
+            p0, k = np.zeros(len(keys)), np.eye(len(keys))
+        self._slots, self._slot_p0, self._slot_k = slots, p0, k
+        self._jac, self._offset = slots @ k, slots @ p0
+        self._constrained = len(keys) < len(self.free) or bool(linear)
+        self.npar = k.shape[1]  # lavaan's npar: the free parameters less the (independent) constraints
+        # lavaan's hidden "==" rows of shared labels, one for every parameter after the first with a label
+        self._system_eq = len(self.free) - len(keys)
+
+    def _rows(self, theta):
+        """The free parameters' values from the optimizer's parameters."""
+        if not self._constrained:
+            return np.asarray(theta, dtype=float)
+        return self._offset + self._jac @ np.asarray(theta, dtype=float)
+
+    def _theta(self, rows):
+        """The optimizer's parameters of free parameters' values: the first value of each label, projected on the
+        constraints."""
+        rows = np.asarray(rows, dtype=float)
+        if not self._constrained:
+            return rows
+        first = np.array([rows[np.flatnonzero(self._slots[:, j])[0]] for j in range(self._slots.shape[1])])
+        return self._slot_k.T @ (first - self._slot_p0)
+
+    def _constrained_inverse(self, information):
+        """
+        The inverse of an information matrix of the free parameters under the constraints, J (J' I J)^-1 J':
+        what lavaan's augmented inverse (lav_model_information_augment_invert) gives; the plain inverse without
+        constraints.
+        """
+        if not self._constrained:
+            return np.linalg.inv(information)
+        return self._jac @ np.linalg.inv(self._jac.T @ information @ self._jac) @ self._jac.T
 
     # ------------------------------------------------------------------ matrices
     def _matrices(self, theta=None):
@@ -431,6 +514,8 @@ class SEMFit:
                 prm.value = self.sample_mean[ov[prm.lhs]]
             else:
                 prm.value = 0.0
+            if prm.start is not None:  # start(1)*x
+                prm.value = prm.start
 
     # ------------------------------------------------------------------ FIML
     def _fiml_logl(self, theta=None):
@@ -499,10 +584,18 @@ class SEMFit:
     def _estimate(self):
         self._logdet_s = np.linalg.slogdet(self.sample_cov)[1]
         if self.missing == "ml":
-            objective, gradient = self._fiml_objective, self._fiml_gradient
+            row_objective, row_gradient = self._fiml_objective, self._fiml_gradient
         else:
-            objective, gradient = self._discrepancy, self._gradient
-        theta0 = np.array([p.value for p in self.free])
+            row_objective, row_gradient = self._discrepancy, self._gradient
+        if self._constrained:  # the optimizer moves theta; the free parameters follow (shared labels, constraints)
+            def objective(theta):
+                return row_objective(self._rows(theta))
+
+            def gradient(theta):
+                return self._jac.T @ row_gradient(self._rows(theta))
+        else:
+            objective, gradient = row_objective, row_gradient
+        theta0 = self._theta(np.array([p.value for p in self.free]))
         fit = optimize.minimize(objective, theta0, jac=gradient, method="BFGS",
                                 options={"gtol": 1e-10, "maxiter": 10000})
         if not np.all(np.isfinite(fit.x)):
@@ -515,16 +608,20 @@ class SEMFit:
         # The fit has also converged when the gradient is (near) zero by lavaan's check of the solution
         # (check.gradient, with every element within optim.dx.tol = 1e-3).
         dx = gradient(theta)
-        self._matrices(theta)
+        rows = self._rows(theta)
+        self._matrices(rows)
         self.converged = bool(fit.success or polish.success or np.all(np.abs(dx) <= 1e-3))
         self.sigma = self.implied()
         if self.missing == "ml":
-            self.logl = self._fiml_logl(theta)
-            self.vcov = np.linalg.inv(self._fiml_hessian(theta))
+            self.logl = self._fiml_logl(rows)
+            self.vcov = self._constrained_inverse(self._fiml_hessian(rows))
         else:
-            self.fmin = 0.5 * self._discrepancy(theta)
-            self.vcov = np.linalg.inv(self.n * self._information(self._derivatives()))
-        for prm, se in zip(self.free, np.sqrt(np.diag(self.vcov))):
+            self.fmin = 0.5 * self._discrepancy(rows)
+            self.vcov = self._constrained_inverse(self.n * self._information(self._derivatives()))
+        variances = np.diag(self.vcov).copy()
+        if self._constrained:  # a parameter the constraints pin down has variance 0, which rounding can make < 0
+            variances[np.abs(variances) <= 1e-12 * max(1.0, np.max(np.abs(variances)))] = 0.0
+        for prm, se in zip(self.free, np.sqrt(variances)):
             prm.se = se
 
     # ------------------------------------------------------------------ results
@@ -560,35 +657,130 @@ class SEMFit:
         lam, th, psi, beta = self._matrices()
 
         def residual_sd(name):
-            return np.sqrt(psi[lv[name], lv[name]] if name in lv else th[ov[name], ov[name]])
+            with np.errstate(invalid="ignore"):  # a negative residual variance (Heywood case): missing, as lavaan
+                return np.sqrt(psi[lv[name], lv[name]] if name in lv else th[ov[name], ov[name]])
 
         std_all = value / (residual_sd(prm.lhs) * residual_sd(prm.rhs))
         std_lv = std_all if prm.lhs in lv else value
         return std_lv, std_all
 
-    def parameter_estimates(self, level=0.95):
-        """lavaan::parameterEstimates(fit, standardized = TRUE, rsquare = TRUE) without std.nox."""
+    def parameter_estimates(self, level=0.95, remove_eq=True):
+        """
+        lavaan::parameterEstimates(fit, standardized = TRUE, rsquare = TRUE) without std.nox: the parameters,
+        the defined parameters (:=, with delta-method standard errors, and standardized as their expressions of
+        the standardized parameters), with remove_eq=False (lavaan's remove.eq, as rwf's report_cfa) the
+        user's equality constraints (==, est the difference of their sides), then the R squared rows. A label
+        column follows rhs when the model has labels. The index is lavaan's row numbers: positions in its
+        parameter table, whose hidden rows (the constraints of shared labels) are skipped.
+        """
         z_crit = stats.norm.ppf(1 - (1 - level) / 2)
-        rows = []
-        for prm in self.table:
+        standardized = [self._standardized(prm) for prm in self.table]
+        rows, index = [], []
+        for k, (prm, (std_lv, std_all)) in enumerate(zip(self.table, standardized), start=1):
             se = getattr(prm, "se", 0.0) if prm.free else 0.0
-            z = prm.value / se if prm.free else np.nan
-            p_value = 2 * stats.norm.sf(abs(z)) if prm.free else np.nan
-            std_lv, std_all = self._standardized(prm)
-            rows.append({"lhs": prm.lhs, "op": prm.op, "rhs": prm.rhs, "est": prm.value, "se": se, "z": z,
-                         "pvalue": p_value, "ci.lower": prm.value - z_crit * se, "ci.upper": prm.value + z_crit * se,
-                         "std.lv": std_lv, "std.all": std_all})
-        for name, value in self.rsquare().items():
-            rows.append({"lhs": name, "op": "r2", "rhs": name, "est": value, "se": np.nan, "z": np.nan,
+            z = prm.value / se if prm.free and se > 0 else np.nan
+            p_value = 2 * stats.norm.sf(abs(z)) if prm.free and se > 0 else np.nan
+            rows.append({"lhs": prm.lhs, "op": prm.op, "rhs": prm.rhs, "label": prm.label, "est": prm.value,
+                         "se": se, "z": z, "pvalue": p_value, "ci.lower": prm.value - z_crit * se,
+                         "ci.upper": prm.value + z_crit * se, "std.lv": std_lv, "std.all": std_all})
+            index.append(k)
+        for k, row in enumerate(self._extra_rows(z_crit, standardized), start=len(self.table) + 1):
+            if row["op"] == ":=" or not remove_eq:
+                rows.append(row)
+                index.append(k)
+        first_r2 = len(self.table) + len(self._extras) + self._system_eq + 1
+        for k, (name, value) in enumerate(self.rsquare().items(), start=first_r2):
+            rows.append({"lhs": name, "op": "r2", "rhs": name, "label": "", "est": value, "se": np.nan, "z": np.nan,
                          "pvalue": np.nan, "ci.lower": np.nan, "ci.upper": np.nan, "std.lv": np.nan,
                          "std.all": np.nan})
-        return pd.DataFrame(rows)
+            index.append(k)
+        table = pd.DataFrame(rows, index=index)
+        if not any(prm.label for prm in self.table) and not any(e["op"] == ":=" for e in self._extras):
+            table = table.drop(columns="label")  # lavaan has the column only when the model has labels
+        return table
+
+    def _label_values(self, values):
+        """Each label's value (its first parameter's), given a value for every row of the parameter table."""
+        out = {}
+        for prm, value in zip(self.table, values):
+            if prm.label and prm.label not in out:
+                out[prm.label] = value
+        return out
+
+    def _definitions(self, values):
+        """The defined parameters (:=) in their order, a later one may use an earlier one, from per-row values."""
+        names = self._label_values(values)
+        out = {}
+        for extra in self._extras:
+            if extra["op"] == ":=":
+                out[extra["lhs"]] = names[extra["lhs"]] = _evaluate(extra["rhs"], names)
+        return out
+
+    def _definition_jacobian(self, names):
+        """d(defined parameter)/d(free parameter): complex-step derivatives (lavaan's lav_func_jacobian_complex),
+        central differences when a definition uses abs()."""
+        free_rows = [k for k, prm in enumerate(self.table) if prm.free]
+        base = np.array([prm.value for prm in self.table], dtype=float)
+        jacobian = np.zeros((len(names), len(free_rows)))
+        complex_step = not any("abs(" in e["rhs"] for e in self._extras if e["op"] == ":=")
+        for j, k in enumerate(free_rows):
+            if complex_step:
+                values = base.astype(complex)
+                values[k] += 1e-20j
+                defined = self._definitions(values)
+                jacobian[:, j] = [np.imag(defined[name]) / 1e-20 for name in names]
+            else:
+                step = 1e-6 * max(1.0, abs(base[k]))
+                up, down = base.copy(), base.copy()
+                up[k] += step
+                down[k] -= step
+                high, low = self._definitions(up), self._definitions(down)
+                jacobian[:, j] = [(high[name] - low[name]) / (2 * step) for name in names]
+        return jacobian
+
+    def _extra_rows(self, z_crit, standardized):
+        """parameterEstimates' rows of the user's definitions (:=) and equality constraints (==), in their order."""
+        if not self._extras:
+            return []
+        values = np.array([prm.value for prm in self.table], dtype=float)
+        std_lv = np.array([s[0] for s in standardized], dtype=float)
+        std_all = np.array([s[1] for s in standardized], dtype=float)
+        names = [e["lhs"] for e in self._extras if e["op"] == ":="]
+        estimates = self._definitions(values)
+        defined_lv, defined_all = self._definitions(std_lv), self._definitions(std_all)
+        se = {}
+        if names:
+            jacobian = self._definition_jacobian(names)
+            variances = np.diag(jacobian @ self.vcov @ jacobian.T)
+            se = dict(zip(names, np.sqrt(np.clip(variances, 0, None))))
+        labels, labels_lv, labels_all = (self._label_values(v) for v in (values, std_lv, std_all))
+        rows = []
+        for extra in self._extras:
+            if extra["op"] == ":=":
+                name = extra["lhs"]
+                est, error = float(np.real(estimates[name])), se[name]
+                z = est / error if error > 0 else np.nan
+                rows.append({"lhs": name, "op": ":=", "rhs": extra["rhs"], "label": name, "est": est, "se": error,
+                             "z": z, "pvalue": 2 * stats.norm.sf(abs(z)) if error > 0 else np.nan,
+                             "ci.lower": est - z_crit * error, "ci.upper": est + z_crit * error,
+                             "std.lv": float(np.real(defined_lv[name])), "std.all": float(np.real(defined_all[name]))})
+            else:  # lavaan reports the constraint's value, lhs - rhs (0 when it holds), with a zero standard error
+                coefficients, constant = extra["linear"]
+
+                def difference(label_values):
+                    return sum(c * label_values[label] for label, c in coefficients.items()) - constant
+
+                est = difference(labels)
+                rows.append({"lhs": extra["lhs"], "op": "==", "rhs": extra["rhs"], "label": "", "est": est,
+                             "se": 0.0, "z": np.nan, "pvalue": np.nan, "ci.lower": est, "ci.upper": est,
+                             "std.lv": difference(labels_lv), "std.all": difference(labels_all)})
+        return rows
 
     def fit_measures(self):
         """lavaan::fitMeasures(fit) for ML on complete data, in lavaan's order and names."""
         n, p = self.n, self.p
         s, sigma = self.sample_cov, self.sigma
-        npar = len(self.free)
+        npar = self.npar  # the free parameters less the equality constraints, as lavaan's fitMeasures
         moments = p * (p + 1) / 2 + (p if self.meanstructure else 0)
         df = moments - npar
         if self.missing == "ml":
@@ -777,7 +969,8 @@ class SEMFit:
         information = self._expected_information(model_rows + extra_rows)
         q = len(model_rows)
         i22, i12, i11 = information[:q, :q], information[q:, :q], information[q:, q:]
-        i22_inv = np.linalg.inv(i22)
+        # under the model's equality constraints, as lavaan's (which still doesn't test releasing them)
+        i22_inv = self._constrained_inverse(i22)
         v_diag = np.diag(i11) - np.einsum("ij,jk,ik->i", i12, i22_inv, i12)
         v_diag = np.where(v_diag < np.finfo(float).eps ** (1 / 3), np.nan, v_diag)
         score = self._score(model_rows + extra_rows)
@@ -799,8 +992,10 @@ class SEMFit:
                          "sepc.all": np.sign(e) * sepc_all, "sepc.nox": np.sign(e) * sepc_all,
                          "_model": (op, lhs, rhs) in model_rows})
         table = pd.DataFrame(rows)
-        # lavaan's row names: positions in its parameter table, then in the candidates it adds
+        # lavaan's row names: positions in its parameter table (with its rows of definitions and constraints,
+        # which are no candidates), then in the candidates it adds
         lavaan_order = [key(p.op, p.lhs, p.rhs) for p in self.table]
+        lavaan_order += [None] * (len(self._extras) + self._system_eq)
         lavaan_order += [key(*r) for r in self._candidates() if key(*r) not in existing]
         position = {k: i + 1 for i, k in enumerate(lavaan_order)}
         table.index = [position.get(key(op, lhs, rhs)) for op, lhs, rhs in zip(table["op"], table["lhs"], table["rhs"])]
@@ -887,16 +1082,24 @@ class SEMFit:
         return pd.DataFrame(scores, columns=self.latent, index=self.data.index)
 
     def rsquare(self):
-        """Explained variance of every observed variable and every endogenous latent variable."""
+        """
+        Explained variance of every observed variable and every endogenous latent variable, in the order of
+        their (residual) variances in the parameter table, as lavaan's (so variances the model gives come first).
+        """
         lam, th, psi, beta = self._matrices()
-        result = {}
-        for name, i in self._index["ov"].items():
-            result[name] = 1 - th[i, i] / self.sigma[i, i]
         var_lv = self.latent_variances()
-        for name in self.endogenous:
-            i = self._index["lv"][name]
-            result[name] = 1 - psi[i, i] / var_lv[i]
-        return result
+        result = {}
+        for prm in self.table:
+            if prm.op != "~~" or prm.lhs != prm.rhs or prm.lhs in result:
+                continue
+            if prm.lhs in self._index["ov"]:
+                i = self._index["ov"][prm.lhs]
+                result[prm.lhs] = 1 - th[i, i] / self.sigma[i, i]
+            elif prm.lhs in self.endogenous:
+                i = self._index["lv"][prm.lhs]
+                result[prm.lhs] = 1 - psi[i, i] / var_lv[i]
+        # lavaan (lav_inspect_rsquare): above 1, after a negative residual variance, is missing
+        return {name: (np.nan if value > 1 else value) for name, value in result.items()}
 
 
 def sem(model, data, std_lv=False, missing="listwise", meanstructure=False):
@@ -986,14 +1189,14 @@ def simulate_data(model, sample_nobs=500, orthogonal=False, seed=None):
     Examples:
     >>> simulate_data("F =~ 1*x1 + 0.5*x2 + 1.5*x3", sample_nobs=200, seed=1)
     """
-    statements = _parse(model)
+    statements = [(s["lhs"], s["op"], s["rhs"], s["fixed"]) for s in _parse(model)[0]]
     latent = list(dict.fromkeys(s[0] for s in statements if s[1] == "=~"))
     names = list(dict.fromkeys(n for s in statements for n in (s[0], s[2])))
     observed = list(dict.fromkeys([s[2] for s in statements if s[1] == "=~"] + [n for n in names if n not in latent]))
     ov, lv = {v: i for i, v in enumerate(observed)}, {v: i for i, v in enumerate(latent)}
     lam, th = np.zeros((len(observed), len(latent))), np.eye(len(observed))
     psi, beta = np.eye(len(latent)), np.zeros((len(latent), len(latent)))
-    for lhs, op, rhs, fixed, _ in statements:
+    for lhs, op, rhs, fixed in statements:
         value = 0.0 if fixed is None else fixed
         if op == "=~":
             lam[ov[rhs], lv[lhs]] = value

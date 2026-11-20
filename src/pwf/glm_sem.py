@@ -94,10 +94,9 @@ def plot_cfa_gg(model, what="std", layout="tree", label_size=3.2, edge_label_siz
     Parameters:
     model (SEMFit): A model fitted with cfa() or sem().
     what (str, optional): "std" (standardized), "est" (unstandardized),
-        or "eq" (parameter labels). Defaults to "std". As in rwf, "eq" needs
-        a model with parameter labels; pwf's models have none (labels are
-        not supported), so it raises ValueError, as rwf fails on a model
-        without labels.
+        or "eq" (the parameters' labels, a*x, and the estimates of the
+        others). Defaults to "std". As in rwf, "eq" needs a model with
+        labels: on a model without any it raises ValueError, as rwf fails.
     layout (str, optional): "tree", "circle", or "spring". Defaults to "tree".
     label_size (float, optional): Node label size (ggplot2's mm). Defaults to 3.2.
     edge_label_size (float, optional): Path coefficient label size (mm). Defaults to 2.6.
@@ -269,7 +268,8 @@ def _summary_text(model, fit_indices):
     """A short text summary of the model, in place of lavaan's summary() print."""
     fit = fit_indices["fit"]
     lines = [
-        f"Estimator: ML    Observations: {model.n}    Free parameters: {len(model.free)}",
+        f"Estimator: ML    Observations: {model.n}    Free parameters: {len(model.free)}"
+        + (f"    Equality constraints: {len(model.free) - model.npar}" if model.npar < len(model.free) else ""),
         f"Chi-square: {fit['chisq']:.3f}    df: {fit['df']:.0f}    p: {fit['pvalue']:.4f}",
         f"CFI: {fit['cfi']:.3f}    TLI: {fit['tli']:.3f}    RMSEA: {fit['rmsea']:.3f} "
         f"[{fit['rmsea.ci.lower']:.3f}, {fit['rmsea.ci.upper']:.3f}]    SRMR: {fit['srmr']:.3f}",
@@ -321,9 +321,10 @@ def report_cfa(model, file=None, w=10, h=10):
     _check_model(model)
     r_squared = pd.DataFrame({"r_squared": pd.Series(model.rsquare())})
     fit_indices = pd.DataFrame({"fit": pd.Series(model.fit_measures())})
-    parameters = model.parameter_estimates()
-    if "exo" not in parameters.columns:  # rwf's parameterEstimates() has lavaan's exo column after rhs
-        parameters.insert(parameters.columns.get_loc("rhs") + 1, "exo", _exogenous_flags(model, parameters))
+    parameters = model.parameter_estimates(remove_eq=False)  # rwf's remove.eq = FALSE: the user's == rows too
+    if "exo" not in parameters.columns:  # rwf's parameterEstimates() has lavaan's exo column after rhs (or label)
+        after = "label" if "label" in parameters.columns else "rhs"
+        parameters.insert(parameters.columns.get_loc(after) + 1, "exo", _exogenous_flags(model, parameters))
     modification_indices = model.modification_indices()
     # rwf's data.frame(model@SampleStats@cov): a matrix without names, so X1, X2, ... and rows 1, 2, ...
     observed_names = [f"X{k + 1}" for k in range(len(model.observed))]
