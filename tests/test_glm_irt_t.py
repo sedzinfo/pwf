@@ -176,7 +176,8 @@ def test_response_dimension_and_cfa_icc_index_match_rwf(reference):
     expected = reference("response_dimension")
     for case, args in enumerate(cases, start=1):
         np.testing.assert_array_equal(np.asarray(glm_irt_t.response_dimension(*args), dtype=float),
-                                      expected.loc[expected["case"] == case, "value"].to_numpy(float), err_msg=str(case))
+                                      expected.loc[expected["case"] == case, "value"].to_numpy(float),
+                                      err_msg=str(case))
     for (nitems, nfactors), cells in reference("cfa_icc_index").groupby(["nitems", "nfactors"], sort=False):
         result = glm_irt_t.cfa_icc_index(nitems, nfactors)
         matrix = result["index_matrix"]
@@ -219,7 +220,8 @@ def test_compute_ability_plot_matches_rwf(reference, monkeypatch):
     """With plot=True rwf draws the curves and returns the likelihood and posterior scaled up by tens."""
     titles = []
     draw = glm_irt_t.plot_icc_thurstonian
-    monkeypatch.setattr(glm_irt_t, "plot_icc_thurstonian", lambda data, title: titles.append(title) or draw(data, title))
+    monkeypatch.setattr(glm_irt_t, "plot_icc_thurstonian",
+                        lambda data, title: titles.append(title) or draw(data, title))
     eta, gamma, lam, psi = _tirt_example()
     result = glm_irt_t.compute_ability([1, 1, 0, 0, 1, 1, 0, 0], eta, gamma, lam, psi, plot=True)
     expected = reference("compute_ability_plot")
@@ -242,10 +244,11 @@ def test_score_tirt_pattern_options_match_rwf(reference):
     expected = reference("score_tirt_pattern")
     for case, options in cases.items():
         options = dict(options)
-        estimate = glm_irt_t.score_tirt_pattern(options.pop("pattern", pattern), lam, theta_diag, tau, psi, nu, **options)
+        estimate = glm_irt_t.score_tirt_pattern(options.pop("pattern", pattern), lam, theta_diag, tau, psi, nu,
+                                                **options)
         rows = expected[expected["case"] == case]
         assert list(estimate.index) == rows["trait"].tolist(), case
         np.testing.assert_allclose(estimate.to_numpy(), rows["value"].to_numpy(), atol=1e-8, err_msg=case)
-    message = reference("tirt_helper_conditions").set_index("call")["message"]["score_tirt_pattern(control = list(foo = 1))"]
-    with pytest.warns(UserWarning, match=message):
+    messages = reference("tirt_helper_conditions").set_index("call")["message"]
+    with pytest.warns(UserWarning, match=messages["score_tirt_pattern(control = list(foo = 1))"]):
         glm_irt_t.score_tirt_pattern(pattern, lam, theta_diag, tau, psi, control={"foo": 1})

@@ -120,3 +120,158 @@ def reference():
 @pytest.fixture
 def df_blood_pressure():
     return _load_data("blood_pressure")
+
+
+_XLSX_NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+            "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+            "pr": "http://schemas.openxmlformats.org/package/2006/relationships"}
+_XLSX_FORMATS = {0: "General", 1: "0", 2: "0.00", 3: "#,##0", 4: "#,##0.00", 9: "0%", 10: "0.00%", 49: "@"}
+
+
+def xlsx_summary(path):
+    """
+    A workbook read from its XML, the same way for openxlsx's files (rwf) and xlsxwriter's (pwf): per sheet
+    its cells (value, number format, fill, left border and font), the style of its columns and of a cell
+    without one, its comments, conditional formats and frozen pane.
+    """
+    import posixpath
+    import re
+    import xml.etree.ElementTree as ET
+    import zipfile
+
+    ns = _XLSX_NS
+    main = "{" + ns["m"] + "}"
+
+    def text(element):
+        return "".join(t.text or "" for t in element.iter(main + "t"))
+
+    def color(element):
+        if element is None:
+            return None
+        return element.get("rgb") or ("theme" + element.get("theme") if element.get("theme") else None)
+
+    def rels(archive, part):
+        folder, name = posixpath.split(part)
+        path = posixpath.join(folder, "_rels", name + ".rels")
+        if path not in archive.namelist():
+            return {}
+        return {rel.get("Id"): posixpath.normpath(posixpath.join(folder, rel.get("Target")))
+                for rel in ET.fromstring(archive.read(path)).findall("pr:Relationship", ns)}
+
+    with zipfile.ZipFile(path) as archive:
+        workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+        workbook_rels = rels(archive, "xl/workbook.xml")
+        strings = []
+        if "xl/sharedStrings.xml" in archive.namelist():
+            strings = [text(si) for si in ET.fromstring(archive.read("xl/sharedStrings.xml")).findall("m:si", ns)]
+        styles = ET.fromstring(archive.read("xl/styles.xml"))
+        formats = dict(_XLSX_FORMATS)
+        formats.update({int(f.get("numFmtId")): f.get("formatCode") for f in styles.findall("m:numFmts/m:numFmt", ns)})
+        fills = []
+        for fill in styles.findall("m:fills/m:fill", ns):
+            pattern = fill.find("m:patternFill", ns)
+            solid = pattern is not None and pattern.get("patternType") == "solid"
+            fills.append(color(pattern.find("m:fgColor", ns)) if solid else None)
+        fonts = [(font.find("m:name", ns).get("val"), float(font.find("m:sz", ns).get("val")))
+                 for font in styles.findall("m:fonts/m:font", ns)]
+        borders = []
+        for border in styles.findall("m:borders/m:border", ns):
+            left = border.find("m:left", ns)
+            borders.append(None if left is None or left.get("style") is None else
+                           (left.get("style"), color(left.find("m:color", ns))))
+        xfs = [(int(xf.get("numFmtId", 0)), int(xf.get("fontId", 0)), int(xf.get("fillId", 0)),
+                int(xf.get("borderId", 0))) for xf in styles.findall("m:cellXfs/m:xf", ns)]
+        dxfs = []
+        for dxf in styles.findall("m:dxfs/m:dxf", ns):
+            pattern = dxf.find("m:fill/m:patternFill", ns)
+            dxfs.append(None if pattern is None else
+                        color(pattern.find("m:bgColor", ns)) or color(pattern.find("m:fgColor", ns)))
+
+        def style(index):
+            num_fmt, font, fill, border = xfs[index]
+            return {"format": formats.get(num_fmt, f"id{num_fmt}"), "font": fonts[font], "fill": fills[fill],
+                    "border": borders[border]}
+
+        summary = {}
+        for sheet in workbook.findall("m:sheets/m:sheet", ns):
+            part = workbook_rels[sheet.get("{" + ns["r"] + "}id")]
+            root = ET.fromstring(archive.read(part))
+            columns = {}
+            for col in root.findall("m:cols/m:col", ns):
+                if col.get("style") is not None:
+                    columns.update({k: style(int(col.get("style")))
+                                    for k in range(int(col.get("min")), int(col.get("max")) + 1)})
+            cells = {}
+            for c in root.iter(main + "c"):
+                kind, v = c.get("t", "n"), c.find("m:v", ns)
+                if kind == "s":
+                    value = strings[int(v.text)]
+                elif kind == "inlineStr":
+                    value = text(c.find("m:is", ns))
+                elif kind in ("str", "e"):
+                    value = None if v is None else v.text
+                elif kind == "b":
+                    value = v.text == "1"
+                else:
+                    value = None if v is None else float(v.text)
+                cells[c.get("r")] = {"value": value, **style(int(c.get("s", 0)))}
+            comments = {}
+            for target in rels(archive, part).values():
+                if re.search(r"comments\d*\.xml$", target):
+                    for comment in ET.fromstring(archive.read(target)).findall("m:commentList/m:comment", ns):
+                        comments[comment.get("ref")] = text(comment.find("m:text", ns))
+            conditional = []
+            for block in root.findall("m:conditionalFormatting", ns):
+                sqref = re.sub(r"^([A-Z]+[0-9]+):\1$", r"\1", block.get("sqref"))  # F2:F2 is F2
+                for rule in block.findall("m:cfRule", ns):
+                    if rule.get("type") == "colorScale":
+                        detail = tuple(color(c) for c in rule.findall("m:colorScale/m:color", ns))
+                    else:
+                        detail = tuple(f.text for f in rule.findall("m:formula", ns))
+                    dxf = rule.get("dxfId")
+                    conditional.append((sqref, rule.get("type"), detail, None if dxf is None else dxfs[int(dxf)]))
+            pane = root.find("m:sheetViews/m:sheetView/m:pane", ns)
+            summary[sheet.get("name")] = {
+                "cells": cells, "columns": columns, "default": style(0), "comments": comments,
+                "conditional": sorted(conditional, key=str),
+                "pane": None if pane is None else (pane.get("topLeftCell"), pane.get("state"))}
+        return summary
+
+
+def assert_workbook_matches(path, reference_path):
+    """
+    pwf's workbook against rwf's (an .xlsx make_reference.R saved), as Excel shows them: the same sheets,
+    frozen panes, comments and conditional formats, and every cell with the same value, number format, fill,
+    border and font (a cell a file leaves out has its column's style, else the workbook's default). Only what
+    looks the same may differ: R writes "" where pwf leaves a cell empty; and R's #NUM! for Inf is pandas'
+    text "inf", a known difference.
+    """
+    import re
+
+    mine, expected = xlsx_summary(path), xlsx_summary(reference_path)
+    assert list(mine) == list(expected)
+
+    def cell(sheet, ref):
+        if ref in sheet["cells"]:
+            return sheet["cells"][ref]
+        letters = re.match(r"[A-Z]+", ref).group(0)
+        column = sum((ord(ch) - 64) * 26 ** k for k, ch in enumerate(reversed(letters)))
+        return {"value": None, **sheet["columns"].get(column, sheet["default"])}
+
+    def same(a, b):
+        if a in (None, "") and b in (None, ""):
+            return True
+        if isinstance(a, float) and isinstance(b, float):
+            return bool(np.isclose(a, b, rtol=1e-12, atol=0))
+        return a == b or (b == "#NUM!" and a in ("inf", "-inf"))
+
+    for name in expected:
+        got, want = mine[name], expected[name]
+        assert got["pane"] == want["pane"], name
+        assert got["comments"] == want["comments"], name
+        assert got["conditional"] == want["conditional"], name
+        for ref in set(got["cells"]) | set(want["cells"]):
+            a, b = cell(got, ref), cell(want, ref)
+            assert same(a["value"], b["value"]), (name, ref, a["value"], b["value"])
+            for key in ["format", "fill", "border", "font"]:
+                assert a[key] == b[key], (name, ref, key, a[key], b[key])

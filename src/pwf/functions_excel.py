@@ -20,6 +20,15 @@ import warnings
 import numpy as np
 import pandas as pd
 from xlsxwriter.utility import xl_rowcol_to_cell
+
+try:
+    from ._rcompat import r_colon
+except ImportError:
+    from _rcompat import r_colon
+
+# R's colours of the names rwf gives openxlsx (xlsxwriter's "gray", "purple" and "green" are other colours)
+_R_GRAY, _R_PURPLE, _R_GREEN = "#BEBEBE", "#A020F0", "#00FF00"
+_FONT = {"font_name": "Liberation Sans", "font_size": 10}
 ##########################################################################################
 # COLUMN WIDTHS
 ##########################################################################################
@@ -138,11 +147,14 @@ def excel_generic_format(df, workbook, sheet="output", title=None, comment=None,
         _write_sheet(df, workbook, sheet)
     book = workbook.book
     worksheet = workbook.sheets[sheet]
-    font = {"font_name": "Liberation Sans", "font_size": 10}
-    content = book.add_format({**font, "border": 1, "border_color": "gray", "valign": "bottom", "num_format": numFmt})
-    whole = book.add_format({**font, "border": 1, "border_color": "gray", "valign": "bottom", "num_format": "#0"})
+    base = book.formats[0]  # openxlsx::modifyBaseFont: the font of every cell without a style of its own
+    base.set_font_name(_FONT["font_name"])
+    base.set_font_size(_FONT["font_size"])
+    base.font_scheme = "none"
+    content = book.add_format({**_FONT, "border": 1, "border_color": _R_GRAY, "valign": "bottom", "num_format": numFmt})
+    whole = book.add_format({**_FONT, "border": 1, "border_color": _R_GRAY, "valign": "bottom", "num_format": "#0"})
     # rwf's header_style (header row and row-name column): black borders and numFmt, not bold
-    header = book.add_format({**font, "border": 1, "border_color": "black", "valign": "bottom", "num_format": numFmt})
+    header = book.add_format({**_FONT, "border": 1, "border_color": "black", "valign": "bottom", "num_format": numFmt})
     widths = get_col_widths(frame)
     worksheet.set_column(0, 0, widths[0] + 2, header)
     for k, column in enumerate(frame.columns, start=1):
@@ -175,7 +187,9 @@ def excel_matrix(df, workbook, sheet="output", title=None, comment=None, numFmt=
     comment (dict, optional): Column name -> header comment. Defaults to None.
     numFmt (str, optional): Excel number format. Defaults to "#0.00".
     conditional_formatting (bool, optional): Colour scale red - yellow - green. Defaults to False.
-    diagonal (bool, optional): Fill the diagonal of a square matrix red. Defaults to False.
+    diagonal (bool, optional): Fill the diagonal of a square matrix red: as rwf
+        (openxlsx's addStyle(stack = FALSE)), the red fill replaces the cells'
+        style, so they lose their border and number format. Defaults to False.
     diagonal_length (int, optional): Number of diagonal cells filled. Defaults to the number of rows.
 
     Returns:
@@ -198,9 +212,28 @@ def excel_matrix(df, workbook, sheet="output", title=None, comment=None, numFmt=
         worksheet.conditional_format(1, 1, n_rows, n_cols, {
             "type": "3_color_scale", "min_color": "#FF0000", "mid_color": "#FFFF00", "max_color": "#00FF00"})
     if diagonal and n_rows == n_cols:
-        red = workbook.book.add_format({"bg_color": "red"})
-        for k in range(1, (n_rows if diagonal_length is None else diagonal_length) + 1):
-            worksheet.conditional_format(k, k, k, k, {"type": "formula", "criteria": "TRUE", "format": red})
+        red = workbook.book.add_format({**_FONT, "bg_color": "red", "pattern": 1})
+        # rwf's rows = cols = 1:diagonal_length + 1 (sheet rows from 1; c(2, 1) for a length of 0)
+        for k in r_colon(1, n_rows if diagonal_length is None else diagonal_length) + 1:
+            row = k - 2  # the data row and column of sheet cell (k, k)
+            if row < 0:
+                worksheet.write_blank(k - 1, k - 1, None, red)
+            elif row < n_rows:
+                _write_value(worksheet, k - 1, k - 1, frame.iat[row, row], red)
+            else:
+                worksheet.write_blank(k - 1, k - 1, None, red)
+
+
+def _write_value(worksheet, row, col, value, cell_format):
+    """Rewrite a cell's value with another format (numbers as numbers, missing values blank)."""
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
+        worksheet.write_blank(row, col, None, cell_format)
+    elif isinstance(value, (bool, np.bool_)):
+        worksheet.write_boolean(row, col, bool(value), cell_format)
+    elif isinstance(value, (int, float, np.integer, np.floating)):
+        worksheet.write_number(row, col, float(value), cell_format)
+    else:
+        worksheet.write_string(row, col, str(value), cell_format)
 ##########################################################################################
 # CRITICAL VALUE EXCEL
 ##########################################################################################
@@ -212,7 +245,9 @@ def excel_critical_value(df, workbook, sheet="output", title=None, comment=None,
     excel_generic_format, and for each column named in critical a
     conditional rule on its non-missing cells: one rule (e.g. "<0.05")
     fills matching cells red; two rules (e.g. ["<-1.96", ">1.96"]) fill the
-    first red and the second purple.
+    first red and the second purple. As rwf (its remove_nc()), cells with
+    Inf, -Inf or an empty text count as missing, and a column that isn't
+    in df fails.
 
     Parameters:
     df (pandas.DataFrame): The data.
@@ -239,15 +274,18 @@ def excel_critical_value(df, workbook, sheet="output", title=None, comment=None,
     excel_generic_format(frame, workbook, sheet=sheet, title=title, comment=comment, numFmt=numFmt)
     worksheet = workbook.sheets[sheet]
     for column, rules in (critical or {}).items():
-        if column not in frame.columns:
-            continue
+        if column not in frame.columns:  # rwf's df[, i]
+            raise KeyError(f"undefined columns selected: {column!r} is not a column of df")
         rules = list(rules) if isinstance(rules, (list, tuple)) else [rules]
         k = list(frame.columns).index(column) + 1
-        values = pd.to_numeric(frame[column], errors="coerce") if pd.api.types.is_numeric_dtype(frame[column]) \
-            else frame[column]
-        for rule, color in zip(rules, ("red", "purple")):
+        values = frame[column]
+        if pd.api.types.is_numeric_dtype(values) and not pd.api.types.is_bool_dtype(values):
+            present = np.isfinite(pd.to_numeric(values, errors="coerce").to_numpy(dtype=float))
+        else:  # remove_nc() also makes "" missing
+            present = (pd.notna(values) & (values.astype(str) != "")).to_numpy()
+        for rule, color in zip(rules, ("red", _R_PURPLE)):
             fmt = workbook.book.add_format({"bg_color": color, "num_format": numFmt})
-            for row in np.flatnonzero(pd.notna(values).to_numpy()) + 1:
+            for row in np.flatnonzero(present) + 1:
                 cell = xl_rowcol_to_cell(row, k)
                 worksheet.conditional_format(row, k, row, k, {"type": "formula", "criteria": f"={cell}{rule}",
                                                               "format": fmt})
@@ -282,11 +320,11 @@ def excel_confusion_matrix(df, workbook, title="Rows: Expected Collumns: Observe
     worksheet = workbook.sheets[sheet]
     book = workbook.book
     n_rows, n_cols = frame.shape
-    if n_rows > 2 and n_cols > 2:
-        worksheet.conditional_format(1, 1, n_rows - 2, n_cols - 2,
-                                     {"type": "2_color_scale", "min_color": "white", "max_color": "green"})
-    base = {"border": 1, "border_color": "gray", "valign": "bottom", "bg_color": "yellow",
-            "font_name": "Liberation Sans", "font_size": 10}
+    if n_rows >= 2 and n_cols >= 2:
+        # rwf's cols = 1:(length(df) - 1), rows = 1:(nrow(df) - 1): from A1, with the header and row names
+        worksheet.conditional_format(0, 0, n_rows - 2, n_cols - 2,
+                                     {"type": "2_color_scale", "min_color": "white", "max_color": _R_GREEN})
+    base = {**_FONT, "border": 1, "border_color": _R_GRAY, "valign": "bottom", "bg_color": "yellow"}
     whole = book.add_format({**base, "num_format": "#0"})
     decimal = book.add_format({**base, "num_format": "#0.00"})
     for i in range(n_rows):
@@ -349,14 +387,15 @@ def data_frame_index(nrow, ncol):
     ncol (int): Number of columns.
 
     Returns:
-    numpy.ndarray: nrow*ncol x 2 integer array with columns ri (row) and ci (column).
+    pandas.DataFrame: nrow*ncol rows with columns ri (row) and ci (column),
+    rwf's matrix's names.
 
     Examples:
     >>> data_frame_index(3, 2)
     """
     ri = np.tile(np.arange(1, nrow + 1), ncol)
     ci = np.repeat(np.arange(1, ncol + 1), nrow)
-    return np.column_stack([ri, ci])
+    return pd.DataFrame({"ri": ri, "ci": ci})
 ##########################################################################################
 # EXAMPLES
 ##########################################################################################

@@ -55,6 +55,17 @@ def r_label(value):
     return str(value)
 
 
+def r_row_names(labels):
+    """
+    R's row names of the rows a model used: a data frame read by R is numbered from 1, so pandas' integer
+    labels (positions from 0) become label + 1; other labels are kept as text.
+    """
+    labels = list(labels)
+    if all(isinstance(v, (int, np.integer)) and not isinstance(v, bool) for v in labels):
+        return [str(int(v) + 1) for v in labels]
+    return [str(v) for v in labels]
+
+
 def r_levels(values):
     """Levels of R's factor(values): sorted unique non-missing values (category order for categoricals)."""
     if isinstance(getattr(values, "dtype", None), pd.CategoricalDtype):

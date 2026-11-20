@@ -1,0 +1,6 @@
+"case","call"
+"lm","lm(formula=charges~age+bmi,data=string_insurance)"
+"glm_long","glm(formula=case~education+age+parity+induced+spontaneous+,age:parity+age:induced,family=binomial,data=string_infert)"
+"poisson","glm(formula=spontaneous~age+parity,family=poisson,data=string_infert)"
+"Call","f(x=1,y=""ab"")"
+"none","NULL"

@@ -22,15 +22,36 @@ import sys
 import warnings
 import numpy as np
 import pandas as pd
+
+try:
+    from ._rcompat import _sort_key
+except ImportError:
+    from _rcompat import _sort_key
 ##########################################################################################
 # LOAD ENVIRONMENT
 ##########################################################################################
+def _r_digits(x, digits=4):
+    """
+    R's print() of one number under options(digits = 4, scipen = 999): `digits` significant digits in fixed
+    notation, never scientific, the whole integer part kept and trailing zeros dropped (16884.924 is 16885,
+    0.000012345 is 0.00001234, 1.5 is 1.5).
+    """
+    x = float(x)
+    if not np.isfinite(x):
+        return "NaN" if np.isnan(x) else ("Inf" if x > 0 else "-Inf")
+    if x == 0:
+        return "0"
+    text = f"{x:.{max(0, digits - 1 - int(np.floor(np.log10(abs(x)))))}f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
 def environment_options():
     """
-    Set session-wide display/warning options, the Python analogue of R's
-    global options() calls: show all DataFrame columns/rows, avoid
-    scientific notation, cap float display precision, and reset the
-    warnings filter to its default behavior.
+    Set session-wide display/warning options, the Python analogue of rwf's
+    options() calls: pandas and numpy print floats as R does with
+    options(digits = 4, scipen = 999) (4 significant digits, never in
+    scientific notation), DataFrames show all their columns and rows, and
+    the warnings filter is reset to its default behavior.
 
     Returns:
     None.
@@ -41,8 +62,8 @@ def environment_options():
     pd.set_option('display.max_columns', None)
     pd.set_option('display.max_rows', None)
     pd.set_option('display.width', None)
-    pd.set_option('display.float_format', lambda x: f'{x:.4g}')
-    np.set_printoptions(suppress=True, precision=4)
+    pd.set_option('display.float_format', _r_digits)
+    np.set_printoptions(formatter={"float_kind": _r_digits})
     warnings.filterwarnings('default')
 ##########################################################################################
 # LOAD AND INSTALL MULTIPLE LIBRARIES
@@ -185,6 +206,11 @@ def combine_files(input_dir="functions", output_file="all_functions.py", pattern
     input_dir. Defaults are adapted to Python sources; rwf's are
     "working_functions", "all_functions.R" and "\\.[Rr]$".
 
+    As rwf: the files are in R's list.files() order (its collation, so
+    "Z.R" comes after "a.R"), their lines are split at "\\n", "\\r\\n" and
+    "\\r" only (R's readLines()), and the output has the platform's line
+    ends (CRLF on Windows, as R's writeLines()).
+
     Parameters:
     input_dir (str, optional): Directory to read. Defaults to "functions".
     output_file (str, optional): File to write. Defaults to "all_functions.py".
@@ -205,15 +231,17 @@ def combine_files(input_dir="functions", output_file="all_functions.py", pattern
         if not recursive:
             break
     output_path = os.path.realpath(output_file)
-    files = sorted(f for f in files if os.path.realpath(f) != output_path)
+    files = sorted((f for f in files if os.path.realpath(f) != output_path), key=_sort_key)  # R's collation
     lines = []
     for f in files:
-        with open(f, encoding="utf-8", errors="replace") as handle:
-            content = handle.read().splitlines()
+        with open(f, encoding="utf-8", errors="replace", newline="") as handle:
+            content = re.split(r"\r\n|\r|\n", handle.read())  # R's readLines(): no split at form feeds
+        if content[-1] == "":
+            content.pop()
         lines += ["#" * 90, f"# FILE: {f}", "#" * 90, *content, ""]
-    with open(output_file, "w", encoding="utf-8", newline="\n") as handle:
+    with open(output_file, "w", encoding="utf-8") as handle:  # the platform's line ends, as R's writeLines()
         handle.write("".join(line + "\n" for line in lines))
-    print("Combined", len(files), "files into", output_file)
+    print("Combined", len(files), "files into", output_file, "")  # R's cat() ends with " \n"
     return files
 ##########################################################################################
 # GET WORKING FILE PATH

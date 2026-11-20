@@ -1505,3 +1505,91 @@ ref("tirt_helper_conditions", data.frame(
               tirt_condition(increase_index(2, 0)),
               tirt_condition(score_tirt_pattern(tirt_pattern, tirt_lambda, tirt_vectors$theta_diag, tirt_vectors$tau,
                                                 tirt_psi, control = list(foo = 1))))))
+##########################################################################################
+# STRING HELPER EDGE CASES (strsplit's trailing separator, data.frame()'s names, strwrap, call_to_string)
+##########################################################################################
+# self-contained, so the section can be generated alone
+string_warning <- function(expr) {
+  message <- NA_character_
+  value <- withCallingHandlers(expr, warning = function(w) {
+    message <<- conditionMessage(w)
+    invokeRestart("muffleWarning")
+  })
+  list(value = value, warning = message)
+}
+ref("str_split_trailing", str_split(c("a/b/", "c/d/")))  # strsplit() drops a trailing empty piece
+string_ragged <- string_warning(str_split(c("a/b", "c/d/e")))  # matrix() refills the rows, with a warning
+ref("str_split_ragged", string_ragged$value)
+ref("str_split_one_piece", str_split(c("a", "b"), include_original = TRUE))  # data.frame() names the matrix
+string_df <- data.frame(X1 = c(10, 20), b = c("u", "v"), row.names = c("1/aa", "2/bb"))
+ref("str_split_df_row", data.frame(row = row.names(str_split_df(string_df)), str_split_df(string_df)))
+string_ids <- data.frame(id = c("x-1-p", "y-2-q"), v = 1:2)
+ref("str_split_df_collumn", str_split_df(string_ids, split = "-", type = "collumn", index = 1, include_original = TRUE))
+ref("str_split_df_automatic", str_split_df(data.frame(v = 1:3)))
+ref("str_trim_df", str_trim_df(data.frame(s = c("  a   b  ", " c", "x.  y", "p\tq", "end?  Yes"),
+                                          t = c("u", " v ", "w  ", "z", ""))))
+string_insurance <- load_data("insurance")
+string_infert <- load_data("infert")
+ref("call_to_string", data.frame(case = c("lm", "glm_long", "poisson", "Call", "none"), call = c(
+  call_to_string(lm(charges ~ age + bmi, data = string_insurance)),
+  call_to_string(glm(case ~ education + age + parity + induced + spontaneous + age:parity + age:induced,
+                     family = binomial, data = string_infert)),
+  call_to_string(glm(spontaneous ~ age + parity, family = poisson, data = string_infert)),
+  call_to_string(list(Call = quote(f(x = 1, y = "a b")))),
+  call_to_string(list(a = 1)))))
+ref("output_separator", data.frame(line = c(
+  utils::capture.output(output_separator("TITLE", output = "OUT", instruction = "Read me", length = 25)),
+  utils::capture.output(output_separator("TITLE2", length = 22.5)))))
+ref("string_conditions", data.frame(call = c("str_split(ragged)", "str_split_df(type = column)"), message = c(
+  string_ragged$warning, tryCatch(str_split_df(string_ids, type = "column", index = 1), error = conditionMessage))))
+##########################################################################################
+# EXCEL HELPERS (rwf's workbooks themselves: excel_helpers.xlsx and report_dataframe.xlsx)
+##########################################################################################
+# self-contained, so the section can be generated alone; tests read the cells, styles, comments and
+# conditional formats of these files and of pwf's
+excel_df <- data.frame(id = 1:6, score = c(1.25, 2.5, NA, 4.75, 5, 6.125), count = c(3, NA, 5, 6, 7, 8),
+                       group = c("a", "b", "", "a", "b", "c"), p = c(0.01, 0.2, 0.049, 0.5, NA, 0.03),
+                       z = c(-2.5, 0.3, 1.97, -Inf, 2.4, NA), stringsAsFactors = FALSE)
+excel_insurance <- load_data("insurance")
+excel_r <- stats::cor(excel_insurance[, c("age", "bmi", "children", "charges")])
+excel_observed <- c(1, 1, 2, 2, 3, 3, 1, 2, 3, 1, 2, 3)
+excel_predicted <- c(1, 2, 2, 2, 3, 1, 1, 2, 3, 3, 2, 3)
+excel_wb <- openxlsx::createWorkbook()
+excel_critical_value(excel_df, excel_wb, sheet = "critical", title = "Critical values",
+                     comment = list(score = "Score note", group = "Group note", nothere = "ignored"),
+                     critical = list(p = "<0.05", z = c("<-1.96", ">1.96"), group = "=\"a\""))
+excel_matrix(excel_r, excel_wb, sheet = "matrix", title = "Correlations", comment = list(age = "Age note"),
+             conditional_formatting = TRUE, diagonal = TRUE)
+excel_matrix(excel_insurance[1:3, c("age", "bmi", "charges", "children")], excel_wb, sheet = "rectangle",
+             numFmt = "#0.000", diagonal = TRUE)
+excel_confusion_matrix(confusion_matrix_percent(excel_observed, excel_predicted), excel_wb)
+openxlsx::saveWorkbook(excel_wb, file.path(out_dir, "excel_helpers.xlsx"), overwrite = TRUE)
+report_dataframe(excel_df[1:3, 1:4], file = file.path(out_dir, "report_dataframe"), type = "matrix",
+                 sheet = "data", conditional_formatting = TRUE)
+ref("report_dataframe_no_file", report_dataframe(excel_df, file = NULL))
+ref("data_frame_index", data.frame(data_frame_index(3, 2)))
+##########################################################################################
+# ENVIRONMENT HELPERS (combine_files: list.files() order, readLines() lines; print() under environment_options)
+##########################################################################################
+# self-contained, so the section can be generated alone; the test writes the same files
+environment_dir <- file.path(tempfile("combine_files"))
+dir.create(file.path(environment_dir, "in", "sub"), recursive = TRUE)
+dir.create(file.path(environment_dir, "in", "dir.R"))  # a directory matching the pattern
+environment_files <- list("a.R" = "a <- 1\nx <- 2", "Z.R" = "Z <- 1\n", "sub/c.r" = "c <- 3\r\nd <- 4\r\n",
+                          "note.txt" = "not r\n", "ff.R" = "f\fg\n", "m.R" = "old\r\nmac\rline\n", "empty.R" = "")
+for (name in names(environment_files)) {
+  writeBin(charToRaw(environment_files[[name]]), file.path(environment_dir, "in", name))
+}
+environment_wd <- setwd(environment_dir)
+environment_combined <- list(recursive = combine_files(input_dir = "in", output_file = "out_rec.R"),
+                             flat = combine_files(input_dir = "in", output_file = "in/out_flat.R", recursive = FALSE))
+ref("combine_files_list", data.frame(recursive = rep(names(environment_combined), lengths(environment_combined)),
+                                     file = unlist(environment_combined, use.names = FALSE)))
+ref("combine_files_lines", rbind(data.frame(recursive = "recursive", line = readLines("out_rec.R")),
+                                 data.frame(recursive = "flat", line = readLines("in/out_flat.R"))))
+setwd(environment_wd)
+environment_numbers <- c(16884.924, 0.000012345, 1.5, 1 / 3, 123456789.123, -2.5e-7, 100, 0.1 + 0.2, 9.99995, 0)
+environment_old <- options(digits = 4, scipen = 999)  # what environment_options() sets for printing numbers
+ref("environment_options_print", data.frame(x = environment_numbers, printed = vapply(environment_numbers, function(x)
+  sub("^\\[1\\] ", "", utils::capture.output(print(x))), character(1))))
+options(environment_old)

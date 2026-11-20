@@ -13,11 +13,10 @@ Notes:
     Python doesn't need a fixed() marker trick for its own sake, but
     it's ported anyway (as a str subclass marker) for 1:1 R-name parity
     with the rest of this project.
-  - call_to_string has no true Python equivalent: R's model$call
-    captures the literal, unevaluated call expression via language
-    reflection, which Python doesn't have. This is a best-effort
-    analog using a statsmodels formula-API model's .model.formula
-    when available, falling back to repr(model) otherwise.
+  - call_to_string: R models keep the call that fitted them (model$call);
+    Python models don't. pwf uses a call an object keeps (pwf's lda()
+    does), else rebuilds the R call of a statsmodels formula model (lm or
+    glm), else gives "NULL" as rwf does for a model without a call.
   - str_aes: tracing through the R source, its intermediate
     `trimws()` step is dead code — whichever branch (proper=TRUE/FALSE)
     is taken, the final str_squish() call re-trims anyway, so the net
@@ -28,13 +27,15 @@ Notes:
 ##########################################################################################
 import re
 import shutil
+import warnings
+
 import numpy as np
 import pandas as pd
 
 try:
-    from ._rcompat import resolve_columns
+    from ._rcompat import r_label, r_make_names, r_row_names, resolve_columns
 except ImportError:
-    from _rcompat import resolve_columns
+    from _rcompat import r_label, r_make_names, r_row_names, resolve_columns
 ##########################################################################################
 # MULTIPLE GSUB
 ##########################################################################################
@@ -67,11 +68,46 @@ def str_mgsub(mydata, pattern, replacement, fixed=False):
 ##########################################################################################
 # SPLIT STRING
 ##########################################################################################
+def _r_strsplit(text, split):
+    """R's strsplit(text, split, fixed = TRUE) for one string: a trailing empty piece is dropped, so "a/b/"
+    gives a and b and "" nothing; a missing value gives one missing piece; split "" gives the characters."""
+    if text is None or (isinstance(text, float) and np.isnan(text)):
+        return [np.nan]
+    pieces = list(text) if split == "" else text.split(split)
+    return pieces[:-1] if pieces and pieces[-1] == "" else pieces
+
+
+def _r_matrix_by_row(values, ncol):
+    """R's matrix(values, byrow = TRUE, ncol = ncol): ceiling(length / ncol) rows, the values recycled to fill
+    them, with R's warning when the length doesn't fit."""
+    n = len(values)
+    if ncol == 0:
+        if n:
+            raise ValueError("nc = 0 for non-null data")
+        return np.empty((0, 0), dtype=object)
+    nrow = int(np.ceil(n / ncol))
+    if n > 1 and (nrow * ncol) % n:
+        if (n > nrow and n % nrow) or (n < nrow and nrow % n):
+            warnings.warn(f"data length [{n}] is not a sub-multiple or multiple of the number of rows [{nrow}]")
+        elif (n > ncol and n % ncol) or (n < ncol and ncol % n):
+            warnings.warn(f"data length [{n}] is not a sub-multiple or multiple of the number of columns [{ncol}]")
+        else:
+            warnings.warn(f"data length differs from size of matrix: [{n} != {nrow} x {ncol}]")
+    return np.array([values[k % n] for k in range(nrow * ncol)], dtype=object).reshape(nrow, ncol)
+
+
+# the name R's data.frame() gives rwf's one-column matrix: its deparsed expression through make.names()
+_ONE_PIECE_NAME = "matrix.unlist.str_split...byrow...TRUE..ncol...length.str_split..1...."
+
+
 def str_split(vector, split="/", include_original=False):
     """
     Split each element of a string vector by a separator into a data
-    frame of parts (one row per input element). Assumes every element
-    produces the same number of parts.
+    frame of parts (one row per input element), as rwf: R's
+    strsplit(fixed = TRUE), so a trailing separator adds no empty part,
+    and the parts filled row by row into as many columns as the first
+    element has parts. Elements with a different number of parts shift
+    the rows, with R's warning, as rwf's matrix() does.
 
     Parameters:
     vector (str or list of str): Strings to split.
@@ -81,18 +117,24 @@ def str_split(vector, split="/", include_original=False):
 
     Returns:
     pandas.DataFrame: One row per element, columns "X1".."Xn" (plus
-    "vector" if include_original=True).
+    "vector" if include_original=True). One part per element gives the
+    column R names after rwf's expression,
+    "matrix.unlist.str_split...byrow...TRUE..ncol...length.str_split..1....".
 
     Examples:
     >>> string = [f"{i}/aa/bb/cc" for i in range(1, 11)]
     >>> str_split(string, split="/")
     """
     items = [vector] if isinstance(vector, str) else list(vector)
-    parts = [s.split(split) for s in items]
-    ncols = len(parts[0])
-    result = pd.DataFrame(parts, columns=[f"X{i+1}" for i in range(ncols)])
+    parts = [_r_strsplit(s, split) for s in items]
+    ncol = len(parts[0]) if parts else 0
+    matrix = _r_matrix_by_row([piece for pieces in parts for piece in pieces], ncol)
+    columns = [_ONE_PIECE_NAME] if ncol == 1 else [f"X{i + 1}" for i in range(ncol)]
+    result = pd.DataFrame(matrix, columns=columns)
     if include_original:
-        result['vector'] = items
+        if len(result) != len(items):
+            raise ValueError(f"arguments imply differing number of rows: {len(result)}, {len(items)}")
+        result["vector"] = items
     return result
 ##########################################################################################
 # SPLIT STRING IN DATAFRAME
@@ -105,15 +147,19 @@ def str_split_df(df, split="/", type="row", index=None, **kwargs):
     Parameters:
     df (pandas.DataFrame)
     split (str, optional): Separator. Defaults to "/".
-    type (str, optional): "row" splits df.index; "collumn" (matching
-        R's own typo for "column") splits the column at `index`.
-        Defaults to "row".
+    type (str, optional): "row" splits the row names: R's, so pandas'
+        default 0, 1, ... index is split as "1", "2", ...; "collumn"
+        (rwf's spelling) splits the column at `index`, as R's
+        as.character() writes it (10.0 is "10"). Any other type fails,
+        as in rwf. Defaults to "row".
     index (int or str, optional): Column to split when type="collumn": a
         1-based position, as in R, or a name.
     **kwargs: Forwarded to str_split.
 
     Returns:
-    pandas.DataFrame: Split-part columns prepended to the original columns of df.
+    pandas.DataFrame: Split-part columns prepended to the original columns
+    of df, all names made unique and valid as R's data.frame() does (a
+    column X1 of df becomes X1.1 after the parts' X1).
 
     Examples:
     >>> import pandas as pd
@@ -121,12 +167,18 @@ def str_split_df(df, split="/", type="row", index=None, **kwargs):
     >>> str_split_df(df, split="/", type="row")
     """
     if type == "row":
-        source = df.index.astype(str).tolist()
-    else:
-        source = df[resolve_columns(df, index)[0]].astype(str).tolist()
+        source = r_row_names(df.index)
+    elif type == "collumn":
+        source = [value if pd.isna(value) else r_label(value) for value in df[resolve_columns(df, index)[0]]]
+    else:  # rwf has no branch for it and fails on its undefined result
+        raise ValueError(f'type must be "row" or "collumn", not {type!r} (rwf: object \'result\' not found)')
     split_df = str_split(source, split=split, **kwargs)
+    if len(split_df) != len(df):
+        raise ValueError(f"arguments imply differing number of rows: {len(split_df)}, {len(df)}")
     split_df.index = df.index
-    return pd.concat([split_df, df], axis=1)
+    result = pd.concat([split_df, df], axis=1)
+    result.columns = r_make_names(result.columns)
+    return result
 ##########################################################################################
 # RETURN RIGHT LEFT CHARACTERS
 ##########################################################################################
@@ -181,12 +233,18 @@ def str_proper(x):
 ##########################################################################################
 def str_trim_df(df):
     """
-    Trim and collapse whitespace in every string cell of a data frame;
-    non-string cells are unchanged. Like R's strwrap(), it collapses
-    internal whitespace too, not just leading/trailing. Deviation: R's
-    apply() turns a mixed data frame into a text matrix, so rwf also
-    returns the numeric columns as formatted text ("10.0"); pwf leaves
-    them numeric.
+    Trim and collapse whitespace in every string cell of a data frame,
+    as R's strwrap(), which rwf applies to each cell: runs of spaces,
+    tabs and newlines become one space, except that two spaces after a
+    sentence end (".", "?" or "!") stay two.
+
+    Deviations, where rwf's apply() over the cells breaks the data frame:
+    rwf returns a mixed data frame's numbers as formatted text ("10.0"),
+    drops every column of an all-numeric one, turns missing values into
+    the text "NA" and garbles the frame when a cell is longer than
+    strwrap's line (72 characters in an 80-column console). pwf leaves
+    the cells that aren't text as they are and keeps a long text on one
+    line.
 
     Parameters:
     df (pandas.DataFrame)
@@ -200,7 +258,7 @@ def str_trim_df(df):
     >>> str_trim_df(df)
     """
     def clean_cell(x):
-        return re.sub(r"\s+", " ", x).strip() if isinstance(x, str) else x
+        return " ".join(line for line in _strwrap(x, np.inf) if line) if isinstance(x, str) else x
     return df.map(clean_cell)
 ##########################################################################################
 # ADJUST STRING AESTHETICS
@@ -241,30 +299,73 @@ def str_aes(vector, characterlist=None, proper=True):
 ##########################################################################################
 def call_to_string(model):
     """
-    Best-effort description of a fitted model's specification as a
-    whitespace-free string.
+    The call that fitted a model as one string, as rwf: R's deparse() of
+    the call, its lines joined by ", ", every space removed.
 
-    Note: R's version extracts model$call, the literal unevaluated call
-    expression via R's language reflection — Python has no equivalent.
-    This tries a statsmodels formula-API model's .model.formula first,
-    falling back to repr(model).
+    R keeps the call in the model (model$call, else model$Call). Here:
+    - an object that keeps one (a `call` or `Call` attribute or dict
+      entry: text, or deparse() lines as pwf's lda() keeps) gives it;
+    - a statsmodels formula model gives the R call fitting the same
+      model, lm(formula = ..., data = ...) for OLS and glm(formula = ...,
+      family = ..., data = ...) for a GLM or Logit, the data named by its
+      variable in the calling code ("data" when not found), as
+      report_logistic's model_call;
+    - anything else gives "NULL", as rwf for a model without a call.
 
     Parameters:
     model: A fitted model object.
 
     Returns:
-    str: Description of the model, whitespace removed.
+    str: The call, spaces removed.
 
     Examples:
     >>> import statsmodels.formula.api as smf
     >>> import pandas as pd
     >>> df = pd.DataFrame({'x': [1, 2, 3], 'y': [1, 2, 3]})
     >>> model = smf.ols("y ~ x", data=df).fit()
-    >>> call_to_string(model)
+    >>> call_to_string(model)  # "lm(formula=y~x,data=df)"
     """
-    formula = getattr(getattr(model, "model", model), "formula", None)
-    result = str(formula) if formula is not None else repr(model)
-    return result.replace(" ", "")
+    lines = None
+    for name in ("call", "Call"):  # R's model$call, then model$Call
+        call = model.get(name) if isinstance(model, dict) else getattr(model, name, None)
+        if call is not None and not callable(call):
+            lines = [call] if isinstance(call, str) else [str(line) for line in call]
+            break
+    if lines is None:
+        lines = _statsmodels_call(model)
+    return (", ".join(lines) if lines else "NULL").replace(" ", "")
+
+
+def _statsmodels_call(model):
+    """deparse() lines of the R call fitting a statsmodels formula model (lm for OLS, glm for a GLM or
+    Logit), or None."""
+    try:
+        from ._rcompat import r_deparse_call
+        from .glm_linear_regression import _data_name, _deparse_formula
+    except ImportError:
+        from _rcompat import r_deparse_call
+        from glm_linear_regression import _data_name, _deparse_formula
+    fitted = getattr(model, "model", None)
+    formula = getattr(fitted, "formula", None)
+    if formula is None:
+        return None
+    kind = type(fitted).__name__
+    if kind == "OLS":
+        function, family = "lm", None
+    elif kind == "Logit":
+        function, family = "glm", "binomial"
+    elif kind == "GLM":
+        function = "glm"
+        family = {"Binomial": "binomial", "Poisson": "poisson", "Gaussian": "gaussian", "Gamma": "Gamma",
+                  "InverseGaussian": "inverse.gaussian"}.get(type(fitted.family).__name__)
+        if family is None:
+            return None
+    else:
+        return None
+    # _data_name looks for the data's variable from its caller's caller up: call_to_string, then the code calling it
+    arguments = [("formula", _deparse_formula(formula))] + ([("family", family)] if family else []) + \
+        [("data", _data_name(fitted.data.frame))]
+    return r_deparse_call(function, arguments)
 ##########################################################################################
 # WRAP
 ##########################################################################################
@@ -329,19 +430,20 @@ def output_separator(string, output=None, instruction=None, length=None):
     output (optional): Content printed below the heading, if given.
     instruction (str, optional): Text printed between the heading and
         output, followed by a shorter separator.
-    length (int, optional): Width of the main separator. Defaults to a
-        quarter of the terminal width, as R's getOption("width") / 4.
+    length (float, optional): Width of the main separator, and half of it
+        the subtitle's, both cut to whole characters as R's rep(). Defaults
+        to a quarter of the terminal width, as R's getOption("width") / 4.
 
     Returns:
-    None.
+    None. R's print() shows each text as [1] "..."; pwf prints the text.
 
     Examples:
     >>> output_separator(string="TEST", output="TEST", instruction="TEST", length=40)
     """
     if length is None:
-        length = shutil.get_terminal_size().columns // 4  # R: getOption("width") / 4
-    separator_title = "#" * length
-    separator_subtitle = "#" * (length // 2)
+        length = shutil.get_terminal_size().columns / 4  # R: getOption("width") / 4
+    separator_title = "#" * int(length)
+    separator_subtitle = "#" * int(length / 2)
     print(separator_title)
     print(string)
     print(separator_title)

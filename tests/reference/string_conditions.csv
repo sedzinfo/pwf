@@ -1,0 +1,3 @@
+"call","message"
+"str_split(ragged)","data length [5] is not a sub-multiple or multiple of the number of rows [3]"
+"str_split_df(type = column)","object 'result' not found"

@@ -51,11 +51,11 @@ from plotnine.composition import plot_spacer
 
 try:
     from ._rcompat import (gg_linewidth, gg_text_size, r_levels, r_lowess, r_pretty, r_qqnorm, r_quantile7,
-                           resolve_columns)
+                           r_row_names, resolve_columns)
     from .functions_strings import str_aes
 except ImportError:
     from _rcompat import (gg_linewidth, gg_text_size, r_levels, r_lowess, r_pretty, r_qqnorm, r_quantile7,
-                          resolve_columns)
+                          r_row_names, resolve_columns)
     from functions_strings import str_aes
 
 _ERROR_BAR_LABELS = {'se': 'standard errors', 'ci': 'confidence intervals', 'sd': 'standard deviations'}
@@ -270,16 +270,6 @@ def plot_interaction(df, dv, iv, base_size=20, type="se", order_factor=True, tit
 ##########################################################################################
 # PLOT ANOVA DIAGNOSTICS
 ##########################################################################################
-def r_row_names(labels):
-    """
-    R's row names of the rows a model used: a data frame read by R is numbered from 1, so pandas' integer
-    labels (positions from 0) become label + 1; other labels are kept as text.
-    """
-    labels = list(labels)
-    if all(isinstance(v, (int, np.integer)) and not isinstance(v, bool) for v in labels):
-        return [str(int(v) + 1) for v in labels]
-    return [str(v) for v in labels]
-
 
 def model_factors(results):
     """

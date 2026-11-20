@@ -401,10 +401,11 @@ def min_max_index(vector):
 def get_script_directory():
     """
     Return the directory of the currently running script, with a
-    trailing slash. Falls back to the current working directory when
-    there's no running script file (e.g. an interactive REPL) — the
-    Python equivalent of R's RStudio/Rscript/getwd() fallback chain,
-    minus the RStudio-specific branch (no equivalent in Python).
+    trailing slash: the directory of a "--file=" argument (as Rscript
+    passes), else of the __main__ module's file, else the current working
+    directory (e.g. in an interactive REPL) — rwf's Rscript/getwd()
+    fallback chain, its RStudio branch having no Python equivalent. As R's
+    dirname() and getwd(), the separators are "/" on Windows too.
 
     Returns:
     str: Directory path ending in "/".
@@ -412,10 +413,16 @@ def get_script_directory():
     Examples:
     >>> get_script_directory()
     """
+    def directory(path):
+        return os.path.dirname(os.path.realpath(path)).replace(os.sep, "/") + "/"
+
+    for arg in sys.argv:
+        if "--file=" in arg:  # rwf's grep("--file=", args) and sub("--file=", "", ...)
+            return directory(arg.replace("--file=", "", 1))
     main_module = sys.modules.get('__main__')
-    if main_module is not None and hasattr(main_module, '__file__'):
-        return os.path.dirname(os.path.abspath(main_module.__file__)) + '/'
-    return os.getcwd() + '/'
+    if main_module is not None and getattr(main_module, '__file__', None):
+        return directory(main_module.__file__)
+    return os.getcwd().replace(os.sep, "/") + '/'
 ##########################################################################################
 # DOTNAMES
 ##########################################################################################
