@@ -1,0 +1,5 @@
+"call","message"
+"generate_comparisons_matrix(1)","subscript out of bounds"
+"rank_to_binary(one item)","subscript out of bounds"
+"increase_index(2, 0)","wrong sign in 'by' argument"
+"score_tirt_pattern(control = list(foo = 1))","unknown names in control: foo"

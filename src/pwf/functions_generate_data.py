@@ -21,11 +21,11 @@ functions_generic.py versions if both are wildcard-imported together.
 import string
 import numpy as np
 import pandas as pd
-def _r_colon(start, end):
-    """R's start:end: steps of 1 from start towards end (integers when start is whole)."""
-    step = 1 if end >= start else -1
-    values = start + step * np.arange(int(np.floor(abs(end - start) + 1e-10)) + 1)
-    return values.astype(int) if float(start).is_integer() else values
+
+try:
+    from ._rcompat import r_colon as _r_colon  # R's start:end
+except ImportError:
+    from _rcompat import r_colon as _r_colon
 ##########################################################################################
 # GENERATE RANDOM NUMBERS
 ##########################################################################################

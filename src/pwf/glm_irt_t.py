@@ -19,10 +19,13 @@ R's two commented-out functions in this source file (get_mplus_thu_3t,
 tirt_diagnose) are dead code in the R original itself and are not ported.
 
 Preserved R quirks, by design:
-  - generate_unique_comparisons_index(1) returns an empty (0, 2) result —
-    a single item has no comparisons to make. Every function built on top
-    of it (generate_comparisons_matrix, rank_to_binary, ...) inherits this
-    edge case unchanged.
+  - generate_unique_comparisons_index(1) has no rows: a single item has no
+    comparisons to make. generate_comparisons_matrix(1) and
+    rank_to_binary(..., 1) then fail with R's "subscript out of bounds",
+    since rwf loops over 1:nrow(...), which is c(1, 0) for no rows.
+  - rwf's loops `for (i in 2:n)` run twice when n is 1 (R's 2:1 is c(2, 1)):
+    increase_index(1, items) returns three rows and cfa_icc_index(nitems, 1)
+    twice nitems indices, as rwf's (_rcompat.r_colon).
   - compute_icc_thurstonian(..., plot=False) returns {"icc": ..., "plot":
     False} — i.e. the "plot" key holds the literal boolean False (not
     None) when no plot was requested, exactly mirroring R's `plot` local
@@ -36,7 +39,9 @@ Preserved R quirks, by design:
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
-from itertools import combinations
+from itertools import combinations, product
+import warnings
+
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
@@ -49,9 +54,9 @@ except ImportError:
     from _rcompat import theme_bw
 
 try:
-    from ._rcompat import r_make_names, r_optim_bfgs, r_number, r_round
+    from ._rcompat import r_colon, r_make_names, r_optim_bfgs, r_number, r_round
 except ImportError:
-    from _rcompat import r_make_names, r_optim_bfgs, r_number, r_round
+    from _rcompat import r_colon, r_make_names, r_optim_bfgs, r_number, r_round
 try:
     from ._ordinal import OrdinalSEM
 except ImportError:
@@ -64,14 +69,18 @@ def compute_dummy_comparisons(items):
     Number of unique pairwise comparisons among `items` items.
 
     Parameters:
-    items (int): Number of items.
+    items (int or array-like): Number of items, or several numbers, as R's
+        arithmetic takes a vector.
 
     Returns:
-    float: items * (items - 1) / 2.
+    float or numpy.ndarray: items * (items - 1) / 2.
 
     Examples:
     >>> compute_dummy_comparisons(3)
+    >>> compute_dummy_comparisons(range(1, 7))
     """
+    if not np.isscalar(items):
+        items = np.asarray(items, dtype=float)
     return items * (items - 1) / 2
 
 
@@ -83,14 +92,20 @@ def generate_unique_comparisons_index(items):
     items (int): Number of items.
 
     Returns:
-    numpy.ndarray: Shape (n_pairs, 2), 1-based indices. Empty (shape
-    (0, 2)) when items <= 1.
+    pandas.DataFrame: Columns i1 and i2, one row per pair (none for one
+    item). As rwf's matrix, the row names (index) are the pairs' places in
+    the items x items grid rwf builds them from: 2, 3, 6 for 3 items.
 
     Examples:
     >>> generate_unique_comparisons_index(3)
     """
-    pairs = [(i1, i2) for i1 in range(1, items + 1) for i2 in range(1, items + 1) if i1 < i2]
-    return np.array(pairs, dtype=int).reshape(-1, 2)
+    values = r_colon(1, items)  # R's 1:items, also for 0 or fractional items
+    pairs, places = [], []
+    for place, (i1, i2) in enumerate(product(values, values), start=1):
+        if i1 < i2:
+            pairs.append((i1, i2))
+            places.append(place)
+    return pd.DataFrame(np.array(pairs, dtype=int).reshape(-1, 2), columns=["i1", "i2"], index=places)
 ##########################################################################################
 # INCREASE INDEX
 ##########################################################################################
@@ -104,13 +119,23 @@ def increase_index(blocks, items):
     items (int): Number of consecutive indices per block.
 
     Returns:
-    numpy.ndarray: Shape (blocks, items).
+    numpy.ndarray: Shape (blocks, items); three rows for one block, as
+    rwf's loop over 2:blocks runs twice when blocks is 1.
 
     Examples:
     >>> increase_index(3, 3)
     """
-    rows = [np.arange(1 + b * items, 1 + b * items + items) for b in range(blocks)]
-    return np.array(rows, dtype=int)
+    def seq(start, stop):  # R's seq(start, stop, 1)
+        if stop < start:
+            raise ValueError("wrong sign in 'by' argument")
+        return start + np.arange(int(np.floor(stop - start + 1e-10)) + 1)
+
+    start, stop = 1, items
+    rows = [seq(start, stop)]
+    for _ in r_colon(2, blocks):
+        start, stop = start + items, stop + items
+        rows.append(seq(start, stop))
+    return np.array(rows)
 ##########################################################################################
 # GENERATE COMPARISONS MATRIX
 ##########################################################################################
@@ -124,13 +149,16 @@ def generate_comparisons_matrix(items):
     items (int): Number of items.
 
     Returns:
-    numpy.ndarray: Shape (n_pairs, items).
+    numpy.ndarray: Shape (n_pairs, items). Fewer than 2 items fail with
+    R's "subscript out of bounds", as rwf's.
 
     Examples:
     >>> generate_comparisons_matrix(3)
     """
-    comparisons = generate_unique_comparisons_index(items)
-    result = np.zeros((comparisons.shape[0], items))
+    if items < 2:  # rwf loops over 1:nrow(comparisons), which is c(1, 0) without comparisons
+        raise IndexError("subscript out of bounds")
+    comparisons = generate_unique_comparisons_index(items).to_numpy()
+    result = np.zeros((comparisons.shape[0], int(items)))
     for row, (i1, i2) in enumerate(comparisons):
         result[row, i1 - 1] = 1
         result[row, i2 - 1] = -1
@@ -216,7 +244,9 @@ def rank_to_binary(mydata, items=None, reverse=True):
     mydata = pd.DataFrame(mydata).reset_index(drop=True)
     if items is None:
         items = mydata.shape[1]
-    index = generate_unique_comparisons_index(items)
+    index = generate_unique_comparisons_index(items).to_numpy()
+    if len(index) == 0:  # rwf loops over 1:nrow(index), which is c(1, 0) for one item
+        raise IndexError("subscript out of bounds")
     binary = {}
     for i1, i2 in index:
         name = f"i{i1}{i2}"
@@ -344,10 +374,15 @@ def response_dimension(response, dimensions, items):
     elements of `response`, pick out the elements at the (1-based)
     within-block positions given by `items`.
 
+    As rwf, which shifts the vector by `dimensions` after each pick, it
+    makes 1:(length / dimensions) picks (so one for a vector shorter than a
+    block), a position past `dimensions` takes from the next block, and
+    one past the end gives a missing value.
+
     Parameters:
     response (array-like): Values to select from, e.g. range(1, 19).
     dimensions (int): Block size.
-    items (sequence of int): 1-based positions within each block to keep.
+    items (int or sequence of int): 1-based positions within each block.
 
     Returns:
     numpy.ndarray
@@ -358,13 +393,14 @@ def response_dimension(response, dimensions, items):
     >>> response_dimension(range(1, 19), 3, [2, 3])
     """
     response = np.asarray(list(response))
-    items0 = [it - 1 for it in items]
-    n_iters = len(response) // dimensions
-    out = []
-    for i in range(n_iters):
-        block = response[i * dimensions: i * dimensions + dimensions]
-        out.extend(block[items0])
-    return np.array(out)
+    n = len(response)
+    places = [k * dimensions + item - 1 for k in range(len(r_colon(1, n / dimensions)))
+              for item in np.atleast_1d(items)]
+    if all(0 <= place < n for place in places):
+        return response[np.asarray(places, dtype=int)]
+    numeric = response.dtype.kind in "biuf"
+    return np.array([response[place] if 0 <= place < n else np.nan for place in places],
+                    dtype=float if numeric else object)
 ##########################################################################################
 # INDEX FROM LAVAAN TO THURSTONIAN
 ##########################################################################################
@@ -380,15 +416,26 @@ def cfa_icc_index(nitems, nfactors=3):
 
     Returns:
     dict: {"index_vector": 1D numpy.ndarray, "index_matrix": 2D
-    numpy.ndarray of shape (nitems/nfactors, nfactors)}.
+    numpy.ndarray of shape (nitems/nfactors, nfactors)}. As rwf's, one
+    factor gives twice nitems indices (its loop over 2:nfactors runs
+    twice), and nitems not a multiple of nfactors fractional ones.
 
     Examples:
     >>> cfa_icc_index(nitems=18, nfactors=3)
     """
-    block = nitems // nfactors
-    index_matrix = np.column_stack([np.arange(1 + f * block, 1 + f * block + block) for f in range(nfactors)])
-    index_vector = index_matrix.flatten(order="C")
-    return {"index_vector": index_vector, "index_matrix": index_matrix}
+    index = nitems / nfactors
+    starts = [1]
+    for i in r_colon(2, nfactors):  # R's start_index[[i]] <- ...: i = 2, 1 for one factor
+        value = index * (i - 1) + 1
+        if i - 1 < len(starts):
+            starts[i - 1] = value
+        else:
+            starts.append(value)
+    data = np.concatenate([r_colon(start, start + index - 1) for start in starts])
+    ncol = int(nfactors)
+    nrow = int(np.ceil(len(data) / ncol))
+    index_matrix = np.resize(data, nrow * ncol).reshape(ncol, nrow).T  # matrix(..., ncol = nfactors), by column
+    return {"index_vector": index_matrix.flatten(order="C"), "index_matrix": index_matrix}
 ##########################################################################################
 # ITEM CHARACTERISTIC CURVE FOR CFA INPUT
 ##########################################################################################
@@ -399,19 +446,27 @@ def icc_cfa(eta, gamma, lambda_, psi):
 
     Parameters:
     eta (float or array-like): Latent trait value(s).
-    gamma (float): Threshold parameter.
-    lambda_ (float): Loading parameter.
-    psi (float): Residual (error) variance.
+    gamma (float or array-like): Threshold parameter(s).
+    lambda_ (float or array-like): Loading parameter(s).
+    psi (float or array-like): Residual (error) variance(s).
+
+    The arguments are recycled to the longest, as R's arithmetic.
 
     Returns:
-    float or numpy.ndarray
+    float (all arguments single numbers) or numpy.ndarray
 
     Examples:
     >>> import numpy as np
     >>> icc_cfa(np.arange(-6, 6.1, .1), 1, 1, 1)
     """
-    eta = np.asarray(eta, dtype=float)
-    return norm.cdf((-gamma + lambda_ * eta) / np.sqrt(psi))
+    scalars = all(np.ndim(a) == 0 for a in (eta, gamma, lambda_, psi))
+    args = [np.atleast_1d(np.asarray(a, dtype=float)) for a in (eta, gamma, lambda_, psi)]
+    n = max(len(a) for a in args) if all(len(a) for a in args) else 0
+    if any(n % len(a) for a in args if len(a)):
+        warnings.warn("longer object length is not a multiple of shorter object length")
+    eta, gamma, lambda_, psi = (np.resize(a, n) for a in args)
+    result = norm.cdf((-gamma + lambda_ * eta) / np.sqrt(psi))
+    return float(result[0]) if scalars else result
 ##########################################################################################
 # COMPUTE ICC THURSTONIAN
 ##########################################################################################
@@ -508,8 +563,11 @@ def compute_ability(response, eta, gamma, lambda_, psi, plot=False, map=None):
     response (array-like): Binary responses, one per item.
     eta (array-like): Theta grid to search over.
     gamma, lambda_, psi (array-like): Item parameters (see icc_cfa).
-    plot (bool, optional): If True, print/return an annotated ICC plot.
-        Defaults to False.
+    plot (bool, optional): If True, draw the curves with the ML and MAP
+        estimates in the title, as rwf prints them (the plot is not
+        returned), with the likelihood and the posterior multiplied by 10
+        until their maximum reaches 0.1; as in rwf, "product" and "icc"
+        then hold these scaled values. Defaults to False.
     map (array-like, optional): Prior weights over `eta`. If None
         (default), computed via compute_map(eta, mean=0, sd=1).
 
@@ -543,45 +601,39 @@ def compute_ability(response, eta, gamma, lambda_, psi, plot=False, map=None):
     ability_ml = eta_vals[product == product.max()]
     ability_map = eta_vals[product_map == product_map.max()]
 
-    plot_display = np.array(product, dtype=float)
-    plot_display_map = np.array(product_map, dtype=float)
-    plot_obj = False
+    if plot:  # rwf scales both up for the plot, and returns them scaled
+        while product.max() < .1:
+            product = product * 10
+        while product_map.max() < .1:
+            product_map = product_map * 10
+    icc_df = icc.copy()
+    icc_df.insert(0, "map", product_map)
+    icc_df.insert(0, "product", product)
     if plot:
-        while plot_display.max() < .1:
-            plot_display = plot_display * 10
-        while plot_display_map.max() < .1:
-            plot_display_map = plot_display_map * 10
-        icc_df = icc.copy()
-        icc_df.insert(0, "map", plot_display_map)
-        icc_df.insert(0, "product", plot_display)
         def r_text(values):  # R's paste() of round(values, 2)
             return " ".join(r_number(r_round(v, 2)) for v in np.atleast_1d(values))
 
         title = (f"Item Characteristic Curve ML: {r_text(ability_ml)} "
-                 f"MAP: {r_text(ability_map)} \nResponse: {response.sum()} "
+                 f"MAP: {r_text(ability_map)} \nResponse: {r_number(response.sum())} "
                  f"Response Length: {len(response)}")
-        plot_obj = plot_icc_thurstonian(icc_df, title=title)
-    else:
-        icc_df = icc.copy()
-        icc_df.insert(0, "map", product_map)
-        icc_df.insert(0, "product", product)
-
+        plot_icc_thurstonian(icc_df, title=title).draw()  # rwf print()s it
     return {"product": product, "icc": icc_df, "ability_ml": ability_ml, "ability_map": ability_map}
 ##########################################################################################
 # COMPUTE SCORES
 ##########################################################################################
-def compute_scores(mydata, **kwargs):
+def compute_scores(mydata, *args, **kwargs):
     """
     compute_ability's MAP estimate for every row (respondent) in `mydata`.
 
     Parameters:
     mydata (pandas.DataFrame): One row per respondent, one column per
         binary item response.
-    **kwargs: Forwarded to compute_ability (eta, gamma, lambda_, psi,
-        map, plot).
+    *args, **kwargs: R's `...`: passed on to compute_ability by position
+        or by name (eta, gamma, lambda_, psi, plot, map).
 
     Returns:
-    numpy.ndarray: One MAP ability estimate per row.
+    numpy.ndarray: One MAP ability estimate per row (rwf also prints a
+    progress bar).
 
     Examples:
     >>> gamma = [0.556,-1.253,-1.729,0.618,0.937,0.295,-0.672,-1.127]
@@ -591,13 +643,13 @@ def compute_scores(mydata, **kwargs):
     >>> eta = np.arange(-6, 6.1, .1)
     >>> map_prior = compute_map(eta=eta, mean=0, sd=1)
     >>> response_df = pd.DataFrame([[0]*8, [1]*8, [1,0]*4, [0,1]*4])
-    >>> compute_scores(response_df, eta=eta, gamma=gamma, lambda_=lambda_, psi=psi, map=map_prior, plot=False)
+    >>> compute_scores(response_df, eta, gamma, lambda_, psi, map=map_prior, plot=False)
     """
     mydata = pd.DataFrame(mydata)
     ability = []
     for i in range(len(mydata)):
         response = mydata.iloc[i].to_numpy(dtype=float)
-        result = compute_ability(response, **kwargs)
+        result = compute_ability(response, *args, **kwargs)
         ability.extend(np.atleast_1d(result["ability_map"]).tolist())
     return np.array(ability)
 ##########################################################################################
@@ -672,8 +724,8 @@ def score_tirt_pattern(pattern, lambda_, theta_diag, tau, Psi, nu=None, init=Non
     scores from thurstonianIRT package"), and running both confirms they
     are meaningfully different (different estimators, e.g. differing in
     how the prior/latent covariance is used), not that one is a bug.
-    This Python port was verified to match R's score_tirt_pattern (the
-    function being ported) to ~5-6 decimal places, not thurstonianIRT::predict().
+    This Python port matches rwf's score_tirt_pattern (the function being
+    ported) to 1e-7 or better, not thurstonianIRT::predict().
 
     Parameters:
     pattern (array-like): Observed responses (0/1), NaN allowed for
@@ -687,8 +739,11 @@ def score_tirt_pattern(pattern, lambda_, theta_diag, tau, Psi, nu=None, init=Non
         zeros are used.
     init (array-like, optional): Optimizer starting values. If None
         (default), zeros.
-    control (dict, optional): R's optim() controls "reltol", "abstol" and
-        "maxit", merged over rwf's {"reltol": 1e-10, "maxit": 500}.
+    control (dict, optional): R's optim() controls, merged over rwf's
+        {"reltol": 1e-10, "maxit": 500}: "reltol", "abstol", "maxit",
+        "fnscale" and "parscale" are used; optim's others don't change a
+        BFGS estimate ("trace" and "REPORT" only print in R) and are
+        ignored; other names give R's warning "unknown names in control".
 
     Returns:
     numpy.ndarray (pandas.Series named by trait when lambda_ is a
@@ -736,11 +791,28 @@ def score_tirt_pattern(pattern, lambda_, theta_diag, tau, Psi, nu=None, init=Non
 
     if init is None:
         init = np.zeros(n_traits)
-    ctrl = {"reltol": 1e-10, "maxit": 500, "abstol": -np.inf}  # rwf's control; R's names
-    ctrl.update(control or {})
-    # R's optim(method = "BFGS") itself, so the estimates stop where rwf's do
-    par = r_optim_bfgs(nll, gnll, init, reltol=ctrl["reltol"], abstol=ctrl["abstol"], maxit=ctrl["maxit"])["par"]
+    control = dict(control or {})
+    unknown = [name for name in control if name not in _OPTIM_CONTROLS]
+    if unknown:
+        warnings.warn("unknown names in control: " + ", ".join(unknown))
+    ctrl = {"reltol": 1e-10, "maxit": 500, "abstol": -np.inf, "fnscale": 1.0, "parscale": np.ones(n_traits)}
+    ctrl.update(control)
+    fnscale = float(ctrl["fnscale"])
+    parscale = np.atleast_1d(np.asarray(ctrl["parscale"], dtype=float))
+    if len(parscale) != n_traits:
+        raise ValueError("'parscale' is of the wrong length")
+    # R's optim(method = "BFGS") itself, so the estimates stop where rwf's do; optim minimizes
+    # fn(par * parscale) / fnscale over par / parscale
+    fit = r_optim_bfgs(lambda p: nll(p * parscale) / fnscale, lambda p: gnll(p * parscale) * parscale / fnscale,
+                       np.asarray(init, dtype=float) / parscale, reltol=ctrl["reltol"], abstol=ctrl["abstol"],
+                       maxit=ctrl["maxit"])
+    par = fit["par"] * parscale
     return pd.Series(par, index=trait_names) if trait_names is not None else par
+
+
+# the names R's optim() knows in control
+_OPTIM_CONTROLS = {"trace", "fnscale", "parscale", "ndeps", "maxit", "abstol", "reltol", "alpha", "beta", "gamma",
+                   "REPORT", "warn.1d.NelderMead", "type", "lmm", "factr", "pgtol", "temp", "tmax"}
 ##########################################################################################
 # SCORE MULTIPLE RESPONSE PATTERNS
 ##########################################################################################

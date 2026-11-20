@@ -1425,3 +1425,83 @@ report <- report_xgboost(model = model, validation_data = early_test, label = "a
 ref("report_xgboost_early_stop_model_summary", report$result$model_summary)
 ref("report_xgboost_early_stop_validation_metrics", report$result$validation_metrics)
 ref("report_xgboost_early_stop_evaluation_log", report$result$evaluation_log)
+##########################################################################################
+# THURSTONIAN IRT INDEX AND SCORING HELPERS (R's 2:1 loops, recycling, row names, optim's controls)
+##########################################################################################
+# self-contained, so the section can be generated alone
+ref("compute_dummy_comparisons", data.frame(items = 0:6, comparisons = compute_dummy_comparisons(0:6)))
+tirt_index <- lapply(c(0, 2, 3, 4), generate_unique_comparisons_index)
+ref("generate_unique_comparisons_index", data.frame(items = rep(c(0, 2, 3, 4), sapply(tirt_index, nrow)),
+                                                    row = unlist(lapply(tirt_index, rownames)),
+                                                    do.call(rbind, tirt_index)))
+ref("generate_comparisons_matrix", data.frame(generate_comparisons_matrix(4)))
+# one block gives three rows: rwf's for (i in 2:blocks) runs over 2:1
+ref("increase_index", do.call(rbind, lapply(list(c(1, 3), c(2, 3), c(3, 2), c(0, 2), c(2.5, 2)), function(a) {
+  m <- increase_index(a[1], a[2])
+  data.frame(blocks = a[1], items = a[2], row = as.vector(row(m)), col = as.vector(col(m)), value = as.vector(m))
+})))
+tirt_dimension_cases <- list(list(1:18, 3, c(1, 2)), list(1:12, 3, c(2, 3)), list(1:8, 3, c(1, 3)), list(1:2, 3, c(1, 2)),
+                             list(1:9, 3, c(1, 4)), list(c(0.5, 2, 3.5, 4, 5, 6), 2, 2))
+ref("response_dimension", do.call(rbind, lapply(seq_along(tirt_dimension_cases), function(i) {
+  a <- tirt_dimension_cases[[i]]
+  data.frame(case = i, value = response_dimension(a[[1]], a[[2]], a[[3]]))
+})))
+ref("cfa_icc_index", do.call(rbind, lapply(list(c(18, 3), c(12, 4), c(6, 2), c(6, 1), c(7, 3)), function(a) {
+  x <- cfa_icc_index(a[1], a[2])
+  m <- x$index_matrix
+  data.frame(nitems = a[1], nfactors = a[2], row = as.vector(row(m)), col = as.vector(col(m)), matrix = as.vector(m),
+             vector = x$index_vector)
+})))
+ref("icc_cfa", data.frame(case = rep(1:3, c(5, 3, 4)), value = c(
+  icc_cfa(seq(-2, 2, 1), 1, 1, 1),
+  icc_cfa(c(-1, 0, 1), c(0.5, -0.2, 0.1), c(1, 2, -1), c(1, 2, 0.5)),
+  icc_cfa(c(-1, 0, 1, 2), c(0.5, -0.2), 1, 1))))  # gamma recycled, as R's arithmetic
+ref("compute_map", data.frame(eta = seq(-2, 2, 0.5), standard = compute_map(seq(-2, 2, 0.5)),
+                              shifted = compute_map(seq(-2, 2, 0.5), 0.5, 2)))
+# rwf's examples of compute_ability and compute_scores, which pass eta, gamma, lambda and psi by position
+tirt_gamma <- c(0.556, -1.253, -1.729, 0.618, 0.937, 0.295, -0.672, -1.127, -0.446, 0.632, 1.147, 0.498)
+tirt_item_psi <- c(2.172, 1.883, 2.055, 1.869, 2.231, 2.100, 1.762, 1.803, 1.565, 1.892, 1.794, 1.686)
+tirt_item_lambda <- c(1.082, 1.082, -1.297, -1.297, 0.802, 0.802, 1.083, 1.083)
+tirt_gamma <- tirt_gamma[response_dimension(c(1:12), 3, c(1, 2))]
+tirt_item_psi <- tirt_item_psi[response_dimension(c(1:12), 3, c(1, 2))]
+tirt_eta <- seq(-6, 6, by = 0.1)
+tirt_responses <- data.frame(rbind(c(0, 0, 0, 0, 0, 0, 0, 0), c(1, 1, 1, 1, 1, 1, 1, 1), c(1, 0, 1, 0, 1, 0, 1, 0),
+                                   c(0, 1, 0, 1, 0, 1, 0, 1), c(1, 1, 0, 0, 1, 1, 0, 0)))
+ref("compute_scores", data.frame(ability = compute_scores(tirt_responses, tirt_eta, tirt_gamma, tirt_item_lambda,
+                                                          tirt_item_psi, map = compute_map(tirt_eta), plot = FALSE)))
+# with plot = TRUE rwf prints the curves and returns the likelihood and posterior scaled up by tens
+tirt_plotted <- compute_ability(c(1, 1, 0, 0, 1, 1, 0, 0), tirt_eta, tirt_gamma, tirt_item_lambda, tirt_item_psi,
+                                plot = TRUE)
+ref("compute_ability_plot", tirt_plotted$icc)
+ref("compute_ability_plot_title", data.frame(title = ggplot2::last_plot()$labels$title))
+# score_tirt_pattern with optim's controls, a starting point and missing responses (ULSMV parameters above)
+tirt_lambda <- utils::read.csv(file.path(out_dir, "tirt_ulsmv_lambda.csv"), check.names = FALSE)
+tirt_lambda <- as.matrix(data.frame(tirt_lambda[, -1], row.names = tirt_lambda$indicator, check.names = FALSE))
+tirt_vectors <- utils::read.csv(file.path(out_dir, "tirt_ulsmv_vectors.csv"))
+tirt_psi <- as.matrix(utils::read.csv(file.path(out_dir, "tirt_ulsmv_psi.csv"), check.names = FALSE))
+tirt_pattern <- as.numeric(utils::read.csv(file.path(out_dir, "tirt_triplets.csv"))[1, rownames(tirt_lambda)])
+tirt_score_cases <- list(
+  default = list(pattern = tirt_pattern),
+  maxit = list(pattern = tirt_pattern, control = list(maxit = 3)),
+  init = list(pattern = tirt_pattern, init = c(0.5, -0.5, 0.2)),
+  reltol = list(pattern = tirt_pattern, control = list(reltol = 1e-4)),
+  parscale = list(pattern = tirt_pattern, control = list(parscale = c(2, 1, 0.5), maxit = 5)),
+  fnscale = list(pattern = tirt_pattern, control = list(fnscale = 10, maxit = 5)),
+  missing = list(pattern = replace(tirt_pattern, c(2, 5, 9), NA)),
+  all_missing = list(pattern = rep(NA_real_, length(tirt_pattern))))
+ref("score_tirt_pattern", do.call(rbind, lapply(names(tirt_score_cases), function(case) {
+  estimate <- do.call(score_tirt_pattern, c(tirt_score_cases[[case]], list(
+    lambda = tirt_lambda, theta_diag = tirt_vectors$theta_diag, tau = tirt_vectors$tau, Psi = tirt_psi,
+    nu = tirt_vectors$nu)))
+  data.frame(case = case, trait = names(estimate), value = as.numeric(estimate))
+})))
+# R's errors and warnings that pwf repeats
+tirt_condition <- function(expr) tryCatch(expr, error = conditionMessage, warning = conditionMessage)
+ref("tirt_helper_conditions", data.frame(
+  call = c("generate_comparisons_matrix(1)", "rank_to_binary(one item)", "increase_index(2, 0)",
+           "score_tirt_pattern(control = list(foo = 1))"),
+  message = c(tirt_condition(generate_comparisons_matrix(1)),
+              tirt_condition(rank_to_binary(data.frame(a = 1:3)[, 1, drop = FALSE], 1)),
+              tirt_condition(increase_index(2, 0)),
+              tirt_condition(score_tirt_pattern(tirt_pattern, tirt_lambda, tirt_vectors$theta_diag, tirt_vectors$tau,
+                                                tirt_psi, control = list(foo = 1))))))

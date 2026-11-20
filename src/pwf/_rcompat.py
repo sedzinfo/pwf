@@ -114,6 +114,19 @@ def r_recycle(values, length):
     return [values[i % len(values)] for i in range(length)]
 
 
+def r_colon(from_, to):
+    """
+    R's from:to (seq_colon in src/main/seq.c): steps of 1 from `from_` towards
+    `to`, counting down when to < from_, floor(|to - from_| + 1 + FLT_EPSILON)
+    values. So 2:1 is c(2, 1) and 1:0 is c(1, 0): an rwf loop
+    `for (i in 2:n)` runs twice when n is 1. Integers when from_ is a whole
+    number, as R's.
+    """
+    n = int(abs(to - from_) + 1 + np.finfo(np.float32).eps)
+    values = from_ + (1 if from_ <= to else -1) * np.arange(n)
+    return values.astype(int) if float(from_).is_integer() else values.astype(float)
+
+
 def r_round(x, digits=0):
     """
     R's round() for one number, a port of R 4's fround() (src/nmath/fround.c).
