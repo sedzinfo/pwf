@@ -29,6 +29,7 @@ inequality and non-linear constraints.
 import ast
 import inspect
 import re
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -618,10 +619,13 @@ class SEMFit:
         else:
             self.fmin = 0.5 * self._discrepancy(rows)
             self.vcov = self._constrained_inverse(self.n * self._information(self._derivatives()))
-        variances = np.diag(self.vcov).copy()
-        if self._constrained:  # a parameter the constraints pin down has variance 0, which rounding can make < 0
-            variances[np.abs(variances) <= 1e-12 * max(1.0, np.max(np.abs(variances)))] = 0.0
-        for prm, se in zip(self.free, np.sqrt(variances)):
+        variances = np.diag(self.vcov)  # exactly 0 for a parameter the constraints pin down
+        with np.errstate(invalid="ignore"):
+            ses = np.sqrt(variances)
+        if np.any(variances < 0):
+            warnings.warn("some standard errors could not be computed (missing): the information matrix is not "
+                          "positive definite at the solution, so the model may not be identified")
+        for prm, se in zip(self.free, ses):
             prm.se = se
 
     # ------------------------------------------------------------------ results

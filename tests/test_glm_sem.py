@@ -162,7 +162,7 @@ def test_std_lv_fixes_endogenous_latent_variance(reference):
 
 LABELLED_MODEL = ("E =~ E1 + a*E2 + a*E3 + l4*E4; N =~ N1 + N2 + l3*N3 + N4; A =~ A1 + A2 + A3; def1 := l4*2; "
                   "N ~ r*E; l4 == -l3 - 0.4; A ~ s*N; ind := r*s; N2 ~~ v*N2; N4 ~~ v*N4")
-DIAGRAM_MODEL = "E =~ E1 + a*E2 + a*E3 + E4; N =~ N1 + b*N2 + l3*N3 + N4; E ~~ c*N; l3 == b + 0.1"
+DIAGRAM_MODEL = "E =~ E1 + a*E3 + a*E5 + E2; N =~ N1 + b*N3 + l5*N5 + N2; E ~~ c*N; l5 == b - 0.2"
 
 
 def test_report_cfa_parameters_of_a_labelled_model_match_rwf(reference, capsys):
@@ -178,7 +178,7 @@ def test_report_cfa_parameters_of_a_labelled_model_match_rwf(reference, capsys):
 
 @pytest.mark.parametrize("layout", ["tree", "circle"])
 def test_plot_cfa_gg_eq_matches_rwf(reference, layout):
-    """The "eq" diagram of a labelled model: the labels (a, b, l3; c on the covariance arc) and the estimates
+    """The "eq" diagram of a labelled model: the labels (a, b, l5; c on the covariance arc) and the estimates
     of the other parameters, formatC'd."""
     model = glm_sem.sem(DIAGRAM_MODEL, _load_reference("lavaan_data"))
     expected = reference(f"labels_plot_cfa_gg_{layout}_eq", keep_default_na=False, na_values=["NA"])

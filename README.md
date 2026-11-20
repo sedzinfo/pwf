@@ -81,7 +81,7 @@ Every module also runs as a script with worked examples, e.g. `python -m pwf.glm
 
 | Module | Contents |
 | --- | --- |
-| `_sem` | lavaan-compatible CFA/SEM: ML with listwise deletion or FIML, standard errors, standardized solutions, fit measures, modification indices, factor scores |
+| `_sem` | lavaan-compatible CFA/SEM: ML with listwise deletion or FIML, labels with equality constraints and defined parameters (`:=`), standard errors, standardized solutions, fit measures, modification indices, factor scores |
 | `_ordinal` | lavaan-compatible models of ordered indicators: thresholds, polychoric correlations and their asymptotic covariance, WLSMV and ULSMV with labels and linear constraints, robust standard errors and fit measures |
 | `_efa` | psych::fa (minres and ml, oblimin rotation, factor statistics) |
 | `_rcompat` | R behaviour the ports depend on (column positions, `as.character`, `make.names`, `p.adjust`, `abbreviate`, `mixedsort`, ...) |

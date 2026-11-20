@@ -1799,7 +1799,7 @@ labels_layer_rows <- function(p) {  # as plots_layer_rows() above
                label = if (is.null(d$label)) NA else as.character(d$label))
   }))
 }
-labels_diagram_fit <- lavaan::sem("E =~ E1 + a*E2 + a*E3 + E4; N =~ N1 + b*N2 + l3*N3 + N4; E ~~ c*N; l3 == b + 0.1",
+labels_diagram_fit <- lavaan::sem("E =~ E1 + a*E3 + a*E5 + E2; N =~ N1 + b*N3 + l5*N5 + N2; E ~~ c*N; l5 == b - 0.2",
                                   data = labels_data)
 for (layout in c("tree", "circle")) {
   p <- plot_cfa_gg(labels_diagram_fit, what = "eq", layout = layout)
