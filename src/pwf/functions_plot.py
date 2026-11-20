@@ -14,16 +14,16 @@ Deviations from the R originals, by design:
   - plot_hinvert_title_grob is dropped entirely — it's pure grid/gtable
     grob-manipulation plumbing (mirroring a title grob's internal width
     layout) with no meaning outside R's grid graphics system.
-  - plot_duplicate_y_axis no longer does grob surgery to graft one
-    plot's y-axis onto another's right side. It takes a single
-    matplotlib Axes and calls ax.secondary_yaxis("right") — the
-    built-in, idiomatic matplotlib mechanism for the same visible
-    result (a duplicated y-axis on the right), rather than R's
-    (pre-ggplot2-native-sec.axis) hand-rolled workaround.
+  - plot_duplicate_y_axis(p1, p2) takes rwf's two plots, but instead of
+    grafting p2's y-axis grobs onto p1's right side it draws p1 and adds
+    a matplotlib secondary y axis carrying p2's ticks, labels and title,
+    and returns the figure. An Axes is still taken as p1, as the earlier
+    pwf did.
 """
 ##########################################################################################
 # LOAD SYSTEM
 ##########################################################################################
+import copy
 import io
 import math
 import numpy as np
@@ -128,24 +128,105 @@ def plot_multiplot(*plots, plotlist=None, cols=2, layout=None):
 ##########################################################################################
 # DUPLICATE Y AXIS
 ##########################################################################################
-def plot_duplicate_y_axis(ax):
+def plot_duplicate_y_axis(p1, p2=None):
     """
-    Mirror an Axes' y-axis onto the right side of the plot.
+    Draw p1 with p2's left y axis (its ticks, tick labels and title) copied
+    to its right, as rwf::plot_duplicate_y_axis, which pastes p2's axis
+    grobs next to p1's panel: p2's ticks sit at the heights they have in
+    p2's panel.
 
     Parameters:
-    ax (matplotlib.axes.Axes): Axes to add a mirrored right-hand y-axis to.
+    p1 (plotnine.ggplot): The plot, with one panel (as rwf's). A
+        matplotlib Axes is also taken, as the earlier pwf: its own y axis
+        is mirrored on its right and the Axes returned.
+    p2 (plotnine.ggplot, optional): The plot whose y axis is copied;
+        typically p1 itself, the default.
 
     Returns:
-    matplotlib.axes.Axes: The same `ax`.
+    matplotlib.figure.Figure: p1 drawn anew with the second axis, which
+    gets the room p2's axis takes, between the panel and a legend on the
+    right, as rwf's added gtable columns (rwf draws it on the current
+    device and returns NULL). p1 and p2 are left as they are.
 
     Examples:
-    >>> import matplotlib.pyplot as plt
-    >>> fig, ax = plt.subplots()
-    >>> ax.plot([1, 2, 3], [4, 5, 6])
-    >>> plot_duplicate_y_axis(ax)
+    >>> from plotnine import ggplot, aes, geom_line
+    >>> p1 = ggplot(df, aes("x", "y")) + geom_line()
+    >>> plot_duplicate_y_axis(p1, p1)
     """
-    ax.secondary_yaxis("right")
-    return ax
+    if isinstance(p1, plt.Axes):
+        p1.secondary_yaxis("right")
+        return p1
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from plotnine import theme
+
+    p2 = p1 if p2 is None else p2
+    # p2's axis: its ticks, labels and title, and the width they take beside its panel
+    drawn_p2 = _fresh_plot(p2)
+    reference = drawn_p2.draw()
+    source = _one_panel(reference, "p2")
+    canvas = FigureCanvasAgg(reference)  # plotnine's figures have matplotlib's base canvas, which can't measure
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    title = drawn_p2.labels.get("y", None) or ""  # plotnine fills the labels when it draws
+    title_text = next((text for text in reference.texts if text.get_text() == title), None)
+    pieces = [t for t in source.get_yticklabels() if t.get_text()] + ([title_text] if title_text else [])
+    width = (source.get_window_extent(renderer).x0 - min(p.get_window_extent(renderer).x0 for p in pieces)
+             if pieces else 0.0) / reference.bbox.width  # a fraction of the figure's width
+    # p1 drawn anew with that room on its right, and between its panel and a legend there
+    measured = _fresh_plot(p1)
+    measured.draw()
+    margin, spacing = measured.theme.getp("plot_margin_right"), measured.theme.getp("legend_box_spacing")
+    plt.close(measured.figure)
+    final = _fresh_plot(p1) + theme(plot_margin_right=margin + width, legend_box_spacing=spacing + width)
+    figure = final.draw()
+    panel = _one_panel(figure, "p1")
+    (low1, high1), (low2, high2) = panel.get_ylim(), source.get_ylim()
+
+    def forward(y):
+        return low2 + (np.asarray(y, dtype=float) - low1) * (high2 - low2) / (high1 - low1)
+
+    def inverse(y):
+        return low1 + (np.asarray(y, dtype=float) - low2) * (high1 - low1) / (high2 - low2)
+
+    second = panel.secondary_yaxis("right", functions=(forward, inverse))
+    ticks = [tick for tick in source.get_yticks() if low2 <= tick <= high2]
+    labels = {tick: label.get_text() for tick, label in zip(source.get_yticks(), source.get_yticklabels())}
+    second.set_yticks(ticks, [labels[tick] for tick in ticks])
+    # p2's styling of its axis: the spine (none in theme_gray), the ticks and their labels
+    left, right = source.spines["left"], second.spines["right"]
+    right.set_visible(left.get_visible())
+    right.set_edgecolor(left.get_edgecolor())
+    right.set_linewidth(left.get_linewidth())
+    major = source.yaxis.get_major_ticks()
+    if major:
+        line = major[0].tick1line
+        second.tick_params(axis="y", color=line.get_color(), length=line.get_markersize(),
+                           width=line.get_markeredgewidth(), pad=major[0].get_pad())
+    style = source.get_yticklabels()[0] if source.get_yticklabels() else None
+    if style is not None:
+        second.tick_params(axis="y", labelsize=style.get_fontsize(), labelcolor=style.get_color())
+    # plotnine draws the axis titles as figure texts: p2's y title, with the size and colour it has there
+    second.set_ylabel(title, **({} if title_text is None else {"fontsize": title_text.get_fontsize(),
+                                                               "color": title_text.get_color()}))
+    plt.close(reference)
+    return figure
+
+
+def _fresh_plot(plot):
+    """A copy of a plotnine plot that draws on a figure of its own (plotnine draws a plot into the figure it
+    kept from an earlier draw)."""
+    copied = copy.deepcopy(plot)
+    for key in ("figure", "_gridspec", "axs"):
+        copied.__dict__.pop(key, None)
+    return copied
+
+
+def _one_panel(figure, name):
+    """The panel of a drawn one-panel plotnine figure (rwf's plot_duplicate_y_axis takes a layout's 'panel')."""
+    panels = [axes for axes in figure.axes if axes.get_label() != "<colorbar>"]
+    if len(panels) != 1:
+        raise ValueError(f"{name} must have one panel, as rwf's (its layout has one 'panel')")
+    return panels[0]
 ##########################################################################################
 # REPORT PDF
 ##########################################################################################
@@ -231,11 +312,8 @@ if __name__ == "__main__":
     print("3 plots, cols=1 -> pages:", len(pages2))
 
     print("\n" + "=" * 80, "\nplot_duplicate_y_axis\n", "=" * 80, sep="")
-    fig, ax = plt.subplots()
-    ax.plot(df['x'], df['y'])
-    plot_duplicate_y_axis(ax)
-    print("secondary y-axis attached:", len(ax.child_axes) == 1,
-          "position:", ax.child_axes[0].yaxis.get_ticks_position())
+    fig = plot_duplicate_y_axis(p1, p1)
+    print("secondary y-axis attached:", len(fig.axes[0].child_axes) == 1)
     fig.savefig("duplicate_y_axis.png")
     print("saved duplicate_y_axis.png")
 

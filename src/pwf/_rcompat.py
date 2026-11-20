@@ -117,6 +117,59 @@ def r_color_ramp(low, high, n):
     return ["#{:02X}{:02X}{:02X}".format(*row) for row in rgb]
 
 
+_D65 = np.array([95.047, 100.0, 108.883])  # farver's white reference (ColorSpace's Xyz)
+
+
+def _rgb_to_lab(rgb):
+    """farver::decode_colour(to = "lab"): 0-255 sRGB to CIE Lab (D65), ColorSpace's formulas."""
+    c = np.asarray(rgb, dtype=float) / 255.0
+    c = np.where(c > 0.04045, ((c + 0.055) / 1.055) ** 2.4, c / 12.92) * 100.0
+    xyz = np.array([c[0] * 0.4124564 + c[1] * 0.3575761 + c[2] * 0.1804375,
+                    c[0] * 0.2126729 + c[1] * 0.7151522 + c[2] * 0.0721750,
+                    c[0] * 0.0193339 + c[1] * 0.1191920 + c[2] * 0.9503041]) / _D65
+    f = np.where(xyz > 0.008856, np.cbrt(xyz), 7.787 * xyz + 16.0 / 116.0)
+    return np.array([116.0 * f[1] - 16, 500 * (f[0] - f[1]), 200 * (f[1] - f[2])])
+
+
+def _lab_to_hex(lab):
+    """farver::encode_colour(from = "lab"): CIE Lab (D65) to "#RRGGBB", rounded to even and capped to 0-255."""
+    y = (lab[0] + 16.0) / 116.0
+    f = np.array([lab[1] / 500.0 + y, y, y - lab[2] / 200.0])
+    xyz = np.where(f ** 3 > 0.008856, f ** 3, (f - 16.0 / 116.0) / 7.787) * _D65 / 100.0
+    rgb = np.array([xyz[0] * 3.2404542 + xyz[1] * -1.5371385 + xyz[2] * -0.4985314,
+                    xyz[0] * -0.9692660 + xyz[1] * 1.8760108 + xyz[2] * 0.0415560,
+                    xyz[0] * 0.0556434 + xyz[1] * -0.2040259 + xyz[2] * 1.0572252])
+    with np.errstate(invalid="ignore"):
+        rgb = np.where(rgb > 0.0031308, 1.055 * np.abs(rgb) ** (1 / 2.4) - 0.055, 12.92 * rgb) * 255.0
+    channels = np.clip(np.rint(rgb), 0, 255).astype(int)  # farver's double2int rounds half to even
+    return "#{:02X}{:02X}{:02X}".format(*channels)
+
+
+def r_colour_ramp(colours):
+    """
+    scales::colour_ramp(colours), the palette of ggplot2's gradient scales (seq_gradient_pal and
+    div_gradient_pal): the colours interpolated linearly in CIE Lab at x in [0, 1], as farver converts them.
+    plotnine interpolates in RGB, so its midpoint of #FAFAFF and #56B1F7 is #A8D5FB where ggplot2's is #B3D5FB.
+
+    Returns:
+    function: x (array-like in [0, 1]) -> list of "#RRGGBB" (None for missing x).
+    """
+    lab = np.array([_rgb_to_lab([int(c[i:i + 2], 16) for i in (1, 3, 5)]) for c in colours])
+    knots = np.linspace(0, 1, len(colours))
+
+    def ramp(x):
+        x = np.atleast_1d(np.asarray(x, dtype=float))
+        return [None if np.isnan(v) else _lab_to_hex([np.interp(v, knots, lab[:, k]) for k in range(3)]) for v in x]
+    return ramp
+
+
+def r_rescale(x):
+    """scales::rescale(x): x mapped linearly from its range to [0, 1]; 0.5 when the range is zero."""
+    x = np.asarray(x, dtype=float)
+    low, high = np.nanmin(x), np.nanmax(x)
+    return np.where(np.isnan(x), np.nan, 0.5) if high == low else (x - low) / (high - low)
+
+
 def r_recycle(values, length):
     """R's recycling of a vector to a given length."""
     values = list(values)

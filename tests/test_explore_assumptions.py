@@ -126,3 +126,37 @@ def test_plot_qq_points_match_rwf(load_data, reference):
     expected = reference("plot_qq_bmi_points")
     np.testing.assert_allclose(points["x"], expected["x"], rtol=1e-13)
     np.testing.assert_allclose(points["y"], expected["y"], rtol=1e-13)
+
+
+@pytest.mark.parametrize("breaks", ["Sturges", 5])
+def test_plot_normality_diagnostics_matches_rwf(reference, load_data, breaks):
+    """rwf's four panels are R's hist(), density(), boxplot() and qqnorm() with qqline(): the same bars,
+    curve, box, points and line, and rwf's caption."""
+    data = load_data("insurance")
+    data.loc[[1, 4], "bmi"] = np.nan  # make_reference.R's plots_insurance
+    figure = ea.plot_normality_diagnostics(data[["bmi"]], breaks=None if breaks == "Sturges" else breaks)["bmi"]
+    histogram, density, box, qq = figure.axes
+    bars = reference(f"plot_normality_hist_{breaks}")
+    np.testing.assert_allclose([patch.get_x() for patch in histogram.patches], bars["left"], rtol=1e-12)
+    np.testing.assert_allclose([patch.get_x() + patch.get_width() for patch in histogram.patches], bars["right"],
+                               rtol=1e-12)
+    np.testing.assert_array_equal([patch.get_height() for patch in histogram.patches], bars["count"])
+    curve = reference("plot_normality_density")
+    np.testing.assert_allclose(density.lines[0].get_xdata(), curve["x"], rtol=1e-12)
+    np.testing.assert_allclose(density.lines[0].get_ydata(), curve["y"], rtol=1e-10, atol=1e-15)
+    assert density.get_xlabel() == f"N = 1336   Bandwidth = {curve['bw'].iloc[0]:.4g}"
+    parts = reference("plot_normality_box")
+    fliers = [line for line in box.lines if line.get_marker() == "o"]
+    drawn = {float(v) for line in box.lines if line not in fliers for v in line.get_ydata()}
+    np.testing.assert_allclose(sorted(drawn), sorted(set(parts.loc[parts["part"] == "stats", "value"])), rtol=1e-12)
+    np.testing.assert_allclose(sorted(fliers[0].get_ydata()), sorted(parts.loc[parts["part"] == "out", "value"]),
+                               rtol=1e-12)
+    points = reference("plot_normality_qq")
+    got = np.array(sorted(map(tuple, qq.collections[0].get_offsets())))
+    np.testing.assert_allclose(got, np.array(sorted(zip(points["x"], points["y"]))), rtol=1e-12)
+    line = qq.lines[0]
+    np.testing.assert_allclose(line.get_slope(), points["slope"].iloc[0], rtol=1e-12)
+    np.testing.assert_allclose(line.get_xy1()[1] - line.get_slope() * line.get_xy1()[0], points["intercept"].iloc[0],
+                               rtol=1e-12)
+    caption = reference("plot_normality_caption")["caption"].iloc[0]
+    assert caption.lstrip("\n") in [text.get_text() for text in figure.texts]

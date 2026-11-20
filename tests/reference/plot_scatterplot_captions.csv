@@ -1,0 +1,18 @@
+"case","name","drawn","caption"
+"default","age_bmi",TRUE,"Pairwise n = 1336
+Pearson r = 0.1099
+Explained Variance = 1.21%
+y = 0.0477x + 28.7904
+Angle = 2.73"
+"default","age_children",TRUE,"Pairwise n = 1338
+Pearson r = 0.0425
+Explained Variance = 0.18%
+y = 0.0036x + 0.9521
+Angle = 0.21"
+"default","bmi_children",TRUE,"Pairwise n = 1336
+Pearson r = 0.0126
+Explained Variance = 0.02%
+y = 0.0025x + 1.0195
+Angle = 0.14"
+"poly","age_bmi",TRUE,"Pairwise n = 1336"
+"too_few","a_b",FALSE,NA

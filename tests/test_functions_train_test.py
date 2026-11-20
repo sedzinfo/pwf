@@ -2,6 +2,9 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import re  # noqa: E402
+
+import pandas as pd  # noqa: E402
 import pytest  # noqa: E402
 
 from conftest import assert_matches_reference  # noqa: E402
@@ -107,3 +110,60 @@ def test_plot_separability_matches_rwf(reference):
     assert [levels[g - 1] for g in density["group"]] == expected["observed"].tolist()
     np.testing.assert_allclose(density["x"], expected["x"], rtol=1e-13)
     np.testing.assert_allclose(density["y"], expected["density"], rtol=1e-11, atol=1e-14)
+
+
+def test_r_cut_labels_match_rwf(reference):
+    """R's cut(1:n, breaks = k, labels = FALSE), which k_fold and k_sample shuffle into folds."""
+    import numpy as np
+    for (n, k), labels in reference("cut_labels").groupby(["n", "k"], sort=False):
+        np.testing.assert_array_equal(functions_train_test._r_cut_labels(n, k), labels["label"], err_msg=f"{n} {k}")
+
+
+def test_k_fold_matches_rwf(reference, load_data, capsys):
+    """The folds are random, their sizes are not: the printed lines are rwf's."""
+    import numpy as np
+    result = functions_train_test.k_fold(load_data("insurance"), "charges ~ age + bmi + smoker", k=7)
+    assert capsys.readouterr().out.splitlines() == reference("k_fold_printed")["line"].tolist()
+    parts = reference("k_fold_parts").iloc[0]
+    assert ",".join(result["variables"]) == parts["variables"] and ",".join(result["predictors"]) == parts["predictors"]
+    assert result["outcome"] == parts["outcome"] and len(result["index"]) == parts["n_index"]
+    rows = np.sort(np.concatenate([result["f"]["index"][f"f{i}"] for i in range(1, 8)]))
+    np.testing.assert_array_equal(rows, np.arange(1, 1339))  # every row is in one test set
+    assert result["xgb"]["f1"]["test"].num_row() == len(result["f"]["test"]["f1"])
+
+
+def test_k_sample_matches_rwf(reference, capsys):
+    """k_sample's halving into train, test and validation (and its "Validation:" count, the test set's), and
+    R's failure on a fold too small to split."""
+    for _, row in reference("k_sample_printed").iterrows():
+        n = int(row["n"])
+        frame = pd.DataFrame({"y": range(1, n + 1), "x": [2 * v for v in range(1, n + 1)]})
+        if row["line"].startswith("ERROR: "):
+            with pytest.raises(IndexError, match=re.escape(row["line"][len("ERROR: "):])):
+                functions_train_test.k_sample(frame, "y ~ x", k=1)
+            capsys.readouterr()
+        else:
+            functions_train_test.k_sample(frame, "y ~ x", k=1)
+            assert capsys.readouterr().out == row["line"] + "\n", n
+
+
+def test_plot_confusion_matches_rwf(reference):
+    """rwf's tiles, counts, class order (numbers by value, text by R's collation) and caption, and its colours:
+    ggplot2's scale_fill_continuous(low = "#fafaff") interpolated in Lab."""
+    cases = {"numbers": dict(observed=[1, 2, 3, 1, 2, 3, 10, 2], predicted=[1, 2, 3, 1, 1, 3, 10, 2]),
+             "text": dict(observed=["male"] * 10 + ["female"] * 10 + ["male", "male"],
+                          predicted=["male"] * 10 + ["female"] * 10 + ["female", "female"]),
+             "unequal": dict(observed=["a", "b", "c", "a", "B"], predicted=["a", "b", "b", "a", "a"])}
+    expected = reference("plot_confusion_tiles")
+    for case, arguments in cases.items():
+        want = expected[expected["case"] == case]
+        p = functions_train_test.plot_confusion(**arguments, title="T")
+        assert ",".join(p.data["observed"].cat.categories) == want["observed"].iloc[0], case
+        assert ",".join(p.data["predicted"].cat.categories) == want["predicted"].iloc[0], case
+        assert p.labels.get("title", None) == want["title"].iloc[0]
+        assert p.labels.get("caption", None) == want["caption"].iloc[0]
+        p.draw()
+        tiles = p.layers[0].data.merge(p.layers[1].data[["x", "y", "label"]], on=["x", "y"]).sort_values(["x", "y"])
+        assert tiles[["x", "y"]].to_numpy().tolist() == want[["x", "y"]].to_numpy().tolist(), case
+        assert tiles["fill"].str.upper().tolist() == want["fill"].tolist(), case
+        assert tiles["label"].astype(int).tolist() == want["label"].tolist(), case

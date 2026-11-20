@@ -1593,3 +1593,111 @@ environment_old <- options(digits = 4, scipen = 999)  # what environment_options
 ref("environment_options_print", data.frame(x = environment_numbers, printed = vapply(environment_numbers, function(x)
   sub("^\\[1\\] ", "", utils::capture.output(print(x))), character(1))))
 options(environment_old)
+##########################################################################################
+# K FOLD, K SAMPLE AND PLOT CONFUSION (fold sizes and printed lines; tiles, colours and caption)
+##########################################################################################
+# self-contained, so the section can be generated alone. The folds are random, their sizes are not: the
+# printed lines of k_fold and of k_sample's halving into train, test and validation are compared
+ref("cut_labels", do.call(rbind, lapply(list(c(10, 3), c(8, 3), c(1338, 10), c(7, 7), c(5, 2)), function(a)
+  data.frame(n = a[1], k = a[2], label = cut(seq_len(a[1]), breaks = a[2], labels = FALSE)))))
+fold_insurance <- load_data("insurance")
+set.seed(1)
+ref("k_fold_printed", data.frame(line = utils::capture.output(
+  fold_result <- k_fold(fold_insurance, charges ~ age + bmi + smoker, k = 7))))
+ref("k_fold_parts", data.frame(variables = paste(fold_result$variables, collapse = ","),
+                               predictors = paste(fold_result$predictors, collapse = ","),
+                               outcome = fold_result$outcome, n_index = length(fold_result$index)))
+ref("k_sample_printed", do.call(rbind, lapply(1:12, function(n) {
+  frame <- data.frame(y = seq_len(n), x = seq_len(n) * 2)
+  line <- tryCatch(utils::capture.output(invisible(k_sample(frame, y ~ x, k = 1))),
+                   error = function(e) paste("ERROR:", conditionMessage(e)))
+  data.frame(n = n, line = line)
+})))
+tiles_cases <- list(numbers = list(observed = c(1, 2, 3, 1, 2, 3, 10, 2), predicted = c(1, 2, 3, 1, 1, 3, 10, 2)),
+                    text = list(observed = c(rep("male", 10), rep("female", 10), "male", "male"),
+                                predicted = c(rep("male", 10), rep("female", 10), "female", "female")),
+                    unequal = list(observed = c("a", "b", "c", "a", "B"), predicted = c("a", "b", "b", "a", "a")))
+ref("plot_confusion_tiles", do.call(rbind, lapply(names(tiles_cases), function(case) {
+  p <- do.call(plot_confusion, c(tiles_cases[[case]], title = "T"))
+  built <- ggplot2::ggplot_build(p)
+  tiles <- merge(built$data[[1]][, c("x", "y", "fill")], built$data[[2]][, c("x", "y", "label", "size")])
+  data.frame(case = case, tiles[order(tiles$x, tiles$y), ],
+             observed = paste(levels(p$data$observed), collapse = ","),
+             predicted = paste(levels(p$data$predicted), collapse = ","),
+             title = p$labels$title, caption = p$labels$caption)
+})))
+##########################################################################################
+# PLOT HELPERS (plot_scree, plot_scatterplot's captions, plot_normality_diagnostics' panels, excel_generic_format)
+##########################################################################################
+# self-contained, so the section can be generated alone
+plots_insurance <- load_data("insurance")
+plots_insurance$bmi[c(2, 5)] <- NA
+plots_insurance$charges[7] <- NA
+# plot_scree: the eigenvalues of the pairwise correlations, the criteria note and the labels
+plots_scree <- plot_scree(plots_insurance[, c("age", "bmi", "children", "charges")], base_size = 12, title = "T")
+plots_scree_built <- ggplot2::ggplot_build(plots_scree)
+ref("plot_scree_line", plots_scree_built$data[[3]][, c("x", "y")])
+ref("plot_scree_labels", data.frame(title = plots_scree$labels$title, x = plots_scree$labels$x,
+                                    y = plots_scree$labels$y, note = plots_scree_built$data[[5]]$label,
+                                    note_x = plots_scree_built$data[[5]]$x, note_y = plots_scree_built$data[[5]]$y))
+# plot_scatterplot: rwf draws ggExtra::ggMarginal's grob, so its caption is read from the grob's texts
+plots_texts <- function(grob) {
+  out <- character(0)
+  if (inherits(grob, "text") && !is.null(grob$label)) out <- c(out, paste(grob$label, collapse = " | "))
+  for (child in c(if (!is.null(grob$children)) as.list(grob$children), if (!is.null(grob$grobs)) grob$grobs)) {
+    out <- c(out, plots_texts(child))
+  }
+  out
+}
+plots_scatter <- list(
+  default = plot_scatterplot(plots_insurance[, c("age", "bmi", "children")], title = "T"),
+  poly = plot_scatterplot(plots_insurance[, c("age", "bmi")], formula = y ~ poly(x, 2), str_aes = FALSE),
+  too_few = plot_scatterplot(data.frame(a = c(1, NA, 3), b = c(NA, 2, NA))))
+ref("plot_scatterplot_captions", do.call(rbind, lapply(names(plots_scatter), function(case) {
+  do.call(rbind, lapply(names(plots_scatter[[case]]), function(name) {
+    p <- plots_scatter[[case]][[name]]
+    texts <- if (is.null(p)) character(0) else plots_texts(p$layers[[1]]$geom_params$grob)
+    data.frame(case = case, name = name, drawn = !is.null(p),
+               caption = if (is.null(p)) NA_character_ else texts[grepl("^Pairwise n", texts)])
+  }))
+})))
+# plot_normality_diagnostics' four panels are R's hist(), density(), boxplot() and qqnorm() with qqline()
+plots_vector <- stats::na.omit(plots_insurance$bmi)
+for (plots_breaks in list("Sturges", 5)) {
+  plots_hist <- graphics::hist(plots_vector, breaks = plots_breaks, plot = FALSE)
+  ref(paste0("plot_normality_hist_", plots_breaks), data.frame(left = utils::head(plots_hist$breaks, -1),
+                                                               right = plots_hist$breaks[-1],
+                                                               count = plots_hist$counts))
+}
+plots_density <- stats::density(plots_vector)
+ref("plot_normality_density", data.frame(x = plots_density$x, y = plots_density$y, bw = plots_density$bw))
+plots_box <- grDevices::boxplot.stats(plots_vector)
+ref("plot_normality_box", data.frame(part = c(rep("stats", 5), rep("out", length(plots_box$out))),
+                                     value = c(plots_box$stats, plots_box$out)))
+plots_qq <- stats::qqnorm(plots_vector, plot.it = FALSE)
+plots_quartiles <- stats::quantile(plots_vector, c(0.25, 0.75), names = FALSE)
+plots_slope <- diff(plots_quartiles) / diff(stats::qnorm(c(0.25, 0.75)))
+ref("plot_normality_qq", data.frame(x = plots_qq$x, y = plots_qq$y, slope = plots_slope,
+                                    intercept = plots_quartiles[1] - plots_slope * stats::qnorm(0.25)))
+ref("plot_normality_caption", data.frame(caption = paste0(  # rwf's title(sub = ...)
+  "\nVariable=", str_aes("bmi"), "\nObservations=", length(plots_vector), "\nMean=", round(mean(plots_vector), 2),
+  "\nSD=", round(stats::sd(plots_vector), 2), "\nMedian=", round(stats::median(plots_vector), 2))))
+# excel_generic_format on a sheet written with the row names, as its example
+plots_wb <- openxlsx::createWorkbook()
+openxlsx::addWorksheet(plots_wb, "sheet")
+openxlsx::writeData(plots_wb, sheet = "sheet", x = plots_insurance[1:6, ], colNames = TRUE, rowNames = TRUE)
+excel_generic_format(plots_insurance[1:6, ], plots_wb, sheet = "sheet", title = "Generic",
+                     comment = list(age = "Age note", region = "Region note"), numFmt = "#0.0")
+openxlsx::saveWorkbook(plots_wb, file.path(out_dir, "excel_generic.xlsx"), overwrite = TRUE)
+##########################################################################################
+# REPORT IRT (rwf::report_irt on a mirt model of the plot_irt_onefactor items; pwf needs R through rpy2)
+##########################################################################################
+# self-contained, so the section can be generated alone
+irt_report_items <- utils::read.csv(file.path(out_dir, "plot_irt_onefactor_items.csv"))
+irt_report <- report_irt(mirt::mirt(irt_report_items, 1, verbose = FALSE))
+for (part in c("model_coefficients", "model_coefficients_oblimin", "model_options", "q3_matrix", "exp_residuals",
+               "item_fit", "g2_fit", "m2_fit")) {
+  ref(paste0("report_irt_", part), data.frame(row = row.names(irt_report[[part]]), irt_report[[part]],
+                                              check.names = FALSE))
+}
+ref("report_irt_model_call", data.frame(call = irt_report$model_call))

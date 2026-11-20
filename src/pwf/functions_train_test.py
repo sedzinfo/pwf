@@ -38,7 +38,7 @@ import numpy as np
 import pandas as pd
 from plotnine import (
     ggplot, aes, geom_line, geom_abline, geom_tile, geom_text, geom_density, geom_vline,
-    scale_fill_gradient, labs, theme, element_text, element_blank,
+    labs, theme, element_text, element_blank,
     scale_fill_identity, scale_color_identity, scale_x_continuous, scale_y_continuous,
     scale_x_reverse, scale_linetype_manual, coord_fixed, theme_minimal,
 )
@@ -48,9 +48,11 @@ try:  # plotnine's theme_bw with ggplot2's left-aligned title
 except ImportError:
     from _rcompat import theme_bw
 try:
-    from ._rcompat import gg_text_size, r_color_ramp as _r_color_ramp, r_density, r_label as _r_label, r_levels, r_mixedsort_key, r_number, r_round
+    from ._rcompat import (gg_text_size, r_color_ramp as _r_color_ramp, r_colour_ramp, r_density,
+                           r_label as _r_label, r_levels, r_mixedsort_key, r_number, r_rescale, r_round)
 except ImportError:
-    from _rcompat import gg_text_size, r_color_ramp as _r_color_ramp, r_density, r_label as _r_label, r_levels, r_mixedsort_key, r_number, r_round
+    from _rcompat import (gg_text_size, r_color_ramp as _r_color_ramp, r_colour_ramp, r_density,
+                          r_label as _r_label, r_levels, r_mixedsort_key, r_number, r_rescale, r_round)
 ##########################################################################################
 # R HELPERS
 ##########################################################################################
@@ -149,7 +151,11 @@ def plot_confusion(observed, predicted, base_size=10, title=""):
     title (str, optional): Added after "Confusion Matrix" in the title. Defaults to "".
 
     Returns:
-    plotnine.ggplot: The plot.
+    plotnine.ggplot: The plot. The tiles have rwf's colours, from ggplot2's
+    scale_fill_continuous(low = "#fafaff") (high "#56B1F7", interpolated in
+    Lab as ggplot2 does; plotnine would interpolate in RGB), given in a
+    "fill" column. Unlike rwf, the observed classes are at the bottom:
+    plotnine can't put the x axis on top.
 
     Examples:
     >>> plot_confusion(observed=[1, 2, 3, 1, 2, 3, 1, 2, 3], predicted=[1, 2, 3, 1, 1, 3, 1, 2, 2])
@@ -160,6 +166,7 @@ def plot_confusion(observed, predicted, base_size=10, title=""):
     melted = cmatrix.stack().rename("value").reset_index()
     melted["observed"] = pd.Categorical(melted["observed"], categories=list(cmatrix.columns)[::-1])
     melted["predicted"] = pd.Categorical(melted["predicted"], categories=list(cmatrix.index))
+    melted["fill"] = r_colour_ramp(["#fafaff", "#56B1F7"])(r_rescale(melted["value"]))
 
     def rounded(name):
         return r_number(r_round(pa[name].iloc[0], 2))
@@ -168,14 +175,14 @@ def plot_confusion(observed, predicted, base_size=10, title=""):
                f"\nAccuracy with off diagonals:{rounded('cm_off_diagonal')}"
                f"\nKappa unweighted:{rounded('kappa_unweighted')}\nKappa linear:{rounded('kappa_linear')}"
                f"\nKappa squared:{rounded('kappa_squared')}")
-    return (ggplot(melted, aes(x="observed", y="predicted", fill="value"))
+    return (ggplot(melted, aes(x="observed", y="predicted", fill="fill"))
             + geom_tile(color="white")
             + geom_text(aes(label="value"), color="black", size=gg_text_size(base_size / 2))
             + theme_bw(base_size=base_size)
             + theme(axis_ticks_major_x=element_blank(), axis_ticks_major_y=element_blank(),
                     panel_grid_major=element_blank(), panel_grid_minor=element_blank(),
                     panel_border=element_blank(), panel_background=element_blank(), legend_position="none")
-            + scale_fill_gradient(low="#fafaff", high="#132B43")
+            + scale_fill_identity()
             + labs(title=f"Confusion Matrix {title}", caption=caption)
             + coord_fixed())
 ##########################################################################################
@@ -357,8 +364,9 @@ def k_fold(df, model_formula, k=10):
         evals = {"train": xgb_train, "test": xgb_test}
         xgb[name] = {"train": xgb_train, "test": xgb_test, "evals": evals, "watchlist": evals,
                      "ytrain": train[outcome], "ytest": test[outcome]}
+        # the final "" gives the space before the line end of R's cat(..., "\n")
         print("Fold Cases:", i, "Train:", len(train), "Test:", len(test), "Total:", len(train) + len(test),
-              "Unique Train:", train.index.nunique(), "Unique Test:", test.index.nunique())
+              "Unique Train:", train.index.nunique(), "Unique Test:", test.index.nunique(), "")
     return {"f": fold, "index": index, "model_formula": model_formula, "variables": variables,
             "predictors": predictors, "outcome": outcome, "xgb": xgb}
 
@@ -370,7 +378,10 @@ def k_sample(df, model_formula, k=1):
     train and the rest, and the rest halved into test and validation,
     with xgboost DMatrix objects for each.
 
-    As in rwf, xgb's yvalidation holds the test outcomes.
+    As in rwf, xgb's yvalidation holds the test outcomes, the printed
+    "Validation:" count is the test set's, and a fold of fewer than 3 rows
+    fails (R's split() leaves no test or validation half). Not copied: in a
+    fold of one row j, rwf's sample(j) draws from the rows 1..j.
 
     Parameters:
     df (pandas.DataFrame): Data.
@@ -385,10 +396,15 @@ def k_sample(df, model_formula, k=1):
     >>> samples = k_sample(df_insurance, "charges ~ age + bmi")
     """
     def halves(values):
-        """R's split(v, ceiling(seq_along(v) / (length(v) / 2)))."""
+        """R's sv(v)[[1]] and sv(v)[[2]], sv(v) being split(v, ceiling(seq_along(v) / (length(v) / 2))): one
+        value is a single group, so there is no [[2]]."""
         values = np.asarray(values)
         groups = np.ceil(np.arange(1, len(values) + 1) / (len(values) / 2))
-        return values[groups == 1], values[groups == 2]
+        present = np.unique(groups)
+        if len(present) < 2:
+            raise IndexError("subscript out of bounds: a fold of fewer than 3 rows can't be split into train, "
+                             "test and validation sets (rwf fails too)")
+        return values[groups == present[0]], values[groups == present[1]]
 
     outcome, predictors = _formula_variables(model_formula)
     outcome = outcome[0]
@@ -416,7 +432,7 @@ def k_sample(df, model_formula, k=1):
                      "yvalidation": test[outcome]}
         print("Fold Cases:", i, "Train:", len(train), "Test:", len(test), "Validation:", len(test),
               "Total:", len(train) + len(test) + len(validation), "Unique Train:", train.index.nunique(),
-              "Unique Test:", test.index.nunique(), "Unique Validation:", validation.index.nunique())
+              "Unique Test:", test.index.nunique(), "Unique Validation:", validation.index.nunique(), "")
     return {"f": fold, "index": index, "model_formula": model_formula, "variables": variables,
             "predictors": predictors, "outcome": outcome, "xgb": xgb}
 ##########################################################################################

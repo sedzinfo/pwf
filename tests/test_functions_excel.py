@@ -49,3 +49,14 @@ def test_excel_critical_value_unknown_column_fails(tmp_path):
 
 def test_data_frame_index_matches_rwf(reference):
     assert_matches_reference(fe.data_frame_index(3, 2), reference("data_frame_index"))
+
+
+def test_excel_generic_format_matches_rwf(tmp_path, load_data):
+    """On a sheet of its own, written with the row names first, as excel_generic_format's example."""
+    data = load_data("insurance").iloc[:6].copy()
+    data.loc[[1, 4], "bmi"] = np.nan  # make_reference.R's plots_insurance[1:6, ]
+    path = tmp_path / "excel_generic.xlsx"
+    with pd.ExcelWriter(path, engine="xlsxwriter") as workbook:
+        fe.excel_generic_format(data, workbook, sheet="sheet", title="Generic",
+                                comment={"age": "Age note", "region": "Region note"}, numFmt="#0.0")
+    assert_workbook_matches(path, REFERENCE_DIR / "excel_generic.xlsx")

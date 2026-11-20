@@ -174,8 +174,8 @@ def fit_irt(data, n_factors=1, itemtype=None, **kwargs):
     >>> model = fit_irt(items, n_factors=1, empiricalhist=True, calcNull=True, verbose=False)
     """
     _require_r()
-    with localconverter(ro.default_converter + pandas2ri.converter):
-        r_data = ro.conversion.py2rpy(pd.DataFrame(data))
+    with localconverter(ro.default_converter + pandas2ri.converter) as converter:
+        r_data = converter.py2rpy(pd.DataFrame(data))  # rpy2 3.6 deprecates ro.conversion.py2rpy
     call_kwargs = dict(kwargs)
     if itemtype is not None:
         call_kwargs["itemtype"] = itemtype
@@ -319,8 +319,12 @@ def report_irt(model, m2=True, file=None):
     q3_matrix = pd.DataFrame(q3_arr, index=q3_df.index, columns=q3_df.columns)
     q3_matrix["min"] = remove_nc(q3_matrix.min(axis=1, skipna=True), value=np.nan)
     q3_matrix["max"] = remove_nc(q3_matrix.max(axis=1, skipna=True), value=np.nan)
-    q3_matrix.loc["min"] = q3_matrix.min(axis=0, skipna=True)
-    q3_matrix.loc["max"] = q3_matrix.max(axis=0, skipna=True)
+    # rwf's rbind(q3, min = apply(q3, 2, min, na.rm = TRUE), max = ...): both rows from the matrix before either
+    # is added; R's min of no values is Inf and its max -Inf (the last item's column of the lower triangle)
+    column_min = q3_matrix.apply(lambda column: column.min() if column.notna().any() else np.inf)
+    column_max = q3_matrix.apply(lambda column: column.max() if column.notna().any() else -np.inf)
+    q3_matrix.loc["min"] = column_min
+    q3_matrix.loc["max"] = column_max
 
     m2_fit = None
     if m2:
@@ -361,22 +365,20 @@ def report_irt(model, m2=True, file=None):
             from .functions_excel import excel_critical_value, excel_matrix
         except ImportError:
             from functions_excel import excel_critical_value, excel_matrix
-        writer = pd.ExcelWriter(f"{file}.xlsx", engine="xlsxwriter")
-        # rwf's sheets: the item and option names are row names
-        excel_critical_value(model_coefficients, writer, sheet="Coefficients", comment=comment)
-        excel_critical_value(model_coefficients_oblimin, writer, sheet="Coefficients Oblimin", comment=comment)
-        excel_critical_value(item_fit, writer, sheet="item fit", comment=comment)
-        excel_critical_value(g2_fit, writer, sheet="G2", comment=comment)
-        if isinstance(m2_fit, pd.DataFrame):
-            excel_critical_value(m2_fit, writer, sheet="M2", comment=comment,
-                                 title="M2 (Maydeu-Olivares & Joe, 2006) statistic\n when all data are dichotomous")
-        excel_matrix(q3_matrix, writer, sheet="Q3", conditional_formatting=True,
-                     title="Test for local independence:\nThere is no consensus about the critical values.\n"
-                           "Critical values may range from absolute of .7 to .1")
-        excel_critical_value(exp_residuals, writer, sheet="Residuals")
-        excel_critical_value(model_options, writer, sheet="Model Options")
-        writer._save()
-        writer.close()
+        with pd.ExcelWriter(f"{file}.xlsx", engine="xlsxwriter") as writer:  # saved once, when it closes
+            # rwf's sheets: the item and option names are row names
+            excel_critical_value(model_coefficients, writer, sheet="Coefficients", comment=comment)
+            excel_critical_value(model_coefficients_oblimin, writer, sheet="Coefficients Oblimin", comment=comment)
+            excel_critical_value(item_fit, writer, sheet="item fit", comment=comment)
+            excel_critical_value(g2_fit, writer, sheet="G2", comment=comment)
+            if isinstance(m2_fit, pd.DataFrame):
+                excel_critical_value(m2_fit, writer, sheet="M2", comment=comment,
+                                     title="M2 (Maydeu-Olivares & Joe, 2006) statistic\n when all data are dichotomous")
+            excel_matrix(q3_matrix, writer, sheet="Q3", conditional_formatting=True,
+                         title="Test for local independence:\nThere is no consensus about the critical values.\n"
+                               "Critical values may range from absolute of .7 to .1")
+            excel_critical_value(exp_residuals, writer, sheet="Residuals")
+            excel_critical_value(model_options, writer, sheet="Model Options")
 
     return result
 ##########################################################################################

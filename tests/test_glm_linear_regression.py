@@ -108,3 +108,26 @@ def test_report_regression_diagnostics_match_rwf(reference, monkeypatch, capsys)
     glm_linear_regression.report_regression(model)
     assert_autoplot_matches(drawn[0], reference("report_regression_diagnostics_layers", dtype={"label": str}),
                             reference("report_regression_diagnostics_labels", keep_default_na=False, na_values=[]))
+
+
+def test_plot_scatterplot_matches_rwf(reference):
+    """rwf's plot names, its captions (pairwise n, r, explained variance, line and angle for y ~ x; n alone for
+    another formula) and no plot for a pair with fewer than 2 complete rows."""
+    data = _load_data("insurance")
+    data.loc[[1, 4], "bmi"] = np.nan  # make_reference.R's plots_insurance
+    data.loc[6, "charges"] = np.nan
+    plots = {"default": glm_linear_regression.plot_scatterplot(data[["age", "bmi", "children"]], title="T"),
+             "poly": glm_linear_regression.plot_scatterplot(data[["age", "bmi"]], formula="y ~ poly(x, 2)",
+                                                            str_aes=False),
+             "too_few": glm_linear_regression.plot_scatterplot(pd.DataFrame({"a": [1, np.nan, 3],
+                                                                             "b": [np.nan, 2, np.nan]}))}
+    expected = reference("plot_scatterplot_captions")
+    for case, result in plots.items():
+        rows = expected[expected["case"] == case]
+        assert list(result) == rows["name"].tolist(), case
+        for (_, row), (name, g) in zip(rows.iterrows(), result.items()):
+            assert (g is not None) == bool(row["drawn"]), name
+            if g is not None:
+                assert [t.get_text() for t in g.ax_joint.texts] == [row["caption"]], name
+    labels = {name: (g.ax_joint.get_xlabel(), g.ax_joint.get_ylabel()) for name, g in plots["default"].items()}
+    assert labels["age_bmi"] == ("Age", "Bmi") and plots["poly"]["age_bmi"].ax_joint.get_xlabel() == "age"

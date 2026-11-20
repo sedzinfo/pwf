@@ -72,7 +72,9 @@ def plot_scree(df, base_size=15, title="", color=("#5F2C91", "#5E912C")):
     criteria annotated.
 
     Parameters:
-    df (pandas.DataFrame): Data to compute the correlation matrix from.
+    df (pandas.DataFrame): Numeric data to compute the correlation matrix
+        from (pairwise complete observations); a text column fails, as R's
+        cor(). True/False columns count as 1/0.
     base_size (int, optional): Base font size. Defaults to 15.
     title (str, optional): Appended to the plot title. Defaults to "".
     color (tuple, optional): (Kaiser line color, Jolliffe line color).
@@ -83,7 +85,10 @@ def plot_scree(df, base_size=15, title="", color=("#5F2C91", "#5E912C")):
     Examples:
     >>> plot_scree(df=df_insurance.select_dtypes("number"), title="")
     """
-    corr_matrix = df.corr(method='pearson', numeric_only=True)
+    text = [str(c) for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])]
+    if text:  # R's cor(): "'x' must be numeric"
+        raise ValueError(f"'x' must be numeric: {', '.join(text)} is not")
+    corr_matrix = df.astype(float).corr(method='pearson')
     eigenvalues = np.sort(np.linalg.eigvalsh(corr_matrix.to_numpy()))[::-1]
     eigenvalues_df = pd.DataFrame({'x': np.arange(1, len(eigenvalues) + 1), 'eigenvalues': eigenvalues})
 
@@ -97,7 +102,7 @@ def plot_scree(df, base_size=15, title="", color=("#5F2C91", "#5E912C")):
             + geom_point(size=base_size / 4, color=color[0])
             + scale_x_continuous(breaks=eigenvalues_df['x'].tolist())
             + theme_bw(base_size=base_size)
-            + labs(x="Index", y="Eigenvalue", title=f"Scree plot {title}")
+            + labs(x="index", y="Eigenvalue", title=f"Scree plot {title}")
             + annotate("text", x=eigenvalues_df['x'].max(), y=eigenvalues_df['eigenvalues'].max(),
                        label=f"Top line: Kaiser criterion:{kaiser}\nBottom line: Jolliffe criterion:{jolliffe}",
                        ha='right', va='top', size=gg_text_size(base_size / 4))

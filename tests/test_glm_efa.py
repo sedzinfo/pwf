@@ -108,3 +108,27 @@ def test_plot_loadings_matches_rwf(reference, sort):
     result = p.data[["variable", "Factor", "Loading"]].astype({"variable": str, "Factor": str})
     # loadings are rounded to 2 decimals (rwf::model_loadings); pwf's rotation agrees to about 1e-4
     assert_matches_reference(result, expected, rtol=0, atol=0.0100001)
+
+
+def _plots_insurance(load_data):
+    """make_reference.R's plots_insurance: insurance with bmi missing in rows 2 and 5 and charges in row 7."""
+    data = load_data("insurance")
+    data.loc[[1, 4], "bmi"] = np.nan
+    data.loc[6, "charges"] = np.nan
+    return data
+
+
+def test_plot_scree_matches_rwf(reference, load_data):
+    """The eigenvalues of the pairwise correlations, the Kaiser and Jolliffe counts in the note, rwf's labels."""
+    data = _plots_insurance(load_data)[["age", "bmi", "children", "charges"]]
+    p = glm_efa.plot_scree(data, base_size=12, title="T")
+    labels = reference("plot_scree_labels").iloc[0]
+    assert [p.labels.get(k, None) for k in ("title", "x", "y")] == [labels["title"], labels["x"], labels["y"]]
+    p.draw()
+    line = reference("plot_scree_line")
+    np.testing.assert_allclose(p.layers[2].data[["x", "y"]].to_numpy(), line[["x", "y"]].to_numpy(), rtol=1e-12)
+    note = p.layers[4].data.iloc[0]
+    assert note["label"] == labels["note"]
+    np.testing.assert_allclose([note["x"], note["y"]], [labels["note_x"], labels["note_y"]], rtol=1e-12)
+    with pytest.raises(ValueError, match="'x' must be numeric"):  # R's cor() on text
+        glm_efa.plot_scree(load_data("insurance"))

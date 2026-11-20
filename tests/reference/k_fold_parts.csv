@@ -1,0 +1,2 @@
+"variables","predictors","outcome","n_index"
+"charges,age,bmi,smoker","age,bmi,smoker","charges",1338
