@@ -158,3 +158,37 @@ def test_std_lv_fixes_endogenous_latent_variance(reference):
     fit_expected = reference("lavaan_sem_std_lv_fit").set_index("measure")["value"]
     assert fit.fit_measures()["df"] == fit_expected["df"]
     assert fit.fit_measures()["chisq"] == pytest.approx(fit_expected["chisq"], rel=1e-6)
+
+
+LABELLED_MODEL = ("E =~ E1 + a*E2 + a*E3 + l4*E4; N =~ N1 + N2 + l3*N3 + N4; A =~ A1 + A2 + A3; def1 := l4*2; "
+                  "N ~ r*E; l4 == -l3 - 0.4; A ~ s*N; ind := r*s; N2 ~~ v*N2; N4 ~~ v*N4")
+DIAGRAM_MODEL = "E =~ E1 + a*E2 + a*E3 + E4; N =~ N1 + b*N2 + l3*N3 + N4; E ~~ c*N; l3 == b + 0.1"
+
+
+def test_report_cfa_parameters_of_a_labelled_model_match_rwf(reference, capsys):
+    """rwf's parameterEstimates(remove.eq = FALSE, remove.system.eq = TRUE): the label and exo columns, the :=
+    rows and the user's == row (its est the constraint's value), with lavaan's row numbers."""
+    model = glm_sem.sem(LABELLED_MODEL, _load_reference("lavaan_data"))
+    result = glm_sem.report_cfa(model)["parameters"]
+    capsys.readouterr()
+    expected = reference("labels_combined_report_parameters", keep_default_na=False, na_values=["NA"])
+    assert [str(i) for i in result.index] == expected["row"].astype(str).tolist()
+    assert_matches_reference(result, expected.drop(columns="row"), rtol=1e-4, atol=1e-5)
+
+
+@pytest.mark.parametrize("layout", ["tree", "circle"])
+def test_plot_cfa_gg_eq_matches_rwf(reference, layout):
+    """The "eq" diagram of a labelled model: the labels (a, b, l3; c on the covariance arc) and the estimates
+    of the other parameters, formatC'd."""
+    model = glm_sem.sem(DIAGRAM_MODEL, _load_reference("lavaan_data"))
+    expected = reference(f"labels_plot_cfa_gg_{layout}_eq", keep_default_na=False, na_values=["NA"])
+    p = glm_sem.plot_cfa_gg(model, what="eq", layout=layout)
+    assert p.labels.get("title", None) == expected["title"].iloc[0]
+    _assert_cfa_layers_match(p, expected)
+
+
+def test_plot_cfa_keys_of_a_labelled_model_match_rwf(reference, capsys):
+    """With labels rwf's plot_cfa draws all nine diagrams, the "eq" ones included."""
+    model = glm_sem.sem(DIAGRAM_MODEL, _load_reference("lavaan_data"))
+    assert list(glm_sem.plot_cfa(model)) == reference("labels_plot_cfa_keys")["key"].tolist()
+    assert "Skipping" not in capsys.readouterr().out
