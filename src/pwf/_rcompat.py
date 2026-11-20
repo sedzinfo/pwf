@@ -154,13 +154,67 @@ def r_colour_ramp(colours):
     Returns:
     function: x (array-like in [0, 1]) -> list of "#RRGGBB" (None for missing x).
     """
-    lab = np.array([_rgb_to_lab([int(c[i:i + 2], 16) for i in (1, 3, 5)]) for c in colours])
+    lab = np.array([_rgb_to_lab(_r_rgb(c)) for c in colours])
     knots = np.linspace(0, 1, len(colours))
 
     def ramp(x):
         x = np.atleast_1d(np.asarray(x, dtype=float))
         return [None if np.isnan(v) else _lab_to_hex([np.interp(v, knots, lab[:, k]) for k in range(3)]) for v in x]
     return ramp
+
+
+# R's colour names are X11's; these four differ from the CSS colours matplotlib knows by the same names
+_X11_CLASHES = {"gray": "#BEBEBE", "grey": "#BEBEBE", "green": "#00FF00", "maroon": "#B03060", "purple": "#A020F0"}
+
+
+def _r_rgb(colour):
+    """
+    An R colour as 0-255 RGB: "#RRGGBB" (or "#RRGGBBFF"), or one of R's names, read as R reads them: gray0 to
+    gray100 from R's table, gray, green, maroon and purple as X11's, the other names as the CSS colours
+    matplotlib knows (the same as X11's); R's numbered names such as "steelblue3" are not known here.
+    """
+    text = r_color(str(colour).strip())
+    text = _X11_CLASHES.get(text.lower().replace(" ", ""), text)
+    if not text.startswith("#"):
+        from matplotlib.colors import to_hex
+        try:
+            text = to_hex(text.lower().replace(" ", ""))
+        except ValueError:
+            raise ValueError(f"unknown colour {colour!r}: give it as \"#RRGGBB\"") from None
+    if len(text) == 9 and text[7:].upper() == "FF":
+        text = text[:7]
+    if not re.fullmatch(r"#[0-9A-Fa-f]{6}", text):
+        raise ValueError(f"colour {colour!r}: only opaque \"#RRGGBB\" colours are supported")
+    return [int(text[i:i + 2], 16) for i in (1, 3, 5)]
+
+
+def r_scale_fill_gradient2(low="#832424", mid="#FFFFFF", high="#3A3A98", midpoint=0, **kwargs):
+    """
+    ggplot2's scale_fill_gradient2: plotnine's scale (the same mid-point rescaling, limits, legend and grey50
+    for missing values) with ggplot2's palette, the colours interpolated in CIE Lab (r_colour_ramp) where
+    plotnine interpolates in RGB, and ggplot2's censoring: values outside the limits are missing before they
+    are rescaled (plotnine censors after, so with limits that aren't symmetric about the mid point it would
+    colour values that ggplot2 greys).
+
+    The defaults are ggplot2's: low muted("red"), mid "white", high muted("blue"). kwargs go to plotnine's
+    scale_fill_gradient2 (name, limits, ...).
+    """
+    from mizani.bounds import rescale_mid
+    from plotnine import scale_fill_gradient2
+
+    palette = r_colour_ramp([low, mid, high])  # reads R's colour names, which plotnine may not know
+    low, mid, high = ("#{:02X}{:02X}{:02X}".format(*_r_rgb(c)) for c in (low, mid, high))
+    scale = scale_fill_gradient2(low=low, mid=mid, high=high, midpoint=midpoint, **kwargs)
+    scale.palette = palette
+
+    def rescaler(x, to=(0, 1), _from=None):
+        x = np.array(x, dtype=float)
+        _from = (np.nanmin(x), np.nanmax(x)) if _from is None else _from
+        x[np.isfinite(x) & ((x < _from[0]) | (x > _from[1]))] = np.nan  # scales::censor() on the data's scale
+        return rescale_mid(x, to=to, _from=_from, mid=midpoint)
+
+    scale.rescaler = rescaler
+    return scale
 
 
 def r_rescale(x):

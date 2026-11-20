@@ -1701,3 +1701,48 @@ for (part in c("model_coefficients", "model_coefficients_oblimin", "model_option
                                               check.names = FALSE))
 }
 ref("report_irt_model_call", data.frame(call = irt_report$model_call))
+##########################################################################################
+# GRADIENT FILLS (ggplot2's scale_fill_gradient2: colours interpolated in Lab, censored before rescaling)
+##########################################################################################
+# self-contained, so the section can be generated alone
+gradient_cases <- list(
+  limits = list(values = seq(-1, 1, 0.1), args = list(midpoint = 0, limit = c(-1, 1))),
+  asymmetric = list(values = c(-0.8, -0.5, -0.2, 0, 0.3, 0.6, 1, NA), args = list(midpoint = 0, limit = c(-0.5, 1))),
+  colours = list(values = c(-0.37, -0.1, 0, 0.25, 0.5, 0.81), args = list(low = "#5E912C", mid = "white",
+                                                                        high = "#5F2C91", midpoint = 0)),
+  names = list(values = c(0, 1, 2, 3, 4), args = list(low = "green", mid = "gray", high = "purple", midpoint = 1)))
+ref("scale_fill_gradient2_fills", do.call(rbind, lapply(names(gradient_cases), function(case) {
+  data <- data.frame(x = seq_along(gradient_cases[[case]]$values), value = gradient_cases[[case]]$values)
+  p <- ggplot2::ggplot(data, ggplot2::aes(x, 1, fill = value)) + ggplot2::geom_tile() +
+    do.call(ggplot2::scale_fill_gradient2, gradient_cases[[case]]$args)
+  data.frame(case = case, value = data$value, fill = ggplot2::ggplot_build(p)$data[[1]]$fill)
+})))
+# rwf's plots with scale_fill_gradient2: plot_corrplot, and plot_loadings' correlation tiles and loading bars
+gradient_insurance <- load_data("insurance")
+gradient_corrplot <- ggplot2::ggplot_build(plot_corrplot(stats::cor(gradient_insurance[, c("age", "bmi", "children",
+                                                                                           "charges")]), title = "T"))
+ref("plot_corrplot_fills", gradient_corrplot$data[[1]][, c("x", "y", "fill")])
+gradient_ocean <- utils::read.delim(file.path(data_dir, "ocean.csv"), stringsAsFactors = FALSE)
+set.seed(3)  # psych labels the factors after random starts; in this state E1-E5 load on MR1, as in pwf
+gradient_model <- psych::fa(gradient_ocean[1:500, c(paste0("E", 1:5), paste0("N", 1:5))], nfactors = 2,
+                            rotate = "oblimin", fm = "minres")
+gradient_loadings <- plot_loadings(gradient_model, matrix_type = "structure", title = "T")
+# the correlation tiles are drawn inside ggpubr::ggarrange's first grob: its rects' fills and its texts' labels
+gradient_grobs <- function(grob, kind) {
+  out <- list()
+  if (inherits(grob, kind) && length(if (kind == "rect") grob$gp$fill else grob$label) > 1) {
+    out <- list(if (kind == "rect") grob$gp$fill else grob$label)
+  }
+  for (child in c(if (!is.null(grob$children)) as.list(grob$children), if (!is.null(grob$grobs)) grob$grobs)) {
+    out <- c(out, gradient_grobs(child, kind))
+  }
+  out
+}
+gradient_tiles <- gradient_loadings$correlation_loadings$layers[[1]]$geom_params$grob
+gradient_fills <- gradient_grobs(gradient_tiles, "rect")[[1]]
+gradient_labels <- Filter(function(x) length(x) == length(gradient_fills), gradient_grobs(gradient_tiles, "text"))[[1]]
+ref("plot_loadings_correlation_fills", data.frame(label = gradient_labels, fill = gradient_fills))
+gradient_bars <- ggplot2::ggplot_build(gradient_loadings$plot_barplot)
+ref("plot_loadings_barplot_fills", data.frame(gradient_loadings$plot_barplot$data[, c("variable", "Factor",
+                                                                                      "Loading")],
+                                              fill = gradient_bars$data[[1]]$fill))

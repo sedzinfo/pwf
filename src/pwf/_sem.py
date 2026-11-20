@@ -5,18 +5,28 @@ models rwf fits: confirmatory factor analysis and structural models with
 latent variables, estimated by maximum likelihood on complete data.
 
 It reads lavaan model syntax (=~, ~, ~~, fixed values such as 0.8*x, NA*x to
-free a parameter, ";" or new lines between statements, # comments) and adds
-lavaan's automatic parameters: the first loading of each factor fixed to 1
-(or the factor variances fixed to 1 with std_lv=True), residual variances of
-every observed and latent variable, and covariances among exogenous latent
-variables. Estimates minimise lavaan's ML discrepancy with the sample
-covariance computed with divisor N; standard errors come from the expected
-information, as lavaan's defaults.
+free a parameter, start(1)*x, ";" or new lines between statements, #
+comments) and adds lavaan's automatic parameters: the first loading of each
+factor fixed to 1 (or the factor variances fixed to 1 with std_lv=True),
+residual variances of every observed and latent variable, and covariances
+among exogenous latent variables. Estimates minimise lavaan's ML discrepancy
+with the sample covariance computed with divisor N; standard errors come
+from the expected information, as lavaan's defaults.
+
+Labels and constraints, as lavaan: parameters sharing a label (a*x1 + a*x2)
+are equal; a label shared with a fixed parameter fixes them all; linear
+equality constraints (a == b, a == 2*b + 0.1) are kept exactly; defined
+parameters (ab := a*b) are reported with delta-method standard errors and
+their standardized values. The estimates and standard errors are lavaan's
+for the constrained model, npar counts the free parameters less the
+constraints, and modification indices respect the constraints (as lavaan's,
+which test the model's parameters, not the constraints themselves).
 
 Not supported (they raise NotImplementedError): observed exogenous
-regressors, mean structures, missing-data estimation, multiple groups,
-labels and constraints.
+regressors, mean structures without missing="ml", multiple groups,
+inequality and non-linear constraints.
 """
+import ast
 import inspect
 import re
 
@@ -25,41 +35,105 @@ import pandas as pd
 from scipy import optimize, stats
 
 try:
+    from ._ordinal import _NAME, _linear, _parse_term
     from ._rcompat import r_deparse_call
 except ImportError:
+    from _ordinal import _NAME, _linear, _parse_term
     from _rcompat import r_deparse_call
 
 _OPERATORS = ("=~", "~~", "~")
 
 
 def _parse(model):
-    """Statements of lavaan syntax as (lhs, op, rhs, fixed value or None, free modifier)."""
-    statements = []
+    """
+    lavaan model syntax as parameter statements and the user's constraints and definitions.
+
+    Statements are dicts lhs, op, rhs, fixed, label, start and free; a parameter named twice ("start(1)*x +
+    a*x") is one statement with all its modifiers. The constraints and definitions keep their order in the
+    syntax, as lavaan's parameter table: {"op": "==", "lhs", "rhs" (lavaan's text, without spaces),
+    "linear": ({label: coefficient}, constant)} meaning sum(coefficient * label) == constant, and
+    {"op": ":=", "lhs": name, "rhs": expression}.
+    """
+    statements, extras, index = [], [], {}
     for raw in re.split(r"[;\n]", model):
         line = raw.split("#")[0].strip()
         if not line:
             continue
+        if ":=" in line:
+            name, expression = (part.strip() for part in line.split(":=", 1))
+            if not re.fullmatch(_NAME, name):
+                raise ValueError(f"invalid name of a defined parameter {name!r}")
+            extras.append({"op": ":=", "lhs": name, "rhs": expression.replace(" ", "")})
+            continue
+        if "==" in line:
+            left, right = line.split("==", 1)
+            a, constant_a = _linear(left)  # NotImplementedError for a constraint that isn't linear
+            b, constant_b = _linear(right)
+            coefficients = dict(a)
+            for label, value in b.items():
+                coefficients[label] = coefficients.get(label, 0.0) - value
+            extras.append({"op": "==", "lhs": left.replace(" ", ""), "rhs": right.replace(" ", ""),
+                           "linear": (coefficients, constant_b - constant_a)})
+            continue
+        if re.search(r"[<>]", line):
+            raise NotImplementedError(f"inequality constraints are not supported: {line!r}")
         op = next((o for o in _OPERATORS if o in line), None)
         if op is None:
             raise ValueError(f"cannot read the model statement {line!r}")
         lhs, rhs = (part.strip() for part in line.split(op, 1))
+        if not re.fullmatch(_NAME, lhs):
+            raise ValueError(f"invalid variable name {lhs!r}")
         for term in rhs.split("+"):
-            term = term.strip()
-            fixed, free = None, False
-            if "*" in term:
-                modifier, term = (part.strip() for part in term.split("*", 1))
-                if modifier.upper() == "NA":
-                    free = True
-                else:
-                    try:
-                        fixed = float(modifier)
-                    except ValueError as error:
-                        raise NotImplementedError("parameter labels are not supported") from error
-            for name in (lhs, term):
-                if not re.match(r"^[A-Za-z.][A-Za-z0-9._]*$", name):
-                    raise ValueError(f"invalid variable name {name!r}")
-            statements.append((lhs, op, term, fixed, free))
-    return statements
+            name, fixed, label, start, free = _parse_term(term.strip())
+            key = (lhs, op, name)
+            if op == "~~" and key not in index and (name, op, lhs) in index:
+                key = (name, op, lhs)
+            if key in index:
+                row = statements[index[key]]
+                row["fixed"] = fixed if fixed is not None else row["fixed"]
+                row["label"] = label or row["label"]
+                row["start"] = start if start is not None else row["start"]
+                row["free"] = row["free"] or free
+            else:
+                index[key] = len(statements)
+                statements.append({"lhs": lhs, "op": op, "rhs": name, "fixed": fixed, "label": label or "",
+                                   "start": start, "free": free})
+    return statements, extras
+
+
+_R_FUNCTIONS = {"sqrt": np.sqrt, "exp": np.exp, "log": np.log, "abs": np.abs}
+
+
+def _evaluate(expression, values):
+    """
+    An R arithmetic expression of labels (lavaan's := definitions): numbers, names, + - * / ^ and
+    parentheses, sqrt(), exp(), log() and abs(); values maps names to numbers (complex ones too).
+    """
+    def walk(node):
+        if isinstance(node, ast.Expression):
+            return walk(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.Name):
+            if node.id not in values:
+                raise ValueError(f"{expression!r} names {node.id!r}, which is not a label or a defined parameter")
+            return values[node.id]
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            return walk(node.operand) if isinstance(node.op, ast.UAdd) else -walk(node.operand)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)):
+            left, right = walk(node.left), walk(node.right)
+            return {ast.Add: lambda: left + right, ast.Sub: lambda: left - right, ast.Mult: lambda: left * right,
+                    ast.Div: lambda: left / right, ast.Pow: lambda: left ** right}[type(node.op)]()
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _R_FUNCTIONS \
+                and len(node.args) == 1 and not node.keywords:
+            return _R_FUNCTIONS[node.func.id](walk(node.args[0]))
+        raise NotImplementedError(f"the definition {expression!r} is not supported")
+
+    try:
+        tree = ast.parse(expression.replace("^", "**"), mode="eval")
+    except SyntaxError as error:
+        raise ValueError(f"cannot read the definition {expression!r}") from error
+    return walk(tree)
 
 
 def _missing_patterns(x):

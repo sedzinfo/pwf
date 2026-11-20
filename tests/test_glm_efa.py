@@ -110,6 +110,36 @@ def test_plot_loadings_matches_rwf(reference, sort):
     assert_matches_reference(result, expected, rtol=0, atol=0.0100001)
 
 
+def test_plot_loadings_fills_match_rwf(reference, monkeypatch):
+    """ggplot2's scale_fill_gradient2 colours (Lab) on the correlation tiles and the loading bars; the tiles
+    are taken on their way to plot_multiplot, as rwf's are read from ggarrange's grob, with their labels."""
+    from collections import Counter
+
+    from conftest import DATA_DIR
+    ocean = pd.read_csv(DATA_DIR / "ocean.csv", sep="	").iloc[:500][ITEMS]
+    model = glm_efa.fa(ocean, nfactors=2, fm="minres")
+    arranged = []
+    monkeypatch.setattr(glm_efa, "plot_multiplot", lambda *plots, **kwargs: arranged.extend(plots) or list(plots))
+    plots = glm_efa.plot_loadings(model, matrix_type="structure", title="T")
+    tiles = arranged[0]
+    tiles.draw()
+    expected = reference("plot_loadings_correlation_fills", dtype={"label": str})
+    assert Counter(zip(tiles.layers[1].data["label"].astype(str), tiles.layers[0].data["fill"].str.upper())) == \
+        Counter(zip(expected["label"], expected["fill"]))
+    bars = plots["plot_barplot"]
+    bars.draw()
+    variables = list(bars.data["variable"].cat.categories)
+    factors = sorted(bars.data["Factor"].astype(str).unique())
+    drawn = {(variables[int(round(row.x)) - 1], factors[int(row.PANEL) - 1]): row.fill.upper()
+             for row in bars.layers[0].data.itertuples()}
+    expected = reference("plot_loadings_barplot_fills")
+    loadings = bars.data.assign(variable=bars.data["variable"].astype(str), Factor=bars.data["Factor"].astype(str))
+    same = expected.merge(loadings, on=["variable", "Factor"], suffixes=("", "_pwf"))
+    same = same[np.isclose(same["Loading"], same["Loading_pwf"])]  # pwf's rounded loadings may differ by 0.01
+    assert len(same) == len(expected)  # here every one agrees
+    assert [drawn[(v, f)] for v, f in zip(same["variable"], same["Factor"])] == same["fill"].tolist()
+
+
 def _plots_insurance(load_data):
     """make_reference.R's plots_insurance: insurance with bmi missing in rows 2 and 5 and charges in row 7."""
     data = load_data("insurance")

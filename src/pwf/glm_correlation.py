@@ -25,7 +25,7 @@ import pandas as pd
 import scipy.special
 import scipy.stats
 from plotnine import (
-    ggplot, aes, geom_tile, geom_text, scale_fill_gradient2, theme,
+    ggplot, aes, geom_tile, geom_text, theme,
     element_text, element_blank, labs, geom_point, geom_line, lims,
 )
 
@@ -35,13 +35,15 @@ except ImportError:
     from _rcompat import theme_bw
 
 try:
-    from ._rcompat import gg_text_size, r_abbreviate, r_label, r_make_names, r_optimize, r_p_adjust, r_round
+    from ._rcompat import (gg_text_size, r_abbreviate, r_label, r_make_names, r_optimize, r_p_adjust, r_round,
+                           r_scale_fill_gradient2)
     from .functions import change_data_type
     from .functions_matrix import matrix_triangle
     from .functions_plot import plot_multiplot, report_pdf
     from .glm_linear_regression import plot_scatterplot
 except ImportError:
-    from _rcompat import gg_text_size, r_abbreviate, r_label, r_make_names, r_optimize, r_p_adjust, r_round
+    from _rcompat import (gg_text_size, r_abbreviate, r_label, r_make_names, r_optimize, r_p_adjust, r_round,
+                          r_scale_fill_gradient2)
     from functions import change_data_type
     from functions_matrix import matrix_triangle
     from functions_plot import plot_multiplot, report_pdf
@@ -82,7 +84,8 @@ def plot_corrplot(mydata, title="", base_size=10, fill_limits=(-1, 0, 1)):
 
     p = (ggplot(melted, aes(x='Var2', y='Var1', fill='value'))
          + geom_tile(color='white')
-         + scale_fill_gradient2(midpoint=fill_limits[1], limits=(fill_limits[0], fill_limits[2]))
+         # ggplot2's colours (interpolated in Lab), not plotnine's
+         + r_scale_fill_gradient2(midpoint=fill_limits[1], limits=(fill_limits[0], fill_limits[2]))
          + geom_text(aes(x='Var2', y='Var1', label='label'), color='black', size=gg_text_size(base_size / 4))
          + theme_bw(base_size=base_size)
          + theme(axis_text_x=element_text(rotation=45, hjust=1),

@@ -19,7 +19,7 @@ import pandas as pd
 from scipy import stats
 from plotnine import (
     ggplot, aes, geom_hline, geom_line, geom_point, geom_tile, geom_text, geom_bar,
-    theme, scale_x_continuous, scale_fill_gradient2, labs, annotate,
+    theme, scale_x_continuous, labs, annotate,
     element_blank, element_text, coord_flip, facet_wrap, lims,
 )
 
@@ -30,13 +30,15 @@ except ImportError:
 
 try:
     from ._efa import fa, model_loadings as _model_loadings
-    from ._rcompat import _sort_key, gg_text_size, r_label, r_make_names, r_make_unique, r_round
+    from ._rcompat import (_sort_key, gg_text_size, r_label, r_make_names, r_make_unique, r_round,
+                           r_scale_fill_gradient2)
     from .functions_plot import plot_multiplot, report_pdf
     from .functions_strings import str_proper, call_to_string
     from .explore_assumptions import plot_histogram
 except ImportError:
     from _efa import fa, model_loadings as _model_loadings
-    from _rcompat import _sort_key, gg_text_size, r_label, r_make_names, r_make_unique, r_round
+    from _rcompat import (_sort_key, gg_text_size, r_label, r_make_names, r_make_unique, r_round,
+                          r_scale_fill_gradient2)
     from functions_plot import plot_multiplot, report_pdf
     from functions_strings import str_proper, call_to_string
     from explore_assumptions import plot_histogram
@@ -200,7 +202,7 @@ def plot_loadings(model, matrix_type=None, title="", base_size=10,
 
     correlation_plot = (ggplot(correlations_long, aes('Relation', 'variable', fill='Correlation'))
                          + geom_tile()
-                         + scale_fill_gradient2(low=color[0], mid=color[1], high=color[2], midpoint=0)
+                         + r_scale_fill_gradient2(low=color[0], mid=color[1], high=color[2], midpoint=0)
                          + geom_text(aes(label='label'), size=gg_text_size(base_size / 4))
                          + labs(y="Loading", title="Correlation Matrix")
                          + theme_bw(base_size=base_size)
@@ -218,7 +220,8 @@ def plot_loadings(model, matrix_type=None, title="", base_size=10,
     plot_barplot = (ggplot(loadings_long, aes('variable', 'AbsLoading', fill='Loading'))
                     + facet_wrap('~Factor', nrow=1)
                     + geom_bar(stat="identity")
-                    + scale_fill_gradient2(name="Loading", high=color[0], mid=color[1], low=color[2], midpoint=0)
+                    + r_scale_fill_gradient2(name="Loading", high=color[0], mid=color[1], low=color[2],
+                                             midpoint=0)
                     + coord_flip()
                     + labs(y="Loading", x="", title=f"{str_proper(matrix_type)} Matrix {title}")
                     + theme_bw(base_size=base_size)

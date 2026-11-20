@@ -187,3 +187,14 @@ def test_plot_corrplot_labels_match_rwf(load_data):
     # rwf: ggplot_build(plot_corrplot(cor(...)))$data[[2]]$label
     assert p.layers[1].data["label"].tolist() == ["1", "0.11", "1", "0.04", "0.01", "1", "0.3", "0.2", "0.07", "1"]
     assert p.layers[1].geom.aes_params["size"] == pytest.approx(10 / 4 * 72.27 / 25.4)
+
+
+def test_plot_corrplot_fills_match_rwf(load_data, reference):
+    """ggplot2's scale_fill_gradient2 colours, interpolated in Lab (plotnine's would be in RGB)."""
+    data = load_data("insurance")[["age", "bmi", "children", "charges"]]
+    p = glm_correlation.plot_corrplot(data.corr(), title="T")
+    p.draw()
+    tiles = p.layers[0].data
+    expected = reference("plot_corrplot_fills")
+    assert sorted(zip(tiles["x"].astype(int), tiles["y"].astype(int), tiles["fill"].str.upper())) == \
+        sorted(zip(expected["x"], expected["y"], expected["fill"]))

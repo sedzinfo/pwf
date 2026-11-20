@@ -109,3 +109,33 @@ def test_merge_rows_follow_r():
     rows, names = r_merge_rows(x, y)
     assert rows == [7, 2, 0, 4, 6, 9, 1, 5, 3, 8]  # R: m$row
     assert names == [1, 1, 3, 3, 4, 5, 2, 2, 0, 0]  # R: m$yrow
+
+
+def _hex(colour):
+    """An R or plotnine colour as "#RRGGBB" (R gives missing values the name grey50)."""
+    from pwf._rcompat import _r_rgb
+    return "#{:02X}{:02X}{:02X}".format(*_r_rgb(colour))
+
+
+def test_r_scale_fill_gradient2_matches_ggplot2(reference):
+    """ggplot2's colours, interpolated in Lab, values outside the limits censored before the mid-point
+    rescaling (grey50, as missing values), and R's colour names (green, gray and purple are X11's)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import pandas as pd
+    from plotnine import aes, geom_tile, ggplot
+
+    from pwf._rcompat import r_scale_fill_gradient2
+    cases = {"limits": dict(midpoint=0, limits=(-1, 1)), "asymmetric": dict(midpoint=0, limits=(-0.5, 1)),
+             "colours": dict(low="#5E912C", mid="white", high="#5F2C91", midpoint=0),
+             "names": dict(low="green", mid="gray", high="purple", midpoint=1)}
+    expected = reference("scale_fill_gradient2_fills")
+    for case, arguments in cases.items():
+        rows = expected[expected["case"] == case]
+        data = pd.DataFrame({"x": np.arange(1, len(rows) + 1), "value": rows["value"].to_numpy()})
+        p = ggplot(data, aes("x", 1, fill="value")) + geom_tile() + r_scale_fill_gradient2(**arguments)
+        p.draw()
+        assert [_hex(f) for f in p.layers[0].data["fill"]] == [_hex(f) for f in rows["fill"]], case
+    assert _hex(r_scale_fill_gradient2(mid="grey50").palette([0.5])[0]) == "#7F7F7F"  # R's name, not matplotlib's
+    with pytest.raises(ValueError, match="unknown colour"):
+        r_scale_fill_gradient2(low="steelblue3")
