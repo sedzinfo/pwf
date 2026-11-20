@@ -1,18 +1,66 @@
 # pwf
 
+## What it does
+
 Python working functions: statistics, psychometrics and machine-learning reports. pwf is a port of
 the R package [rwf](https://github.com/sedzinfo/rwf), which is the original: functions, arguments and
 output columns keep rwf's names, and the test suite checks pwf's results against rwf's (and against the
 R packages rwf uses: lavaan, psych, car, MASS, nlme, mixlm, irr, pROC, thurstonianIRT). No R
 installation is needed to use pwf.
 
-## Install
+## Installation
+
+### 1. Install Python
+
+Download Python 3.11 or newer from [python.org](https://www.python.org/downloads/), for Windows, macOS or Linux, and run the installer. On Windows, tick **Add python.exe to PATH** on its first screen.
+
+### 2. Install Positron or RStudio
+
+An editor makes Python easier to use. It is optional, and both are free, from Posit:
+
+- [Positron](https://positron.posit.co/download.html), which runs Python and R
+- [RStudio Desktop](https://posit.co/download/rstudio-desktop/), which runs Python through the [reticulate](https://rstudio.github.io/reticulate/) package
+
+### 3. Install pwf
+
+pwf is a Python package, so it is not on R-universe, and it is not on PyPI yet. Install it with pip, in a terminal (in Positron: **Terminal > New Terminal**). A virtual environment keeps pwf and the packages it needs apart from the rest of your Python:
 
 ```bash
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+source .venv/bin/activate       # macOS and Linux
+```
+
+#### From GitHub
+
+```bash
+pip install "pwf @ git+https://github.com/sedzinfo/pwf.git"         # core
+pip install "pwf[full] @ git+https://github.com/sedzinfo/pwf.git"   # plus text analysis, xgboost and path diagrams
+```
+
+This needs [Git](https://git-scm.com/downloads). Without Git, install the zip of the `main` branch:
+
+```bash
+pip install https://github.com/sedzinfo/pwf/archive/refs/heads/main.zip
+```
+
+#### From a clone of the repository
+
+This repository keeps no files in [Git LFS](https://git-lfs.com), so a plain clone has everything:
+
+```bash
+git clone https://github.com/sedzinfo/pwf.git
+cd pwf
 pip install -e .            # core: numpy, pandas, scipy, statsmodels, plotnine, ...
 pip install -e ".[full]"    # plus text analysis (nltk, spylls), xgboost and path diagrams (networkx, pydot)
 pip install -e ".[dev]"     # plus pytest and pdoc
 ```
+
+With `-e`, changes to the clone take effect without installing again.
+
+#### R, for the IRT models
+
+pwf needs no R, except `glm_irt` (mirt's IRT models), which runs R's mirt package through rpy2: [install R](https://cran.r-project.org/), run `install.packages("mirt")` in R, and `pip install rpy2`.
 
 ## Usage
 
@@ -123,6 +171,8 @@ as a website with [pdoc](https://pdoc.dev): `make docs` (writes docs/) or `make 
 
 GPL-3.0-or-later, as rwf (pwf translates GPL R code from lavaan, psych, GPArotation, mixlm and nortest).
 
+---
+
 ![Stars](https://img.shields.io/github/stars/sedzinfo/pwf)
 ![Watchers](https://img.shields.io/github/watchers/sedzinfo/pwf)
 ![Repo Size](https://img.shields.io/github/repo-size/sedzinfo/pwf)
@@ -131,5 +181,4 @@ GPL-3.0-or-later, as rwf (pwf translates GPL R code from lavaan, psych, GPArotat
 ![Last Commit](https://img.shields.io/github/last-commit/sedzinfo/pwf)
 ![Contributors](https://img.shields.io/github/contributors/sedzinfo/pwf)
 ![License](https://img.shields.io/github/license/sedzinfo/pwf)
-![Release](https://img.shields.io/github/v/release/sedzinfo/pwf)
 ![Workflow Status](https://img.shields.io/github/actions/workflow/status/sedzinfo/pwf/main.yml)
