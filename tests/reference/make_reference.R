@@ -1794,7 +1794,8 @@ labels_layer_rows <- function(p) {  # as plots_layer_rows() above
   do.call(rbind, lapply(seq_along(b$data), function(i) {
     d <- b$data[[i]]
     data.frame(layer = i, geom = class(p$layers[[i]]$geom)[1],
-               x = if (is.null(d$x)) (d$xmin + d$xmax) / 2 else d$x, y = if (is.null(d$y)) (d$ymin + d$ymax) / 2 else d$y,
+               x = if (is.null(d$x)) (d$xmin + d$xmax) / 2 else d$x,
+               y = if (is.null(d$y)) (d$ymin + d$ymax) / 2 else d$y,
                xend = if (is.null(d$xend)) NA else d$xend, yend = if (is.null(d$yend)) NA else d$yend,
                label = if (is.null(d$label)) NA else as.character(d$label))
   }))
