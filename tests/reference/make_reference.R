@@ -1807,3 +1807,76 @@ for (layout in c("tree", "circle")) {
   ref(paste0("labels_plot_cfa_gg_", layout, "_eq"), data.frame(title = p$labels$title, labels_layer_rows(p)))
 }
 ref("labels_plot_cfa_keys", data.frame(key = names(suppressMessages(plot_cfa(labels_diagram_fit)))))
+##########################################################################################
+# EFA METHODS AND ROTATIONS (psych::fa's fm, rotate and oblique.scores; rwf::report_efa with them)
+##########################################################################################
+# self-contained; the data are the LAVAAN ENGINE section's. psych::fa rotates from the identity and 19 random
+# orthogonal starts (n.rotations = 20, R's random numbers) and keeps the start with most loadings below .15;
+# pwf rotates from the identity, so GPArotation's rotations are made with n.rotations = 1. varimax, promax and
+# equamax have no random starts in psych and use its defaults.
+methods_data <- list(
+  complete = utils::read.csv(file.path(out_dir, "lavaan_data.csv"))[, c(paste0("E", 1:5), paste0("N", 1:5))],
+  missing = utils::read.csv(file.path(out_dir, "lavaan_fiml_data.csv")))
+fa_long <- function(model, key) {
+  block <- function(part, x) {
+    if (is.null(x)) return(NULL)
+    x <- as.matrix(unclass(x))
+    data.frame(model = key, part = part, row = rep(seq_len(nrow(x)), ncol(x)),
+               column = rep(seq_len(ncol(x)), each = nrow(x)), value = as.vector(x))
+  }
+  stats <- c(rms = model$rms, crms = model$crms, RMSEA = unname(model$RMSEA[1]), RMSEA.lower = unname(model$RMSEA[2]),
+             RMSEA.upper = unname(model$RMSEA[3]), TLI = model$TLI, CFI = model$CFI, STATISTIC = model$STATISTIC,
+             dof = model$dof, objective = model$objective, BIC = model$BIC, SABIC = model$SABIC, EBIC = model$EBIC,
+             ESABIC = model$ESABIC, fit = model$fit, fit.off = model$fit.off, null.chisq = model$null.chisq)
+  rbind(block("loadings", model$loadings), block("Phi", model$Phi), block("weights", model$weights),
+        block("Vaccounted", model$Vaccounted), block("communality", model$communality),
+        block("communalities", model$communalities), block("uniquenesses", model$uniquenesses),
+        block("complexity", model$complexity), block("values", model$values), block("e.values", model$e.values),
+        data.frame(model = key, part = "stats", row = seq_along(stats), column = 1, value = unname(stats)))
+}
+fa_methods <- list()
+fa_columns <- list()
+fa_errors <- list()
+fit_case <- function(key, ...) {
+  model <- tryCatch(suppressMessages(suppressWarnings(psych::fa(...))), error = function(e) e)
+  if (inherits(model, "error")) {
+    fa_errors[[key]] <<- data.frame(model = key, error = conditionMessage(model))
+    return(NULL)
+  }
+  fa_methods[[key]] <<- fa_long(model, key)
+  fa_columns[[key]] <<- data.frame(model = key, columns = paste(colnames(model$loadings), collapse = ","))
+  model
+}
+# every extraction method, oblimin from the identity, rwf's oblique.scores = TRUE
+for (data_case in names(methods_data)) {
+  for (fm in c("minres", "uls", "ols", "wls", "gls", "ml", "minchi", "old.min", "pa", "alpha")) {
+    for (nfactors in 1:3) {
+      fit_case(paste(data_case, fm, nfactors, "oblimin", sep = "|"), methods_data[[data_case]], nfactors = nfactors,
+               fm = fm, rotate = "oblimin", n.rotations = 1, oblique.scores = TRUE)
+    }
+  }
+}
+# every rotation of the complete data, minres (psych's default extraction), psych's default scores
+for (rotate in c("none", "varimax", "Varimax", "quartimax", "bentlerT", "geominT", "equamax", "promax", "Promax",
+                 "oblimin", "quartimin", "simplimax", "geominQ", "bentlerQ")) {
+  for (nfactors in 2:3) {
+    n_rotations <- if (rotate %in% c("varimax", "promax", "equamax")) 20 else 1
+    fit_case(paste("rotation", "minres", nfactors, rotate, sep = "|"), methods_data$complete, nfactors = nfactors,
+             fm = "minres", rotate = rotate, n.rotations = n_rotations)
+  }
+}
+fit_case("rotation|minres|2|foo", methods_data$complete, nfactors = 2, rotate = "foo")
+fit_case("complete|foo|2|oblimin", methods_data$complete, nfactors = 2, fm = "foo", rotate = "oblimin",
+         n.rotations = 1, oblique.scores = TRUE)
+ref("psych_fa_methods", do.call(rbind, unname(fa_methods)))
+ref("psych_fa_methods_columns", do.call(rbind, unname(fa_columns)))
+ref("psych_fa_methods_errors", do.call(rbind, unname(fa_errors)))
+# rwf::report_efa on models of other methods (rwf's examples use oblique.scores = TRUE); scores of two models
+for (fm in c("pa", "ols", "wls")) {
+  model <- suppressMessages(psych::fa(methods_data$complete, nfactors = 2, fm = fm, rotate = "oblimin",
+                                      n.rotations = 1, oblique.scores = TRUE))
+  report <- report_efa(model, methods_data$complete, scores = TRUE)
+  for (part in c("loadings", "correlations", "residual_stats", "weights", "scores")) {
+    ref(paste0("report_efa_methods_", fm, "_", part), data.frame(report[[part]], check.names = FALSE))
+  }
+}

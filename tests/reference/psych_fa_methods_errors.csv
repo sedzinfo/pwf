@@ -1,0 +1,4 @@
+"model","error"
+"complete|alpha|1|oblimin","non-conformable arguments"
+"missing|alpha|1|oblimin","non-conformable arguments"
+"rotation|minres|2|foo","object 'rot.mat' not found"

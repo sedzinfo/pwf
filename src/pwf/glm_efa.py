@@ -4,9 +4,9 @@ Python port of R rwf::GLM_EFA.R: scree plots, loading tables and plots,
 residual statistics and the EFA report (report_efa).
 
 Models come from fa() (also as _fit_efa), pwf's port of psych::fa with
-fm = "minres" (psych's default) or "ml" and oblimin rotation, which
-reproduces psych's loadings, communalities, eigenvalues, fit statistics
-and regression factor scores. Bartlett's test and KMO follow
+its extraction methods (all but "minrank") and its common rotations (see
+pwf._efa), which reproduces psych's loadings, communalities, eigenvalues,
+fit statistics and regression factor scores. Bartlett's test and KMO follow
 psych::cortest.bartlett and psych::KMO. Attribute names with dots in R
 (model$e.values, model$fit.off) use underscores (e_values, fit_off).
 """
@@ -54,16 +54,19 @@ def _fit_efa(df, n_factors, rotation="oblimin", method="minres", **kwargs):
     Parameters:
     df (pandas.DataFrame): Raw data; correlations are pairwise.
     n_factors (int): Number of factors.
-    rotation (str, optional): "oblimin" (default) or "none".
-    method (str, optional): "minres" (default, psych's default) or "ml".
+    rotation (str, optional): Any rotation of fa(); "oblimin" by default.
+    method (str, optional): Any extraction method of fa(); "minres" by
+        default (psych's default).
+    **kwargs: Other arguments of fa() (oblique_scores, min_err, max_iter, ...).
 
     Returns:
     FAResult: The fitted model (see fa()).
 
     Examples:
     >>> model = _fit_efa(df_ocean[["E1", "E2", "E3", "E4", "E5"]], n_factors=1)
+    >>> model = _fit_efa(df_ocean[["E1", "E2", "N1", "N2"]], n_factors=2, rotation="varimax", method="pa")
     """
-    return fa(df, nfactors=n_factors, rotate=rotation, fm=method)
+    return fa(df, nfactors=n_factors, rotate=rotation, fm=method, **kwargs)
 ##########################################################################################
 # PLOT SCREE
 ##########################################################################################
