@@ -45,8 +45,8 @@ def test_fit_measures_match_lavaan(lavaan_data, reference, case):
 
 
 def test_parse_rejects_unsupported(lavaan_data):
-    with pytest.raises(NotImplementedError):
-        _sem.sem("E =~ E1 + E2 + E3; E ~ N1", lavaan_data)
+    with pytest.raises(NotImplementedError, match="higher-order"):  # observed predictors work since 23/11
+        _sem.sem("E =~ E1 + E2 + E3; N =~ N1 + N2 + N3; G =~ E + N", lavaan_data)
     with pytest.raises(NotImplementedError, match="inequality"):
         _sem.sem("E =~ E1 + a*E2 + E3; a > 0", lavaan_data)
     with pytest.raises(NotImplementedError, match="not linear"):
@@ -90,9 +90,9 @@ def test_predict_matches_lavaan(lavaan_data, reference, case):
 
 
 FIML_MODEL = "E =~ E1 + E2 + E3 + E4 + E5; N =~ N1 + N2 + N3 + N4 + N5"
-# not ported for missing="ml" (pwf returns them as missing): lavaan's FIML-corrected robust indices,
-# and the GFI family and CRMR, which lavaan computes from differently weighted moments with missing data
-FIML_NOT_PORTED = {"crmr", "gfi", "gfi.ci.lower", "gfi.ci.upper", "gfi_lisrel", "agfi_lisrel", "pgfi"}
+# not ported for missing="ml" (pwf returns them as missing): lavaan's FIML-corrected robust indices, and the
+# classic GFI family, whose weights lavaan computes differently with missing data (crmr and gfi match since 23/11)
+FIML_NOT_PORTED = {"gfi_lisrel", "agfi_lisrel", "pgfi"}
 
 
 @pytest.fixture(scope="module")

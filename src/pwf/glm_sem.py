@@ -279,18 +279,11 @@ def _summary_text(model, fit_indices):
 
 def _exogenous_flags(model, parameters):
     """
-    lavaan's exo column: 1 for the variances, covariances and means of observed exogenous covariates
-    (fixed.x: observed variables that only predict), 0 otherwise.
+    lavaan's exo column: 1 for the variances, covariances and means fixed at the predictors' sample values
+    (fixed.x), 0 for every other row (with fixed.x = FALSE the predictors' rows are free, so 0).
     """
-    table = parameters
-    measured = set(table.loc[table["op"] == "=~", "rhs"])
-    outcomes = set(table.loc[table["op"] == "~", "lhs"])
-    predictors = set(table.loc[table["op"] == "~", "rhs"])
-    latent = set(table.loc[table["op"] == "=~", "lhs"])
-    exogenous = {v for v in predictors - outcomes - measured - latent if v in set(model.observed)}
-    flags = [int((op == "~~" and lhs in exogenous and rhs in exogenous) or (op == "~1" and lhs in exogenous))
-             for lhs, op, rhs in zip(table["lhs"], table["op"], table["rhs"])]
-    return flags
+    exo = {(prm.lhs, prm.op, prm.rhs) for prm in model.table if getattr(prm, "exo", False)}
+    return [int((lhs, op, rhs) in exo) for lhs, op, rhs in zip(parameters["lhs"], parameters["op"], parameters["rhs"])]
 
 
 def report_cfa(model, file=None, w=10, h=10):

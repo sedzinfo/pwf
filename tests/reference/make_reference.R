@@ -1925,3 +1925,154 @@ for (case in names(lbfgsb_cases)) {
 }
 ref("optim_lbfgsb_results", do.call(rbind, unname(lbfgsb_results)))
 ref("optim_lbfgsb_par", do.call(rbind, unname(lbfgsb_par)))
+##########################################################################################
+# LAVAAN OBSERVED PREDICTORS (fixed.x, lavaan's dummy latent variables, auto.cov.y; rwf::report_cfa, plot_cfa_gg)
+##########################################################################################
+# self-contained: respondents of the ocean data with a plausible age and gender 1 or 2, and a copy with values
+# removed (age too: lavaan then drops those cases)
+x_ocean <- utils::read.delim(file.path(data_dir, "ocean.csv"), stringsAsFactors = FALSE)
+x_data <- x_ocean[x_ocean$age < 100 & x_ocean$gender %in% 1:2, ][1:500, c("age", "gender", paste0("E", 1:5),
+                                                                        paste0("N", 1:5))]
+rownames(x_data) <- NULL
+ref("lavaan_x_data", x_data)
+set.seed(7)
+x_missing <- x_data
+x_missing$age[sample(500, 20)] <- NA
+x_missing$E2[sample(500, 30)] <- NA
+x_missing$N1[sample(500, 25)] <- NA
+ref("lavaan_x_missing_data", x_missing)
+x_cases <- list(
+  mimic = list(model = "E =~ E1 + E2 + E3 + E4 + E5; E ~ age + gender"),
+  mimic_direct = list(model = "E =~ E1 + E2 + E3 + E4 + E5; E ~ age + gender; E5 ~ age"),
+  two_outcomes = list(model = "E =~ E1 + E2 + E3; N =~ N1 + N2 + N3; E ~ age; N ~ age + gender"),
+  mediation = list(model = "E =~ E1 + E2 + E3; N =~ N1 + N2 + N3; N ~ E + age; E ~ gender"),
+  path = list(model = "E1 ~ age + gender; E2 ~ E1 + age"),
+  ov_outcome = list(model = "E =~ E2 + E3 + E4; E1 ~ E + age"),
+  ov_mediator = list(model = "E =~ E1 + E2 + E3 + E4 + E5; N1 ~ age; E ~ N1"),
+  random_x = list(model = "E =~ E1 + E2 + E3 + E4 + E5; E ~ age + gender", fixed.x = FALSE),
+  user_x = list(model = "E =~ E1 + E2 + E3 + E4 + E5; E ~ age + gender; age ~~ gender"),
+  fiml = list(model = "E =~ E1 + E2 + E3 + E4 + E5; N =~ N1 + N2 + N3; E ~ age + gender; N ~ E", missing = "ml"),
+  stdlv = list(model = "E =~ E1 + E2 + E3 + E4 + E5; E ~ age + gender", std.lv = TRUE),
+  labels = list(model = "E =~ E1 + E2 + E3; N =~ N1 + N2 + N3; N ~ b*E + age; E ~ a*gender; ab := a*b"))
+x_rows <- list(parameters = list(), fit = list(), rsquare = list(), mi = list(), inspect = list(), predict = list())
+for (case in names(x_cases)) {
+  x <- x_cases[[case]]
+  data <- if (identical(x$missing, "ml")) x_missing else x_data
+  fit <- suppressWarnings(do.call(lavaan::sem, c(list(model = x$model, data = data), x[setdiff(names(x), "model")])))
+  # rwf::report_cfa's arguments
+  pe <- lavaan::parameterEstimates(fit, se = TRUE, zstat = TRUE, pvalue = TRUE, ci = TRUE, level = 0.95,
+                                   boot.ci.type = "perc", standardized = TRUE, fmi = FALSE, remove.system.eq = TRUE,
+                                   remove.eq = FALSE, remove.ineq = FALSE, remove.def = FALSE, rsquare = TRUE,
+                                   add.attributes = TRUE)
+  x_rows$parameters[[case]] <- data.frame(case = case, row = rownames(pe), data.frame(pe, check.names = FALSE),
+                                          check.names = FALSE)
+  fm <- lavaan::fitMeasures(fit)
+  x_rows$fit[[case]] <- data.frame(case = case, measure = names(fm), value = unname(as.numeric(fm)))
+  r2 <- lavaan::lavInspect(fit, "rsquare")
+  x_rows$rsquare[[case]] <- data.frame(case = case, name = names(r2), value = unname(r2))
+  mi <- lavaan::modificationIndices(fit, standardized = TRUE, cov.std = TRUE, information = "expected", power = TRUE,
+                                    delta = 0.1, alpha = 0.05, high.power = 0.75, sort. = TRUE, minimum.value = 0,
+                                    free.remove = FALSE, na.remove = TRUE, op = NULL)
+  x_rows$mi[[case]] <- data.frame(case = case, row = as.integer(rownames(mi)), data.frame(mi))
+  for (what in c("est", "std")) {
+    matrices <- lavaan::lavInspect(fit, what)
+    for (name in names(matrices)) {
+      a <- unclass(matrices[[name]])
+      x_rows$inspect[[paste(case, what, name)]] <- data.frame(
+        case = case, what = what, matrix = name, row = rep(rownames(a), ncol(a)),
+        column = rep(colnames(a), each = nrow(a)), value = as.vector(a))
+    }
+  }
+  scores <- lavaan::lavPredict(fit)
+  if (ncol(scores) > 0) {
+    x_rows$predict[[case]] <- data.frame(case = case, row = rep(seq_len(nrow(scores)), ncol(scores)),
+                                         column = rep(colnames(scores), each = nrow(scores)),
+                                         value = as.vector(scores), nobs = lavaan::lavInspect(fit, "nobs"))
+  }
+}
+for (kind in names(x_rows)) ref(paste0("lavaan_x_", kind), do.call(plyr::rbind.fill, unname(x_rows[[kind]])))
+# rwf::report_cfa and its path diagrams of a model with a direct effect of a predictor on an indicator
+x_layer_rows <- function(p) {  # as plots_layer_rows() of the PATH DIAGRAMS section
+  b <- ggplot2::ggplot_build(p)
+  do.call(rbind, lapply(seq_along(b$data), function(i) {
+    d <- b$data[[i]]
+    data.frame(layer = i, geom = class(p$layers[[i]]$geom)[1],
+               x = if (is.null(d$x)) (d$xmin + d$xmax) / 2 else d$x,
+               y = if (is.null(d$y)) (d$ymin + d$ymax) / 2 else d$y,
+               xend = if (is.null(d$xend)) NA else d$xend, yend = if (is.null(d$yend)) NA else d$yend,
+               label = if (is.null(d$label)) NA else as.character(d$label))
+  }))
+}
+x_fit <- lavaan::sem(x_cases$mimic_direct$model, data = x_data)
+invisible(capture.output(suppressWarnings(x_report <- report_cfa(x_fit))))
+ref("lavaan_x_report_parameters", data.frame(row = rownames(x_report$parameters), x_report$parameters,
+                                             check.names = FALSE))
+ref("lavaan_x_report_r_squared", data.frame(name = rownames(x_report$r_squared), x_report$r_squared))
+for (layout in c("tree", "circle")) for (what in c("std", "est")) {
+  p <- plot_cfa_gg(x_fit, what = what, layout = layout)
+  ref(paste0("lavaan_x_plot_cfa_gg_", layout, "_", what), data.frame(title = p$labels$title, x_layer_rows(p)))
+}
+ref("lavaan_x_plot_cfa_keys", data.frame(key = names(suppressMessages(plot_cfa(x_fit)))))
+##########################################################################################
+# LAVAAN MEAN STRUCTURES (meanstructure = TRUE with complete data, intercepts in the syntax, df = 0)
+##########################################################################################
+# self-contained; the data are the LAVAAN ENGINE and LAVAAN OBSERVED PREDICTORS sections'
+ms_data <- list(ld = utils::read.csv(file.path(out_dir, "lavaan_data.csv")),
+                lm = utils::read.csv(file.path(out_dir, "lavaan_fiml_data.csv")),
+                xd = utils::read.csv(file.path(out_dir, "lavaan_x_data.csv")))
+ms_cases <- list(
+  cfa = list(data = "ld", model = "E =~ E1 + E2 + E3 + E4 + E5; N =~ N1 + N2 + N3 + N4 + N5", meanstructure = TRUE),
+  sem = list(data = "ld", model = paste("E =~ E1 + E2 + 0.8*E3 + E4; N =~ N1 + N2 + N3 + N4; A =~ A1 + A2 + A3;",
+                                        "A ~ E + N; E1 ~~ E2"), meanstructure = TRUE),
+  mimic = list(data = "xd", model = "E =~ E1 + E2 + E3 + E4 + E5; E ~ age + gender; E5 ~ age", meanstructure = TRUE),
+  path = list(data = "xd", model = "E1 ~ age + gender; E2 ~ E1 + age", meanstructure = TRUE),
+  stdlv = list(data = "ld", model = "E =~ E1 + E2 + E3 + E4 + E5", meanstructure = TRUE, std.lv = TRUE),
+  latent_mean = list(data = "ld", model = "E =~ E1 + E2 + E3 + E4 + E5; E1 ~ 0*1; E ~ 1"),
+  equal_intercepts = list(data = "ld", model = "E =~ E1 + E2 + E3 + E4 + E5; E2 ~ a*1; E4 ~ a*1; E5 ~ 3*1",
+                          meanstructure = TRUE),
+  intercept_only = list(data = "ld", model = "E =~ E1 + E2 + E3; E1 ~ 1"),
+  fiml_latent_mean = list(data = "lm", model = "E =~ E1 + E2 + E3 + E4 + E5; E1 ~ 0*1; E ~ 1", missing = "ml"))
+ms_rows <- list(parameters = list(), fit = list(), rsquare = list(), mi = list(), inspect = list(), predict = list())
+for (case in names(ms_cases)) {
+  x <- ms_cases[[case]]
+  fit <- suppressWarnings(do.call(lavaan::sem, c(list(model = x$model, data = ms_data[[x$data]]),
+                                                 x[setdiff(names(x), c("model", "data"))])))
+  # rwf::report_cfa's arguments
+  pe <- lavaan::parameterEstimates(fit, se = TRUE, zstat = TRUE, pvalue = TRUE, ci = TRUE, level = 0.95,
+                                   boot.ci.type = "perc", standardized = TRUE, fmi = FALSE, remove.system.eq = TRUE,
+                                   remove.eq = FALSE, remove.ineq = FALSE, remove.def = FALSE, rsquare = TRUE,
+                                   add.attributes = TRUE)
+  ms_rows$parameters[[case]] <- data.frame(case = case, row = rownames(pe), data.frame(pe, check.names = FALSE),
+                                           check.names = FALSE)
+  fm <- lavaan::fitMeasures(fit)
+  ms_rows$fit[[case]] <- data.frame(case = case, measure = names(fm), value = unname(as.numeric(fm)))
+  r2 <- lavaan::lavInspect(fit, "rsquare")
+  ms_rows$rsquare[[case]] <- data.frame(case = case, name = names(r2), value = unname(r2))
+  mi <- suppressWarnings(lavaan::modificationIndices(fit, standardized = TRUE, cov.std = TRUE,
+                                                     information = "expected", power = TRUE, delta = 0.1,
+                                                     alpha = 0.05, high.power = 0.75, sort. = TRUE,
+                                                     minimum.value = 0, free.remove = FALSE, na.remove = TRUE,
+                                                     op = NULL))
+  ms_rows$mi[[case]] <- data.frame(case = case, row = as.integer(rownames(mi)), data.frame(mi))
+  for (what in c("est", "std")) {
+    matrices <- lavaan::lavInspect(fit, what)
+    for (name in names(matrices)) {
+      a <- unclass(matrices[[name]])
+      ms_rows$inspect[[paste(case, what, name)]] <- data.frame(
+        case = case, what = what, matrix = name, row = rep(rownames(a), ncol(a)),
+        column = rep(colnames(a), each = nrow(a)), value = as.vector(a))
+    }
+  }
+  scores <- suppressWarnings(lavaan::lavPredict(fit))
+  if (ncol(scores) > 0) {  # with missing data, a case without answers is a row of NA
+    ms_rows$predict[[case]] <- data.frame(case = case, row = rep(seq_len(nrow(scores)), ncol(scores)),
+                                          column = rep(colnames(scores), each = nrow(scores)),
+                                          value = as.vector(scores), nobs = lavaan::lavInspect(fit, "nobs"))
+  }
+}
+for (kind in names(ms_rows)) ref(paste0("lavaan_ms_", kind), do.call(plyr::rbind.fill, unname(ms_rows[[kind]])))
+# rwf::report_cfa of a model with a free latent mean
+ms_fit <- lavaan::sem(ms_cases$latent_mean$model, data = ms_data$ld)
+invisible(capture.output(suppressWarnings(ms_report <- report_cfa(ms_fit))))
+ref("lavaan_ms_report_parameters", data.frame(row = rownames(ms_report$parameters), ms_report$parameters,
+                                              check.names = FALSE))

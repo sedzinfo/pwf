@@ -4,7 +4,7 @@ Goal: pwf is a full rwf in Python (same functions, arguments, outputs and number
 
 Where things stand: all 189 of rwf's exported functions are in pwf, and each one has a test against
 rwf's own output. The suite passed on Windows on 20/11 (501 tests, with 3 skipped because they need R;
-see below), and on Linux on 23/11 (608 tests, with R).
+see below), and on Linux on 23/11 (701 tests, with R).
 The history of the work is in `notes/handoff_*.md`.
 
 The list below is what still differs from rwf, in a suggested order.
@@ -18,9 +18,11 @@ rwf passes these on to psych, lavaan or ez, so an R user can use them; pwf stops
   - Still refused: `fm = "minrank"` (psych needs the Rcsdp solver for it), the target, bifactor,
     biquartimin, cluster, varimin and special rotations, and score methods other than psych's default
     `"regression"`.
-- [ ] **SEM with observed predictors** (`_sem.py`): regressions on observed variables (`F ~ age`), with
-  lavaan's fixed.x and the `exo` rows. pwf allows regressions among latent variables only.
-- [ ] **SEM mean structure with complete data**: `meanstructure = TRUE` works only with `missing = "ml"`.
+- [x] **SEM with observed predictors** (done 23/11; `_sem.py`, see `notes/handoff_2026-11-23.md`): regressions on
+  and of observed variables, `fixed.x` (and `fixed_x=False`), lavaan's dummy latent variables, `auto.cov.y`.
+  - Still refused: `simulate_data` with observed regressions, and higher-order factors.
+- [x] **SEM mean structure with complete data** (done 23/11): `meanstructure = TRUE` with complete data, and
+  intercepts in the syntax (`y ~ 1`, `y ~ 0*1`, a free latent mean `F ~ 1`, labelled intercepts).
 - [ ] **Multi-group SEM** (`group =`, and the equality constraints across groups that measurement
   invariance uses).
 - [ ] **Inequality and non-linear constraints** (`a > 0`, `a == b*c`). Labels, linear `==` constraints and
@@ -30,8 +32,10 @@ rwf passes these on to psych, lavaan or ez, so an R user can use them; pwf stops
     `cfa(..., ordered = ...)`.
   - `report_cfa`, `plot_cfa` and `plot_cfa_gg` accept only ML fits; rwf's accept any lavaan fit.
   - The ordinal engine also refuses regressions.
-- [ ] **FIML fit measures**: with `missing = "ml"` the GFI family, CRMR and lavaan's robust ("FIML
-  corrected") CFI, TLI and RMSEA come out missing. The ordinal engine's GFI family, CN and MFI are missing too.
+- [ ] **FIML fit measures**: with `missing = "ml"` the classic GFI family (`gfi_lisrel`, `agfi_lisrel`, `pgfi`)
+  and lavaan's robust ("FIML corrected") CFI, TLI and RMSEA come out missing. CRMR and `gfi` match since 23/11.
+  - Close to lavaan's GFI-LISREL: the per-pattern sum of the h1 expected information at the model's Sigma
+    (1.3e-5 off); lavaan's FIML weight differs in a detail not found yet. The ordinal engine's GFI family, CN and MFI are missing too.
 - [ ] **`report_factorial_anova`**: `within_covariates`, `between_covariates`, `diff` and `reverse_diff`,
   and sums of squares other than type 3.
 
