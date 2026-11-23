@@ -21,7 +21,7 @@ def datasets():
 @pytest.mark.parametrize("nfactors", [1, 2, 3])
 @pytest.mark.parametrize("case", ["complete", "missing"])
 def test_fa_matches_psych(datasets, reference, case, nfactors):
-    model = _efa.fa(datasets[case], nfactors=nfactors)
+    model = _efa.fa(datasets[case], nfactors=nfactors, fm="ml")
     prefix = f"psych_fa_{case}_{nfactors}"
     # the oblimin rotation stops at psych's tolerance (1e-5), so loadings agree to about 1e-4
     for name, frame in [("loadings", model.loadings), ("structure", model.Structure)]:
@@ -42,7 +42,7 @@ def test_fa_matches_psych(datasets, reference, case, nfactors):
 @pytest.mark.parametrize("nfactors", [1, 2, 3])
 @pytest.mark.parametrize("case", ["complete", "missing"])
 def test_model_loadings_matches_rwf(datasets, reference, case, nfactors):
-    result = _efa.model_loadings(_efa.fa(datasets[case], nfactors=nfactors), cut=0.001)
+    result = _efa.model_loadings(_efa.fa(datasets[case], nfactors=nfactors, fm="ml"), cut=0.001)
     expected = reference(f"psych_fa_{case}_{nfactors}_model_loadings", keep_default_na=False, dtype=str)
     assert result.iloc[:, :2].astype(str).values.tolist() == expected.iloc[:, :2].values.tolist()
     assert result.iloc[:, 2:].astype(str).values.tolist() == expected.iloc[:, 2:].values.tolist()

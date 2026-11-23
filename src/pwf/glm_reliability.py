@@ -13,10 +13,9 @@ Deviations from the R original, by design:
     real psych::alpha() output exactly (to full float precision) on a
     shared dataset generated in R and loaded into both languages.
     psych::responseFrequency()'s per-item response-category proportions
-    are approximated (_response_frequency) rather than exactly replicated
-    column-for-column, and psych's "Unidim"/"Goodfit" indices are not
-    computed at all (both are internal/undocumented diagnostics returned
-    by alpha.1() but never actually surfaced in R's own report_alpha output).
+    (_response_frequency) match psych's columns too. psych's
+    "Unidim"/"Goodfit" indices are not computed (both are diagnostics
+    returned by alpha.1() but never surfaced in rwf's report_alpha output).
   - The bootstrap CI for alpha (n_iter > 1) resamples rows with
     replacement and recomputes the same statistics each iteration,
     matching psych::alpha()'s own bootstrap procedure — including its

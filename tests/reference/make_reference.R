@@ -1880,3 +1880,48 @@ for (fm in c("pa", "ols", "wls")) {
     ref(paste0("report_efa_methods_", fm, "_", part), data.frame(report[[part]], check.names = FALSE))
   }
 }
+##########################################################################################
+# R'S OPTIM L-BFGS-B (pwf._lbfgsb, which pwf's EFA uses: par, value, counts, convergence and message)
+##########################################################################################
+# self-contained. Generated on the reference BLAS, as R on Windows: an R linked to OpenBLAS sums some dot
+# products in another order, which changes the last bits of the iterates (on Linux: LD_PRELOAD of
+# libblas.so.3 and liblapack.so.3)
+lbfgsb_rosen <- function(x) {
+  n <- length(x)
+  sum(100 * (x[-1] - x[-n]^2)^2 + (1 - x[-n])^2)
+}
+lbfgsb_rosen_gr <- function(x) {
+  n <- length(x)
+  g <- numeric(n)
+  g[-n] <- -400 * x[-n] * (x[-1] - x[-n]^2) - 2 * (1 - x[-n])
+  g[-1] <- g[-1] + 200 * (x[-1] - x[-n]^2)
+  g
+}
+lbfgsb_quad <- function(x) sum(seq_along(x) * (x - cos(seq_along(x)))^2)
+lbfgsb_quad_gr <- function(x) 2 * seq_along(x) * (x - cos(seq_along(x)))
+lbfgsb_cases <- list(
+  rosen2 = list(par = c(-1.2, 1), fn = lbfgsb_rosen, gr = lbfgsb_rosen_gr),
+  rosen5_bounds = list(par = rep(-1, 5), fn = lbfgsb_rosen, gr = lbfgsb_rosen_gr, lower = -0.5, upper = 0.8),
+  rosen4_numerical = list(par = c(0.5, 0.5, 0.5, 0.5), fn = lbfgsb_rosen, lower = 0),
+  rosen6_maxit = list(par = rep(-1, 6), fn = lbfgsb_rosen, gr = lbfgsb_rosen_gr, maxit = 5),
+  quad8_scaled = list(par = rep(0, 8), fn = lbfgsb_quad, gr = lbfgsb_quad_gr,
+                      lower = c(-Inf, 0, 0.5, -Inf, -1, 0, -Inf, 0.2), upper = c(Inf, Inf, 1, 0, 1, 0.1, Inf, 0.3),
+                      parscale = c(1, 2, 0.5, 1, 1, 10, 1, 0.01), fnscale = 2),
+  quad3_maximize = list(par = c(1, 1, 1), fn = function(x) -lbfgsb_quad(x), gr = function(x) -lbfgsb_quad_gr(x),
+                        fnscale = -1, upper = 0.4),
+  quad4_numerical_on_bound = list(par = c(0, 1, 0, 0), fn = lbfgsb_quad, lower = 0, upper = 1, ndeps = rep(1e-4, 4)),
+  rosen3_lmm_factr = list(par = c(-1, 2, -1), fn = lbfgsb_rosen, gr = lbfgsb_rosen_gr, lmm = 3, factr = 1e3,
+                          pgtol = 1e-8))
+lbfgsb_results <- lbfgsb_par <- list()
+for (case in names(lbfgsb_cases)) {
+  x <- lbfgsb_cases[[case]]
+  control <- x[intersect(names(x), c("maxit", "parscale", "fnscale", "ndeps", "lmm", "factr", "pgtol"))]
+  fit <- stats::optim(x$par, x$fn, x$gr, method = "L-BFGS-B", lower = if (is.null(x$lower)) -Inf else x$lower,
+                      upper = if (is.null(x$upper)) Inf else x$upper, control = control)
+  lbfgsb_results[[case]] <- data.frame(case = case, value = fit$value, fn_count = unname(fit$counts[1]),
+                                       gr_count = unname(fit$counts[2]), convergence = fit$convergence,
+                                       message = fit$message)
+  lbfgsb_par[[case]] <- data.frame(case = case, index = seq_along(fit$par), par = fit$par)
+}
+ref("optim_lbfgsb_results", do.call(rbind, unname(lbfgsb_results)))
+ref("optim_lbfgsb_par", do.call(rbind, unname(lbfgsb_par)))

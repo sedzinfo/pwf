@@ -66,7 +66,7 @@ def _fit_efa(data, nfactors, dimension):
     if nfactors >= p or ((p - nfactors) ** 2 - (p + nfactors)) / 2 < 0:
         return None
     try:
-        return fa(data, nfactors=nfactors)
+        return fa(data, nfactors=nfactors, fm="ml")  # rwf: psych::fa(..., rotate = "oblimin", fm = "ml")
     except Exception as error:  # noqa: BLE001 - rwf reports the failure and goes on
         print(f"EFA of {dimension} with {nfactors} factor(s) failed: {error}")
         return None

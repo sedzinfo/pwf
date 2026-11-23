@@ -1,9 +1,10 @@
-# pwf: what is left (20/11/2026)
+# pwf: what is left (20/11/2026, updated 23/11)
 
 Goal: pwf is a full rwf in Python (same functions, arguments, outputs and numbers; rwf is the original).
 
 Where things stand: all 189 of rwf's exported functions are in pwf, and each one has a test against
-rwf's own output. The suite passes on Windows: 501 tests, with 3 skipped (they need R; see below).
+rwf's own output. The suite passed on Windows on 20/11 (501 tests, with 3 skipped because they need R;
+see below), and on Linux on 23/11 (608 tests, with R).
 The history of the work is in `notes/handoff_*.md`.
 
 The list below is what still differs from rwf, in a suggested order.
@@ -12,11 +13,11 @@ The list below is what still differs from rwf, in a suggested order.
 
 rwf passes these on to psych, lavaan or ez, so an R user can use them; pwf stops with a message.
 
-- [ ] **EFA methods and rotations** (`_efa.py`; used by `report_efa`, `plot_loadings`, `compute_efa_cfa`)
-  - pwf fits only `fm = "ml"` and `"minres"`, and rotates only with `"oblimin"` or `"none"`.
-  - rwf's `report_efa` takes any `psych::fa` model. Other common choices are `fm = "pa"`, `"uls"`, `"wls"`,
-    `"gls"` and rotations `varimax`, `promax`, `quartimax`, `geominQ`.
-  - Most likely to be needed first.
+- [x] **EFA methods and rotations** (done 23/11; `_efa.py`, see `notes/handoff_2026-11-23.md`)
+  - Every `fm` but `"minrank"`, the common rotations, and `oblique.scores` now match psych.
+  - Still refused: `fm = "minrank"` (psych needs the Rcsdp solver for it), the target, bifactor,
+    biquartimin, cluster, varimin and special rotations, and score methods other than psych's default
+    `"regression"`.
 - [ ] **SEM with observed predictors** (`_sem.py`): regressions on observed variables (`F ~ age`), with
   lavaan's fixed.x and the `exo` rows. pwf allows regressions among latent variables only.
 - [ ] **SEM mean structure with complete data**: `meanstructure = TRUE` works only with `missing = "ml"`.
@@ -66,6 +67,18 @@ rwf passes these on to psych, lavaan or ez, so an R user can use them; pwf stops
   - bootstraps;
   - the "spring" layout.
 - `psych::fa` names its factors after random starts in R, so tests compare loadings by position.
+- `psych::fa` rotates from 20 starts (the identity and 19 random ones from R's random numbers) and keeps the
+  one with most loadings below .15; pwf rotates from the identity only. Usually the two give the same
+  solution, but quartimax, geomin and simplimax can land on another one (seen on mtcars). rwf's result then
+  changes from run to run unless a seed is set. pwf equals psych's `n.rotations = 1` to 1e-11.
+- `fm = "ols"`: psych leaves the factor columns unnamed. pwf calls them X1, X2, ..., as rwf's tables show
+  them. With one factor, rwf's `model_loadings` shows a long name built from its own code instead.
+- psych's alpha factoring (`fm = "alpha"`) with one factor fails ("non-conformable arguments") unless the
+  first eigenvalue is between 1 and 4, and then its loadings are not scaled. This is psych's `diag()` of a
+  single number. pwf copies both.
+- References for `fm = "wls"`, `"gls"`, `"minchi"` and `"old.min"` must come from R on the reference BLAS
+  (Windows, or Linux with `LD_PRELOAD` of libblas.so.3 and liblapack.so.3). psych optimizes these with the
+  ML gradient, so some fits are ill-conditioned: R on OpenBLAS moves 3.4e-4 on one of the test models.
 - `report_hlr` drops the slope model when its random effects are perfectly correlated. rwf drops it when
   nlme stops at its iteration limit. The two agree on 252 of 300 test data sets.
 - Diagnostic panels with tied leverages: R's last-bit noise in the QR reorders the ties.
@@ -109,18 +122,17 @@ rwf passes these on to psych, lavaan or ez, so an R user can use them; pwf stops
 ## 6. Housekeeping
 
 - [ ] Stale module docstrings:
-  - `glm_linear_regression.py` says `plot_scatterplot` dropped `method`/`formula`, but it has them since 17/11;
-  - `glm_reliability.py` says psych's `responseFrequency()` is only approximated, but its columns have
-    matched since 17/11.
-  - Check the other module docstrings while at it.
-- [ ] Old files in the repo root from the earlier project: `environment.py`, `examples/examples.py`,
-  `reticulate.R` and `sublime/` (4 files). Keep or remove?
+  - [x] `glm_linear_regression.py` (`plot_scatterplot`'s `method`/`formula`) and `glm_reliability.py`
+    (`responseFrequency()`) fixed 23/11.
+  - [ ] Check the other module docstrings.
+- [x] Old files in the repo root from the earlier project (`environment.py`, `examples/examples.py`,
+  `reticulate.R`, `sublime/`): removed 23/11.
 - [ ] Old names kept for compatibility:
   - `getfwp` (now `get_fwd`);
   - the module `functions_train_test_full`;
   - the Excel helpers' `writer`/`sheetname`/`comments`/`decimals` arguments (with a DeprecationWarning).
-  - Decide when to remove them.
-- [ ] pwf-only modules whose names overlap rwf's ports: `functions_generic.py` (for example its own
-  `generate_correlation_matrix`) and `plot_corrplot.py`. Keep, rename or remove?
+  - Decided 23/11: remove them at the first release.
+- [x] pwf-only modules whose names overlap rwf's ports (`functions_generic.py`, with its own
+  `generate_correlation_matrix`, and `plot_corrplot.py`): decided 23/11 to keep them.
 - [ ] CI runs without R, so the 3 IRT tests never run there. An optional job with R and mirt would cover them.
 - [ ] No release or tag yet (`pyproject.toml` says 0.2.0).

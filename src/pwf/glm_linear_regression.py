@@ -13,11 +13,10 @@ Deviations from the R original, by design:
     histograms in one call. Returns a seaborn JointGrid per pair
     (with a real matplotlib Figure at .figure), not a plotnine ggplot
     like the rest of this project's plotting functions.
-  - Dropped the generic `method`/`formula` parameters (R forwards these
-    to geom_smooth, supporting arbitrary smoothers/formulas). This
-    always fits a simple OLS y~x line and always shows the full
-    r/slope/angle caption — which is exactly what R itself does when
-    the default y~x formula is used anyway.
+  - `method` and `formula`, which R forwards to geom_smooth, take the
+    choices rwf's examples use: method "lm" or "loess" (seaborn's
+    lowess) and formula "y ~ x" or "y ~ poly(x, k)". As in rwf, the full
+    r/slope/angle caption is shown only for "y ~ x"; otherwise only n.
   - The future/future.apply parallel-plotting branch is not replicated,
     for the same reason as in glm_anova_plot.py and functions_plot.py:
     plot objects don't reliably serialize across process boundaries in

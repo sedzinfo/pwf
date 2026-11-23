@@ -484,7 +484,7 @@ class FAResult:
     """Result of fa(): psych::fa's main elements, with Python attribute names."""
 
 
-def fa(data, nfactors=1, rotate="oblimin", fm="ml", alpha=0.1, oblique_scores=False, min_err=0.001, max_iter=50,
+def fa(data, nfactors=1, rotate="oblimin", fm="minres", alpha=0.1, oblique_scores=False, min_err=0.001, max_iter=50,
        warnings=True):
     """
     Exploratory factor analysis, as psych::fa(data, nfactors, rotate, fm,
@@ -496,9 +496,8 @@ def fa(data, nfactors=1, rotate="oblimin", fm="ml", alpha=0.1, oblique_scores=Fa
     rotate (str, optional): "oblimin" (default), "none", "varimax", "Varimax",
         "quartimax", "bentlerT", "geominT", "equamax", "promax", "Promax",
         "quartimin", "simplimax", "geominQ" or "bentlerQ", as psych.
-    fm (str, optional): "ml" (default here; psych's default is "minres"),
-        "minres", "uls", "ols", "wls", "gls", "minchi", "old.min", "pa" or
-        "alpha". "mle", "MLE" and "ML" mean "ml"; an unknown method is
+    fm (str, optional): "minres" (default, as psych), "ml", "uls", "ols",
+        "wls", "gls", "minchi", "old.min", "pa" or "alpha". "mle", "MLE" and "ML" mean "ml"; an unknown method is
         minres, with psych's message.
     alpha (float, optional): 1 minus the RMSEA confidence level. Defaults to 0.1.
     oblique_scores (bool, optional): psych's oblique.scores: True bases the
